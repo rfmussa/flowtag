@@ -62,11 +62,6 @@
             <!-- Footer -->
             <q-footer reveal class="bg-darker text-white" v-if="footer">
                 
-                <div v-if='isRoute("quicktag")'>
-                    <QuickTagMoods v-if="$1t.quickTag.value.track"></QuickTagMoods>
-                    <QuickTagGenreBar v-if="$1t.quickTag.value.track"></QuickTagGenreBar>
-                </div>
-
                 <PlayerBar v-if='($1t.settings.value.tagEditorPlayer && isRoute("tageditor")) || isRoute("quicktag")'></PlayerBar>
                 
             </q-footer>
@@ -155,8 +150,9 @@ function hideSide() {
 };
 
 function showSide() {
-    left.value = true;
-    right.value = true;
+    // FlowTag view has no side drawers; only the player footer
+    left.value = false;
+    right.value = false;
     footer.value = true;
 }
 

@@ -8,6 +8,8 @@ import { Keybind, Playlist, Spotify, wsUrl } from './utils';
 import { ManualTag } from './manualtag';
 import ExitDialog from '../components/ExitDialog.vue';
 import router from './router';
+import { getTagStore } from './tagstore';
+import { handleFlowKeys } from './flowkeys';
 import DevToolsVue from '../components/DevTools.vue';
 import PlatformsRepoVue from '../components/PlatformsRepo.vue';
 
@@ -78,9 +80,9 @@ class OneTagger {
 
         // Keybinds
         document.addEventListener('keydown', (e) => {
-            // Can be safely error ignored
-            // @ts-ignore
-            if (e.target && e.target.nodeName == "INPUT") return true;
+            // Never steal keys from editable elements
+            const target = e.target as HTMLElement | null;
+            if (target && (target.nodeName == "INPUT" || target.nodeName == "TEXTAREA" || target.isContentEditable)) return true;
 
             // Dev tools
             if (e.key == 'F3') {
@@ -136,6 +138,9 @@ class OneTagger {
 
     // Process incoming event
     private async incomingEvent(json: any) {
+        // FlowTag (library/tagging) messages are handled by the tag store
+        if (getTagStore().handleMessage(json)) return;
+
         /*eslint-disable no-case-declarations*/
         switch (json.action) {
             // Initial info
@@ -448,6 +453,9 @@ class OneTagger {
 
     // onBrowse event
     onBrowse(json: BrowseEvent) {
+        // FlowTag library folder
+        if (json.context == 'tagFolderAdd' && json.path)
+            this.send('tagFolderAdd', { path: json.path });
         // Autotagger path
         if (json.context == 'at')
             this.config.value.path = json.path;
@@ -623,6 +631,11 @@ class OneTagger {
 
     // Handle keydown event for keyboard bindings
     handleKeyDown(event: KeyboardEvent) {
+        // FlowTag view has its own keyboard map
+        if (router.currentRoute.value.path.startsWith('/quicktag')) {
+            return handleFlowKeys(event);
+        }
+
         // QT Keybinds
         if (this.quickTag.value.track.hasTracks()) {
             // Arrow keys
