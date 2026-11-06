@@ -12,6 +12,7 @@ pub mod tags;
 pub mod tracks;
 pub mod flush;
 pub mod scan;
+pub mod export;
 
 pub use models::{DbFolder, DbGroup, DbTag, DbTrack, ScannedTrack};
 pub use validate::FILE_TAG_SEPARATOR;

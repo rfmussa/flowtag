@@ -109,6 +109,7 @@ enum Action {
     FlushHint { track_id: Option<i64> },
     FlushStatusGet,
     FlushRetry,
+    RekordboxExport { mode: String },
 }
 
 
@@ -798,6 +799,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,
+        Action::RekordboxExport { mode } => tagflow::rekordbox_export(context, &mode)?,
     }
    
     Ok(())

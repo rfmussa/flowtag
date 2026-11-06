@@ -108,6 +108,61 @@ fn flush_roundtrip_all_formats() {
 }
 
 #[test]
+fn comment_export_preserves_text_and_is_idempotent() {
+    if !ffmpeg_available() {
+        eprintln!("SKIP: ffmpeg not available");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    // MP3 with a pre-existing comment. ffmpeg's -metadata writes a TXXX:comment,
+    // not a real COMM frame, so write the comment through the tag library itself.
+    if !gen_audio(&music, "c.mp3", &["-codec:a", "libmp3lame", "-b:a", "64k"]) {
+        eprintln!("SKIP: ffmpeg could not encode mp3");
+        return;
+    }
+    {
+        let path = music.join("c.mp3");
+        let mut tag_wrap = onetagger_tag::Tag::load_file(&path, true).unwrap();
+        let tag = tag_wrap.tag_mut();
+        tag.set_raw("COMM", vec!["my old note".to_string()], true);
+        tag.save_file(&path).unwrap();
+    }
+
+    let db = Db::open(dir.path().join("t.db")).unwrap();
+    tracks::add_folder(&db, &music.to_string_lossy()).unwrap();
+    scan::scan(&db, false, |_, _| {}).unwrap();
+    let track = &tracks::list_tracks(&db).unwrap()[0];
+    tags::add_tag_to_track(&db, track.id, "Deep House").unwrap();
+
+    let res = onetagger_db::export::export_comments(&db, |_, _| {}).unwrap();
+    assert_eq!((res.written, res.failed), (1, 0));
+
+    // Comment preserved + hashtag appended
+    let tag_wrap = onetagger_tag::Tag::load_file(&track.path, false).unwrap();
+    let comment = tag_wrap.tag().get_raw("COMM").unwrap()[0].clone();
+    assert_eq!(comment, "my old note #DeepHouse");
+
+    // Second export: nothing to write
+    let res = onetagger_db::export::export_comments(&db, |_, _| {}).unwrap();
+    assert_eq!((res.written, res.unchanged), (0, 1));
+
+    // Export doesn't make the next scan re-parse our own write
+    let res = scan::scan(&db, false, |_, _| {}).unwrap();
+    assert_eq!(res.updated, 0);
+
+    // Removing the last tag and re-exporting strips the stale hashtag block
+    let pool = tags::list_tags(&db).unwrap();
+    tags::remove_tag_from_track(&db, track.id, pool[0].id).unwrap();
+    let res = onetagger_db::export::export_comments(&db, |_, _| {}).unwrap();
+    assert_eq!((res.written, res.failed), (1, 0));
+    let tag_wrap = onetagger_tag::Tag::load_file(&track.path, false).unwrap();
+    let comment = tag_wrap.tag().get_raw("COMM").unwrap()[0].clone();
+    assert_eq!(comment, "my old note");
+}
+
+#[test]
 fn flush_pass_respects_skip() {
     let dir = tempfile::tempdir().unwrap();
     let db = Db::open(dir.path().join("test.db")).unwrap();

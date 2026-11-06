@@ -14,10 +14,20 @@
             placeholder='Filter tracks or tags'
             class='filter-input q-mr-md'
         />
-        <q-toggle v-model='store.untaggedOnly.value' label='Untagged only' dense />
+        <q-toggle v-model='store.untaggedOnly.value' label='Untagged only' dense class='q-mr-md' />
+        <q-btn dense flat no-caps icon='mdi-tag-multiple' label='Manage' class='q-px-sm' @click='openManager'></q-btn>
+        <q-btn
+            dense flat round
+            class='q-ml-xs'
+            :icon='paletteOpen ? "mdi-dock-right" : "mdi-dock-left"'
+            @click='togglePalette'
+        >
+            <q-tooltip>{{ paletteOpen ? 'Hide tag palette' : 'Show tag palette' }}</q-tooltip>
+        </q-btn>
     </div>
 
-    <!-- Track list / empty states -->
+    <!-- Track list + palette -->
+    <div class='col row no-wrap list-row'>
     <div class='col list-area'>
         <div v-if='store.folders.value.length === 0 && store.loaded.value' class='column items-center justify-center full-height text-grey-5'>
             <q-icon name='mdi-music-box-multiple-outline' size='64px' class='q-mb-md' />
@@ -29,6 +39,10 @@
             <q-circular-progress indeterminate color='primary' size='48px' />
         </div>
         <TrackList v-else />
+    </div>
+    <div v-if='paletteOpen' class='palette-col'>
+        <TagPalette />
+    </div>
     </div>
 
     <!-- Tagging panel -->
@@ -45,11 +59,13 @@
             Select a track (<b>J</b>/<b>K</b> or click), press <b>T</b> to tag, <b>D</b> when done — <b>Space</b> plays
         </div>
     </div>
+
+    <TagManager v-model='managerOpen' />
 </div>
 </template>
 
 <script lang='ts' setup>
-import { computed, onMounted, watch } from 'vue';
+import { computed, onMounted, ref, watch } from 'vue';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore } from '../scripts/tagstore';
 import FolderManager from '../components/flowtag/FolderManager.vue';
@@ -58,6 +74,10 @@ import ScanStatus from '../components/flowtag/ScanStatus.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
 import TagChips from '../components/flowtag/TagChips.vue';
 import TagInput from '../components/flowtag/TagInput.vue';
+import TagPalette from '../components/flowtag/TagPalette.vue';
+import TagManager from '../components/flowtag/TagManager.vue';
+
+const PALETTE_KEY = 'flowtag.paletteOpen';
 
 const $1t = get1t();
 const store = getTagStore();
@@ -66,6 +86,36 @@ const selected = computed(() => {
     store.tracks.value; // reactive dep
     return store.selectedTrack();
 });
+
+const managerOpen = ref(false);
+const paletteOpen = ref(readPaletteOpen());
+
+function readPaletteOpen(): boolean {
+    try {
+        return localStorage.getItem(PALETTE_KEY) !== 'false';
+    } catch {
+        return true;
+    }
+}
+
+function blurTarget(e: Event) {
+    (e.currentTarget as HTMLElement | null)?.blur();
+}
+
+function openManager(e: Event) {
+    blurTarget(e);
+    managerOpen.value = true;
+}
+
+function togglePalette(e: Event) {
+    blurTarget(e);
+    paletteOpen.value = !paletteOpen.value;
+    try {
+        localStorage.setItem(PALETTE_KEY, String(paletteOpen.value));
+    } catch {
+        // Storage unavailable: keep the in-memory state only
+    }
+}
 
 // Selecting a track loads it into the player (playback from 0);
 // playback continues across switches when it was already running
@@ -96,7 +146,18 @@ onMounted(() => {
 .filter-input {
     width: 260px;
 }
+.list-row {
+    min-height: 0;
+}
 .list-area {
+    min-height: 0;
+    min-width: 0;
+    overflow: hidden;
+}
+.palette-col {
+    width: 230px;
+    flex-shrink: 0;
+    border-left: 1px solid rgba(255, 255, 255, 0.07);
     min-height: 0;
     overflow: hidden;
 }

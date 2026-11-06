@@ -165,6 +165,32 @@ pub(crate) fn flush_retry(context: &SocketContext) -> Result<(), Error> {
     flush_status_get(context)
 }
 
+/// Export tags into Rekordbox-visible fields on a blocking task.
+/// Only "comment" (trailing hashtag block) is implemented; "grouping" and
+/// "rekordboxXml" are reserved future modes.
+pub(crate) fn rekordbox_export(context: &SocketContext, mode: &str) -> Result<(), Error> {
+    if mode != "comment" {
+        return Err(anyhow::anyhow!("Unsupported export mode: {mode}"));
+    }
+    let sender = context.sender.clone();
+    let db = context.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let result = onetagger_db::export::export_comments(&db, |done, total| {
+            sender.send(json!({ "action": "rekordboxExportProgress", "done": done, "total": total })).ok();
+        });
+        match result {
+            Ok(result) => {
+                sender.send(json!({ "action": "rekordboxExportDone", "result": result })).ok();
+            }
+            Err(e) => {
+                error!("Rekordbox export failed: {e}");
+                sender.send(json!({ "action": "error", "message": format!("Export failed: {e}") })).ok();
+            }
+        }
+    });
+    Ok(())
+}
+
 /// Number of waveform bars sent to the UI
 const WAVEFORM_BARS: usize = 180;
 /// Stored bar scale: f32 (0..=1) quantized to a byte
