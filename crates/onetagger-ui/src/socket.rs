@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use anyhow::Error;
-use axum::extract::ws::{WebSocket, Message};
+use axum::extract::ws::WebSocket;
 use std::sync::atomic::Ordering;
 use std::sync::{Arc, Mutex};
 use std::path::{Path, PathBuf};
@@ -19,7 +19,10 @@ use onetagger_player::{AudioSources, AudioPlayer};
 use onetagger_shared::{Settings, COMMIT};
 use onetagger_playlist::{UIPlaylist, PLAYLIST_EXTENSIONS, get_files_from_playlist_file};
 
+use futures_util::StreamExt;
+
 use crate::StartContext;
+use crate::sender::MessageSender;
 use crate::quicktag::{QuickTag, QuickTagFile, QuickTagData};
 use crate::tageditor::TagEditor;
 use crate::browser::{FileBrowser, FolderBrowser};
@@ -111,16 +114,23 @@ impl TaggerConfigs {
 struct SocketContext {
     player: AudioPlayer,
     spotify: Option<Spotify>,
-    start_context: StartContext
-} 
+    start_context: StartContext,
+    sender: MessageSender,
+}
 
 impl SocketContext {
-    pub fn new(start_context: StartContext) -> SocketContext {
+    pub fn new(start_context: StartContext, sender: MessageSender) -> SocketContext {
         SocketContext {
             player: AudioPlayer::new(),
             spotify: None,
-            start_context
+            start_context,
+            sender,
         }
+    }
+
+    /// Queue a message for this connection (safe to call from any task/thread via a cloned sender)
+    pub fn send(&self, message: impl Serialize) -> Result<(), Error> {
+        self.sender.send(message)
     }
 }
 
@@ -159,24 +169,28 @@ impl InitData {
     }
 }
 
-pub(crate) async fn handle_ws_connection(mut websocket: WebSocket, context: StartContext) -> Result<(), Error> {
-    let mut context = SocketContext::new(context);
-    
-    while let Some(message) = websocket.recv().await {
+pub(crate) async fn handle_ws_connection(websocket: WebSocket, context: StartContext) -> Result<(), Error> {
+    // Split the socket: all writes go through a dedicated writer task, so handlers
+    // and background jobs can push messages concurrently with the read loop.
+    let (sink, mut stream) = websocket.split();
+    let sender = MessageSender::spawn(sink);
+    let mut context = SocketContext::new(context, sender);
+
+    while let Some(message) = stream.next().await {
         match message {
             Ok(msg) => {
                 match msg.to_text() {
                     Ok(text) => {
                         // Handle the WS message
-                        match handle_message(text, &mut websocket, &mut context).await {
+                        match handle_message(text, &mut context).await {
                             Ok(_) => {},
                             Err(err) => {
                                 // Send error to UI
                                 error!("Websocket: {:?}, Data: {}", err, text);
-                                send_socket(&mut websocket, json!({
+                                context.send(json!({
                                     "action": "error",
                                     "message": &format!("{}", err)
-                                })).await.ok();
+                                })).ok();
                             }
                         }
                     },
@@ -188,78 +202,61 @@ pub(crate) async fn handle_ws_connection(mut websocket: WebSocket, context: Star
                 warn!("WebSocket error: {e}");
             }
         }
-    
+
     }
 
     Ok(())
 }
 
-/// Serialize and send to socket with warning intercept
-async fn send_socket<D: Serialize>(ws: &mut WebSocket, json: D) -> Result<(), Error> {
-    match send_socket_inner(ws, json).await {
-        Ok(_) => Ok(()),
-        Err(e) => {
-            warn!("Failed sending to socket: {e}");
-            Err(e)
-        },
-    }
-}
-
-/// Serialize and send to socket
-async fn send_socket_inner<D: Serialize>(ws: &mut WebSocket, json: D) -> Result<(), Error> {
-    ws.send(Message::from(serde_json::to_string(&json)?)).await?;
-    Ok(())
-}
-
-async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut SocketContext) -> Result<(), Error> {
+async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), Error> {
     // Parse JSON
     let action: Action = serde_json::from_str(text)?;
     match action {
         // Get initial info
         Action::Init => {
-            send_socket(websocket, InitData::new(context.start_context.clone())).await.ok();
+            context.send(InitData::new(context.start_context.clone())).ok();
         },
         Action::Exit => std::process::exit(0),
         Action::SaveSettings { settings } => Settings::from_ui(&settings).save()?,
         Action::LoadSettings => match Settings::load() {
             Ok(settings) => {
-                send_socket(websocket, json!({
+                context.send(json!({
                     "action": "loadSettings",
                     "settings": settings.ui
-                })).await.ok();
+                })).ok();
             }
             // Ignore settings if they don't exist (might be initial load)
             Err(e) => error!("Failed loading settings, using defaults. {}", e)
         },
         // Get the default custom platform options
         Action::DefaultCustomPlatformSettings => {
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "defaultCustomPlatformSettings",
                 "custom": TaggerConfig::custom_default().custom
-            })).await.ok();
+            })).ok();
         }
         // Browse for folder
-        Action::Browse { path, context } => {
+        Action::Browse { path, context: browse_context } => {
             let mut initial = path.unwrap_or(".".to_string());
             if initial.is_empty() || !Path::new(&initial).exists() {
                 initial = ".".to_string()
             }
             if let Some(path) = tinyfiledialogs::select_folder_dialog("Select path", &initial) {
-                send_socket(websocket, json!({
+                context.send(json!({
                     "action": "browse",
                     "path": path,
-                    "context": context
-                })).await.ok();
+                    "context": browse_context
+                })).ok();
             }
         },
         // Get 1t Log
         Action::GetLog => {
             log::logger().flush();
             let log = std::fs::read_to_string(&Settings::get_folder()?.join("onetagger.log"))?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "log",
                 "log": log
-            })).await.ok();
+            })).ok();
         },
         // Open URL in external browser
         Action::Browser { url } => { webbrowser::open(&url)?; },
@@ -277,10 +274,10 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
                 "Save playlist"
             ) {
                 std::fs::write(&path, playlist)?;
-                send_socket(websocket, json!({
+                context.send(json!({
                     "action": "notify",
                     "message": format!("Playlist saved to: {path}")
-                })).await.ok();
+                })).ok();
             }
         }
 
@@ -290,10 +287,10 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
                 platforms.load_all();
                 platforms.platforms.iter().map(|p| p.info.clone()).collect::<Vec<_>>()
             }).await?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "loadPlatforms",
                 "platforms": platforms
-            })).await.ok();
+            })).ok();
         },
         Action::ConfigCallback { config, platform, id } => {
             let platform_clone = platform.clone();
@@ -305,11 +302,11 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
                 }
             }).await?;
             if let Some(r) = response {
-                send_socket(websocket, json!({
+                context.send(json!({
                     "action": "configCallback",
                     "platform": platform_clone,
                     "response": r
-                })).await.ok();
+                })).ok();
             }
         }
         Action::StartTagging { config, playlist } => {
@@ -351,47 +348,59 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
 
             // Start
             let start = timestamp!();
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "startTagging",
                 "files": file_count,
                 "type": tagger_type
-            })).await.ok();
+            })).ok();
             // Tagging
             for status in rx {
-                send_socket(websocket, json!({
+                context.send(json!({
                     "action": "taggingProgress",
                     "status": status
-                })).await.ok();
+                })).ok();
             }
             info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
             // Done
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "taggingDone",
                 "path": folder_path,
                 "data": *tagger_finished.lock().unwrap()
-            })).await.ok();
+            })).ok();
         },
         Action::StopTagging => {
             onetagger_autotag::STOP_TAGGING.store(true, Ordering::SeqCst);
         },
         Action::Waveform { path } => {
-            let source = AudioSources::from_path(&path)?;
-            let (waveform_rx, cancel_tx) = source.generate_waveform(180)?;
-            // Streamed
-            for wave in waveform_rx {
-                send_socket(websocket, json!({
-                    "action": "waveformWave",
-                    "wave": wave
-                })).await.ok();
-                // Check reply
-                if websocket.recv().await.is_none() {
-                    cancel_tx.send(true).ok();
+            // Decode + stream on a blocking task so the read loop stays responsive;
+            // bars are pushed straight to the writer task (no per-bar client ack).
+            let sender = context.sender.clone();
+            tokio::task::spawn_blocking(move || {
+                let result: Result<(), Error> = (|| {
+                    let source = AudioSources::from_path(&path)?;
+                    let (waveform_rx, cancel_tx) = source.generate_waveform(180)?;
+                    for wave in waveform_rx {
+                        let sent = sender.send(json!({
+                            "action": "waveformWave",
+                            "wave": wave
+                        }));
+                        // Connection gone: stop generating
+                        if sent.is_err() {
+                            cancel_tx.send(true).ok();
+                            return Ok(());
+                        }
+                    }
+                    sender.send(json!({ "action": "waveformDone" })).ok();
+                    Ok(())
+                })();
+                if let Err(e) = result {
+                    error!("Waveform generation failed: {e}");
+                    sender.send(json!({
+                        "action": "error",
+                        "message": format!("Waveform failed: {e}")
+                    })).ok();
                 }
-            }
-            // Done
-            send_socket(websocket, json!({
-                "action": "waveformDone",
-            })).await.ok();
+            });
         },
         // Load player file
         Action::PlayerLoad { path } => {
@@ -401,12 +410,12 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
             let title = tag.tag().get_field(Field::Title).map(|i| i.first().map(String::from)).flatten();
             let artists = tag.tag().get_field(Field::Artist).unwrap_or(vec![]);
             // Send to UI
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "playerLoad",
                 "title": title,
                 "artists": artists,
                 "duration": source.duration() as u64
-            })).await.ok();
+            })).ok();
             // Load
             context.player.load_file(source);
         },
@@ -414,10 +423,10 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
         Action::PlayerPlay => context.player.play(),
         Action::PlayerPause => context.player.pause(),
         Action::PlayerSeek { pos } => {
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "playerSync",
                 "playing": context.player.seek(pos)
-            })).await.ok();
+            })).ok();
         },
         Action::PlayerVolume { volume } => context.player.volume(volume),
         Action::PlayerStop => context.player.stop(),
@@ -442,28 +451,28 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
                     )?;
                 }
             }
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "quickTagLoad",
                 "data": data
-            })).await.ok();
+            })).ok();
         },
         // Save quicktag changes
         Action::QuickTagSave { changes } => {
             let tag = changes.commit()?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "quickTagSaved",
                 "path": &changes.path,
                 "file": QuickTagFile::from_tag(&changes.path, &tag)?
-            })).await.ok();
+            })).ok();
         },
         // List dir
         Action::QuickTagFolder { path, subdir } => {
             let (new_path, files) = FileBrowser::list_dir_or_default(path.clone().map(|p| PathBuf::from(p)), subdir, true, false, false)?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "quickTagFolder",
                 "files": files,
                 "path": new_path,
-            })).await.ok();
+            })).ok();
         }
         Action::SpotifyAuthorize { client_id, client_secret } => {
             // Authorize cached
@@ -478,73 +487,73 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
                 }).await??;
                 context.spotify = Some(spotify);
             }
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "spotifyAuthorized",
                 "value": true
-            })).await.ok();
+            })).ok();
             debug!("Spotify Authorized!");
         },
         // Check if authorized
         Action::SpotifyAuthorized => {
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "spotifyAuthorized",
                 "value": context.spotify.is_some()
-            })).await.ok();
+            })).ok();
         },
         Action::TagEditorFolder { path, subdir, recursive } => {
             let recursive = recursive.unwrap_or(false);
             let (new_path, files) = FileBrowser::list_dir_or_default(path.clone().map(|p| PathBuf::from(p)), subdir, true, true, recursive)?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "tagEditorFolder",
                 "files": files,
                 "path": new_path,
                 // Stateless
                 "recursive": recursive
-            })).await.ok();
+            })).ok();
         },
         // Load tags of file
         Action::TagEditorLoad { path } => {
             let data = TagEditor::load_file(&path)?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "tagEditorLoad",
                 "data": data
-            })).await.ok();
+            })).ok();
         },
         // Save changes
         Action::TagEditorSave { changes } => {
             let _tag = changes.commit()?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "tagEditorSave"
-            })).await.ok();
+            })).ok();
         },
         // Syntax highlight for renamer
         Action::RenamerSyntaxHighlight { template } => {
             let renamer = Renamer::new(TemplateParser::parse(&template));
             let html = renamer.generate_html(&template);
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "renamerSyntaxHighlight",
                 "html": html
-            })).await.ok();
+            })).ok();
         },
         // Autocomplete data
         Action::RenamerAutocomplete { template } => {
             let ac = Autocomplete::parse(&template);
             let suggestions = ac.suggest_html();
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "renamerAutocomplete",
                 "suggestions": suggestions,
                 "offset": ac.suggestion_offset()
-            })).await.ok();
+            })).ok();
         },
         // Generate new names but don't rename
         Action::RenamerPreview { config } => {
             let mut renamer = Renamer::new(TemplateParser::parse(&config.template));
             let files = AudioFileInfo::load_files_iter(&config.path, config.subfolders, None, None);
             let files = renamer.generate(files.take(3), &config).unwrap_or(vec![]);
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "renamerPreview",
                 "files": files,
-            })).await.ok();
+            })).ok();
         },
         // Start renamer
         Action::RenamerStart { config } => {
@@ -552,9 +561,9 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
             let files = AudioFileInfo::load_files_iter(&config.path, config.subfolders, None, None);
             let files = renamer.generate(files, &config)?;
             renamer.rename(&files, &config)?;
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "renamerDone",
-            })).await.ok();
+            })).ok();
         },
         // File browser list dir
         Action::FolderBrowser { path, child , base } => {
@@ -574,12 +583,12 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
                 false => FolderBrowser::list_dir(&path)?
             };
 
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "folderBrowser",
                 "entry": e,
                 "base": base,
                 "path": path
-            })).await.ok();
+            })).ok();
         },
 
         // Manually tag a file
@@ -595,69 +604,72 @@ async fn handle_message(text: &str, websocket: &mut WebSocket, context: &mut Soc
             for (platform, r) in rx {
                 match r {
                     Ok(matches) => {
-                        send_socket(websocket, json!({
+                        context.send(json!({
                             "action": "manualTag",
                             "platform": platform,
                             "status": "ok",
                             "matches": matches
-                        })).await.ok();
+                        })).ok();
                     },
                     Err(e) => {
-                        send_socket(websocket, json!({
+                        context.send(json!({
                             "action": "manualTag",
                             "platform": platform,
                             "status": "error",
                             "error": e.to_string()
-                        })).await.ok();
+                        })).ok();
                     },
                 }
             }
 
             // On done
-            send_socket(websocket, json!({
+            context.send(json!({
                 "action": "manualTagDone"
-            })).await.ok();
+            })).ok();
         },
         // Apply the tags from manual tagger
         Action::ManualTagApply { matches, path, config } => {
             match onetagger_autotag::manual_tagger_apply(matches, path, &config) {
                 Ok(_) => {
-                    send_socket(websocket, json!({
+                    context.send(json!({
                         "action": "manualTagApplied",
                         "status": "ok"
-                    })).await.ok();
+                    })).ok();
                 },
                 Err(e) => {
                     error!("Failed applying manual tag: {e}");
-                    send_socket(websocket, json!({
+                    context.send(json!({
                         "action": "manualTagApplied",
                         "status": "error",
                         "error": e.to_string()
-                    })).await.ok();
+                    })).ok();
                 },
             }
         },
 
 
         Action::RepoManifest => {
-            send_socket(websocket, json!({
+            // Fetch before sending: holding a context borrow across the await would
+            // require SocketContext: Sync (AudioPlayer's channel is not)
+            let manifest = onetagger_autotag::repo::fetch_manifest_async().await?;
+            context.send(json!({
                 "action": "repoManifest",
-                "manifest": onetagger_autotag::repo::fetch_manifest_async().await?
-            })).await.ok();
+                "manifest": manifest
+            })).ok();
         },
         Action::InstallPlatform { id, version, is_native } => {
             match onetagger_autotag::repo::install_platform(&id, &version, is_native) {
-                Ok(_) => send_socket(websocket, json!({
+                Ok(_) => context.send(json!({
                     "action": "installPlatform",
                     "status": "ok"
-                })).await.ok(),
+                })).ok(),
                 Err(e) => {
                     error!("Failed installing platform {id}@{version}: {e}");
-                    send_socket(websocket, json!({
+                    context.send(json!({
                         "action": "installPlatform",
                         "status": "error",
                         "error": e.to_string()
-                    })).await.ok()
+                    })).ok()
                 },
             };
         },

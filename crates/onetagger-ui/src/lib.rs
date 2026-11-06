@@ -22,6 +22,7 @@ use tokio::net::TcpListener;
 use onetagger_shared::{PORT, WEBSERVER_CALLBACKS};
 
 pub mod socket;
+pub mod sender;
 pub mod browser;
 pub mod quicktag;
 pub mod tageditor;

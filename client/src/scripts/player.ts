@@ -107,8 +107,7 @@ class Player {
                     }
                 }, 100);
             }
-            // Will be ignored, just for updating
-            ws.send(JSON.stringify({action: '_waveformRead'}));
+            // NOTE: bars are now pushed by the server without per-bar acks
         });
         // Start loading on connection
         ws.addEventListener('open', (_) => {

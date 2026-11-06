@@ -3627,6 +3627,7 @@ dependencies = [
  "base64",
  "directories",
  "dunce",
+ "futures-util",
  "image",
  "include_dir",
  "log",
