@@ -46,6 +46,10 @@ pub struct StartContext {
 struct WsState {
     context: StartContext,
     db: Arc<onetagger_db::Db>,
+    /// Flush/scan events broadcast to every connection
+    events: tokio::sync::broadcast::Sender<String>,
+    /// Wakes the flush worker (e.g. after a flushHint)
+    flush_wake: std::sync::mpsc::Sender<()>,
 }
 
 fn start_async_runtime(context: StartContext) -> Result<(), Error> {
@@ -56,7 +60,26 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
         error!("Failed opening library database at {:?}: {e}", db_path);
         e
     })?;
-    let state = WsState { context, db: Arc::new(db) };
+
+    // Background flusher: writes DB tag changes into the audio files.
+    // Events go to every connection; the currently playing file is skipped.
+    let (events, _) = tokio::sync::broadcast::channel::<String>(256);
+    let events_tx = events.clone();
+    let flush_wake = onetagger_db::flush::FlushWorker::spawn(
+        db_path,
+        move |event| {
+            let message = serde_json::json!({
+                "action": "trackFlushed",
+                "trackId": event.track_id,
+                "ok": event.ok,
+                "error": event.error,
+            });
+            events_tx.send(message.to_string()).ok();
+        },
+        |path| socket::is_currently_playing(path),
+    )?;
+
+    let state = WsState { context, db: Arc::new(db), events, flush_wake };
     Builder::new_multi_thread().enable_all().build()?.block_on(async move {
         // Register routes
         let app = Router::new()
@@ -144,7 +167,7 @@ async fn get_ws(ws: WebSocketUpgrade, State(state): State<WsState>) -> impl Into
     ws.on_upgrade(move |socket| {
         debug!("WS Connected!");
         async move {
-            match socket::handle_ws_connection(socket, state.context, state.db).await {
+            match socket::handle_ws_connection(socket, state.context, state.db, state.events, state.flush_wake).await {
                 Ok(_) => {},
                 Err(e) => warn!("WS connection error: {e}"),
             }

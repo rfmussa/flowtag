@@ -6,9 +6,7 @@
         <FolderManager />
         <ScanStatus class='q-ml-md' />
         <q-space />
-        <span v-if='store.flush.value.pending > 0' class='text-caption text-orange q-mr-md' title='Tag changes not yet written to files'>
-            <q-icon name='mdi-sync' /> {{ store.flush.value.pending }} pending
-        </span>
+        <FlushIndicator class='q-mr-md' />
         <q-input
             v-model='store.filter.value'
             dense outlined clearable
@@ -55,6 +53,7 @@ import { computed, onMounted, watch } from 'vue';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore } from '../scripts/tagstore';
 import FolderManager from '../components/flowtag/FolderManager.vue';
+import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
 import TagChips from '../components/flowtag/TagChips.vue';

@@ -1,7 +1,13 @@
+use std::path::{Path, PathBuf};
+use std::sync::mpsc::{channel, Sender};
+use std::time::Duration;
 use anyhow::Error;
 use rusqlite::params;
+use serde::Serialize;
+use onetagger_tag::{Tag, TagSeparators};
 
-use crate::Db;
+use crate::validate::FILE_TAG_SEPARATOR;
+use crate::{Db, FILE_TAG_FIELD};
 
 /// Max flush retries before a track is left in the error state
 pub const MAX_FLUSH_ATTEMPTS: i64 = 5;
@@ -73,6 +79,141 @@ pub fn mark_flush_error(db: &Db, track_id: i64, error: &str) -> Result<(), Error
         params![track_id, error, crate::now(), FLUSH_BACKOFF_BASE_SECS],
     )?;
     Ok(())
+}
+
+/// Seconds a track's tags must be stable before it is flushed
+pub const FLUSH_DEBOUNCE_SECS: i64 = 5;
+/// Max tracks flushed per pass
+pub const FLUSH_BATCH: usize = 16;
+/// Worker tick when nothing wakes it
+pub const FLUSH_TICK: Duration = Duration::from_secs(2);
+
+/// Result of flushing one track, broadcast to the UI
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FlushEvent {
+    pub track_id: i64,
+    pub ok: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<String>,
+}
+
+/// Write a job's tag names into its file's TAGS field and return the file's
+/// post-write (mtime, size). An empty tag list removes the field.
+fn write_tags_to_file(job: &FlushJob) -> Result<(i64, i64), Error> {
+    let path = Path::new(&job.path);
+    // allow_new: files without any existing tag chunk get one created
+    let mut tag_wrap = Tag::load_file(path, true)?;
+    tag_wrap.set_separators(&TagSeparators {
+        id3: FILE_TAG_SEPARATOR.to_string(),
+        vorbis: None,
+        mp4: FILE_TAG_SEPARATOR.to_string(),
+    });
+    let tag = tag_wrap.tag_mut();
+    if job.tag_names.is_empty() {
+        tag.remove_raw(FILE_TAG_FIELD);
+    } else {
+        tag.set_raw(FILE_TAG_FIELD, job.tag_names.clone(), true);
+    }
+    tag.save_file(path)?;
+
+    let meta = std::fs::metadata(path)?;
+    let mtime = meta
+        .modified()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    Ok((mtime, meta.len() as i64))
+}
+
+/// One flush pass: write every due track (up to FLUSH_BATCH), except those the
+/// caller asks to skip (e.g. the file currently playing). Skipped tracks stay
+/// due; failures are recorded with backoff. Returns one event per attempt.
+pub fn flush_pass(db: &Db, debounce_secs: i64, skip: &dyn Fn(&str) -> bool) -> Result<Vec<FlushEvent>, Error> {
+    let jobs = due_for_flush(db, crate::now(), debounce_secs, FLUSH_BATCH)?;
+    let mut events = Vec::with_capacity(jobs.len());
+    for job in jobs {
+        if skip(&job.path) {
+            debug!("Flush: skipping in-use file {}", job.path);
+            continue;
+        }
+        match write_tags_to_file(&job) {
+            Ok((mtime, size)) => {
+                mark_flushed(db, job.track_id, mtime, size)?;
+                info!("Flushed tags to {}", job.path);
+                events.push(FlushEvent { track_id: job.track_id, ok: true, error: None });
+            }
+            Err(e) => {
+                warn!("Flush failed for {}: {e}", job.path);
+                mark_flush_error(db, job.track_id, &e.to_string())?;
+                events.push(FlushEvent { track_id: job.track_id, ok: false, error: Some(e.to_string()) });
+            }
+        }
+    }
+    Ok(events)
+}
+
+/// Make already-dirty tracks due immediately (never dirties a clean track)
+pub fn expedite(db: &Db, track_id: Option<i64>) -> Result<(), Error> {
+    match track_id {
+        Some(id) => db.conn().execute(
+            "UPDATE tracks SET tag_updated_at = 0 WHERE needs_flush = 1 AND id = ?1",
+            [id],
+        )?,
+        None => db.conn().execute("UPDATE tracks SET tag_updated_at = 0 WHERE needs_flush = 1", [])?,
+    };
+    Ok(())
+}
+
+/// Reset attempts/backoff for errored tracks so the worker retries them
+pub fn retry_errors(db: &Db) -> Result<(), Error> {
+    db.conn().execute(
+        "UPDATE tracks SET flush_attempts = 0, next_flush_attempt_at = 0, tag_updated_at = 0
+         WHERE needs_flush = 1 AND last_flush_error IS NOT NULL",
+        [],
+    )?;
+    Ok(())
+}
+
+/// Background flusher: an OS thread with its own DB connection that drains the
+/// dirty queue every FLUSH_TICK or when woken through the returned sender.
+pub struct FlushWorker;
+
+impl FlushWorker {
+    /// Spawn the worker. `on_event` is called for every flush attempt (from the
+    /// worker thread); `skip` protects files that must not be written right now.
+    pub fn spawn(
+        db_path: PathBuf,
+        on_event: impl Fn(FlushEvent) + Send + 'static,
+        skip: impl Fn(&str) -> bool + Send + 'static,
+    ) -> Result<Sender<()>, Error> {
+        // Open eagerly so a broken DB path fails at startup, not silently in the thread
+        let db = Db::open(&db_path)?;
+        let (wake_tx, wake_rx) = channel::<()>();
+        std::thread::Builder::new()
+            .name("flush-worker".to_string())
+            .spawn(move || {
+                info!("Flush worker started");
+                loop {
+                    match wake_rx.recv_timeout(FLUSH_TICK) {
+                        // Wake or tick: run a pass below
+                        Ok(()) | Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+                        // All senders gone: the app is shutting down
+                        Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                    }
+                    match flush_pass(&db, FLUSH_DEBOUNCE_SECS, &skip) {
+                        Ok(events) => {
+                            for event in events {
+                                on_event(event);
+                            }
+                        }
+                        Err(e) => error!("Flush pass failed: {e}"),
+                    }
+                }
+                info!("Flush worker stopped");
+            })?;
+        Ok(wake_tx)
+    }
 }
 
 /// Pending count + current errors, for the UI status indicator

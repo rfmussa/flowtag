@@ -105,6 +105,7 @@ enum Action {
     #[serde(rename_all = "camelCase")]
     FlushHint { track_id: Option<i64> },
     FlushStatusGet,
+    FlushRetry,
 }
 
 
@@ -133,6 +134,24 @@ impl TaggerConfigs {
     }
 }
 
+/// Path of the file loaded in any connection's player; the flush worker must
+/// not write to a file that is (or may still be) held open for playback.
+static CURRENT_PLAYER_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// Whether `path` is the file currently loaded for playback
+pub(crate) fn is_currently_playing(path: &str) -> bool {
+    CURRENT_PLAYER_PATH
+        .lock()
+        .map(|p| p.as_deref() == Some(Path::new(path)))
+        .unwrap_or(false)
+}
+
+fn set_currently_playing(path: &Path) {
+    if let Ok(mut p) = CURRENT_PLAYER_PATH.lock() {
+        *p = Some(path.to_owned());
+    }
+}
+
 // Shared variables in socket
 pub(crate) struct SocketContext {
     player: AudioPlayer,
@@ -140,16 +159,23 @@ pub(crate) struct SocketContext {
     start_context: StartContext,
     pub(crate) sender: MessageSender,
     pub(crate) db: Arc<onetagger_db::Db>,
+    pub(crate) flush_wake: std::sync::mpsc::Sender<()>,
 }
 
 impl SocketContext {
-    pub fn new(start_context: StartContext, sender: MessageSender, db: Arc<onetagger_db::Db>) -> SocketContext {
+    pub fn new(
+        start_context: StartContext,
+        sender: MessageSender,
+        db: Arc<onetagger_db::Db>,
+        flush_wake: std::sync::mpsc::Sender<()>,
+    ) -> SocketContext {
         SocketContext {
             player: AudioPlayer::new(),
             spotify: None,
             start_context,
             sender,
             db,
+            flush_wake,
         }
     }
 
@@ -194,12 +220,37 @@ impl InitData {
     }
 }
 
-pub(crate) async fn handle_ws_connection(websocket: WebSocket, context: StartContext, db: Arc<onetagger_db::Db>) -> Result<(), Error> {
+pub(crate) async fn handle_ws_connection(
+    websocket: WebSocket,
+    context: StartContext,
+    db: Arc<onetagger_db::Db>,
+    events: tokio::sync::broadcast::Sender<String>,
+    flush_wake: std::sync::mpsc::Sender<()>,
+) -> Result<(), Error> {
     // Split the socket: all writes go through a dedicated writer task, so handlers
     // and background jobs can push messages concurrently with the read loop.
     let (sink, mut stream) = websocket.split();
     let sender = MessageSender::spawn(sink);
-    let mut context = SocketContext::new(context, sender, db);
+
+    // Forward broadcast events (flusher results) to this connection
+    let mut events_rx = events.subscribe();
+    let events_sender = sender.clone();
+    tokio::spawn(async move {
+        loop {
+            match events_rx.recv().await {
+                Ok(text) => {
+                    if events_sender.send_text(text).is_err() {
+                        break;
+                    }
+                }
+                // Missed some events under load: keep forwarding newer ones
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(tokio::sync::broadcast::error::RecvError::Closed) => break,
+            }
+        }
+    });
+
+    let mut context = SocketContext::new(context, sender, db, flush_wake);
 
     while let Some(message) = stream.next().await {
         match message {
@@ -432,6 +483,8 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         },
         // Load player file
         Action::PlayerLoad { path } => {
+            // Protect the file from the flush worker while it may be held for playback
+            set_currently_playing(&path);
             let source = AudioSources::from_path(&path)?;
             // Meta
             let tag = Tag::load_file(&path, false)?;
@@ -725,6 +778,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::TrackRemoveTag { track_id, tag_id } => tagflow::track_remove_tag(context, track_id, tag_id)?,
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
+        Action::FlushRetry => tagflow::flush_retry(context)?,
     }
    
     Ok(())

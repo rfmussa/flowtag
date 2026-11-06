@@ -35,6 +35,11 @@ impl MessageSender {
     /// Serialize and queue a message. Fails when serialization fails or the connection is gone.
     pub fn send(&self, message: impl Serialize) -> Result<(), Error> {
         let text = serde_json::to_string(&message)?;
+        self.send_text(text)
+    }
+
+    /// Queue an already-serialized message
+    pub fn send_text(&self, text: String) -> Result<(), Error> {
         self.tx.send(text).map_err(|_| anyhow!("Websocket connection closed"))?;
         Ok(())
     }

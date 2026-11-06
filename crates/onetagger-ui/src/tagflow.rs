@@ -151,12 +151,18 @@ pub(crate) fn track_remove_tag(context: &SocketContext, track_id: i64, tag_id: i
     }))
 }
 
+/// Expedite pending flushes (never dirties a clean track) and wake the worker
 pub(crate) fn flush_hint(context: &SocketContext, track_id: Option<i64>) -> Result<(), Error> {
-    if let Some(track_id) = track_id {
-        tracks::mark_dirty(&context.db, track_id)?;
-    }
-    // Phase 4: wake flusher
+    flush::expedite(&context.db, track_id)?;
+    context.flush_wake.send(()).ok();
     Ok(())
+}
+
+/// Reset errored tracks for another round of flush attempts
+pub(crate) fn flush_retry(context: &SocketContext) -> Result<(), Error> {
+    flush::retry_errors(&context.db)?;
+    context.flush_wake.send(()).ok();
+    flush_status_get(context)
 }
 
 pub(crate) fn flush_status_get(context: &SocketContext) -> Result<(), Error> {
