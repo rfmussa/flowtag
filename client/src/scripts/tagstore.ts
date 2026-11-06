@@ -1,4 +1,5 @@
 import { ref, Ref } from 'vue';
+import { Notify } from 'quasar';
 import { get1t } from './onetagger';
 
 // Types mirroring onetagger-db models (serde camelCase)
@@ -246,6 +247,18 @@ export class TagStore {
                         t.id === json.trackId ? { ...t, needsFlush: false } : t);
                 }
                 return true;
+            case 'rekordboxExportProgress':
+                return true;
+            case 'rekordboxExportDone': {
+                const r = json.result ?? {};
+                Notify.create({
+                    message: `Export done: ${r.written ?? 0} written, ${r.unchanged ?? 0} unchanged` +
+                        (r.failed ? `, ${r.failed} FAILED` : ''),
+                    color: r.failed ? 'negative' : 'positive',
+                    timeout: 4000,
+                });
+                return true;
+            }
         }
         return false;
     }

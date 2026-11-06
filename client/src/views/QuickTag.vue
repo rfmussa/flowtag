@@ -16,6 +16,9 @@
         />
         <q-toggle v-model='store.untaggedOnly.value' label='Untagged only' dense class='q-mr-md' />
         <q-btn dense flat no-caps icon='mdi-tag-multiple' label='Manage' class='q-px-sm' @click='openManager'></q-btn>
+        <q-btn dense flat no-caps icon='mdi-export' label='Export' class='q-px-sm' @click='confirmExport'>
+            <q-tooltip>Write tags as #hashtags into each file's comment (Rekordbox-searchable)</q-tooltip>
+        </q-btn>
         <q-btn
             dense flat round
             class='q-ml-xs'
@@ -66,6 +69,7 @@
 
 <script lang='ts' setup>
 import { computed, onMounted, ref, watch } from 'vue';
+import { Dialog, Notify } from 'quasar';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore } from '../scripts/tagstore';
 import FolderManager from '../components/flowtag/FolderManager.vue';
@@ -105,6 +109,19 @@ function blurTarget(e: Event) {
 function openManager(e: Event) {
     blurTarget(e);
     managerOpen.value = true;
+}
+
+function confirmExport(e: Event) {
+    blurTarget(e);
+    Dialog.create({
+        title: 'Export to comments',
+        message: 'Append your tags as #hashtags to every tagged file\'s comment field (searchable in Rekordbox). Existing comment text is kept; re-exporting updates the hashtag block. Continue?',
+        cancel: true,
+        dark: true,
+    }).onOk(() => {
+        $1t.send('rekordboxExport', { mode: 'comment' });
+        Notify.create({ message: 'Export started…', timeout: 1500 });
+    });
 }
 
 function togglePalette(e: Event) {
