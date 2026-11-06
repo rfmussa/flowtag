@@ -179,6 +179,20 @@ class Player {
         get1t().send("playerVolume", {volume});
     }
 
+    // FlowTag path: one round-trip start + DB-cached waveform by track id
+    startTrack(path: string, trackId: number, title: string, artist: string, autoplay: boolean) {
+        const $1t = get1t();
+        this.path = path;
+        this.title = title;
+        this.artists = artist ? [artist] : [];
+        this.position = 0;
+        this.playing = autoplay;
+        this.wasPlaying = false;
+        this.generateDefaultWaveform();
+        $1t.send('playerStart', { path, autoplay });
+        $1t.send('waveformGet', { trackId });
+    }
+
     // Load track to play
     loadTrack(path: string) {
         const $1t = get1t();

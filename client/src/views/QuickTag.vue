@@ -73,8 +73,8 @@ watch(store.selectedId, (id) => {
     const track = store.selectedTrack();
     if (id === undefined || !track || track.missing) return;
     const player = $1t.player.value;
-    player.wasPlaying = player.playing || player.wasPlaying;
-    player.loadTrack(track.path);
+    const autoplay = player.playing || player.wasPlaying;
+    player.startTrack(track.path, track.id, track.title, track.artist, autoplay);
     // Hint the server to flush the previously edited track soon
     $1t.send('flushHint', {});
 });

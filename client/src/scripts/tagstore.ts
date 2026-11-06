@@ -225,6 +225,21 @@ export class TagStore {
             case 'flushStatus':
                 this.flush.value = { pending: json.pending ?? 0, errors: json.errors ?? [] };
                 return true;
+            case 'playerStarted': {
+                const player = get1t().player.value;
+                player.duration = json.duration || 1;
+                player.position = 0;
+                return true;
+            }
+            case 'trackWaveform': {
+                // Ignore waveforms of tracks the user already moved away from
+                if (json.trackId !== this.selectedId.value) return true;
+                const player = get1t().player.value;
+                if (Array.isArray(json.bars) && json.bars.length > 0) {
+                    player.waveform = json.bars;
+                }
+                return true;
+            }
             case 'trackFlushed':
                 if (json.ok) {
                     this.tracks.value = this.tracks.value.map((t) =>

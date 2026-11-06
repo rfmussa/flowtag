@@ -65,32 +65,39 @@ impl AudioPlayer {
                         // Save source
                         source = Some(audio_source);
                     },
-                    // Seek by re-creating new source
                     PlayerAction::Seek(pos) => {
-                        if source.is_some() {
-                            // Create new sink
-                            let paused = sink.is_paused();
-                            sink.stop();
-                            sink = Sink::try_new(&stream_handle).unwrap();
-                            sink.set_volume(volume);
-                            if paused {
-                                sink.pause();
-                            }
-                            // Add source again
-                            let s = source.as_ref().unwrap();
-                            if let Ok(mut s) = s.get_source() {
-                                // Skip manually because some sources are kinda bugged
-                                let n_skip = s.sample_rate() as f32 * s.channels() as f32 * pos as f32 / 1000.0;
-                                for _ in 0..n_skip as u64 {
-                                    if s.next().is_none() {
-                                        break;
-                                    }
-                                }
-                                sink.append(s);
-                            }
-                            // Sync
-                            tx.send(!sink.is_paused()).ok();
+                        if source.is_none() {
+                            // Always reply, or AudioPlayer::seek would block forever
+                            tx.send(false).ok();
+                            continue;
                         }
+                        // In-place seek: symphonia-backed decoders (mp3/flac/m4a/wav)
+                        // support it, making seeks near-instant
+                        if sink.try_seek(std::time::Duration::from_millis(pos)).is_ok() {
+                            tx.send(!sink.is_paused()).ok();
+                            continue;
+                        }
+                        // Fallback for sources without seek support (AIFF, ALAC):
+                        // re-create the source and skip samples from the start
+                        let paused = sink.is_paused();
+                        sink.stop();
+                        sink = Sink::try_new(&stream_handle).unwrap();
+                        sink.set_volume(volume);
+                        if paused {
+                            sink.pause();
+                        }
+                        let s = source.as_ref().unwrap();
+                        if let Ok(mut s) = s.get_source() {
+                            let n_skip = s.sample_rate() as f32 * s.channels() as f32 * pos as f32 / 1000.0;
+                            for _ in 0..n_skip as u64 {
+                                if s.next().is_none() {
+                                    break;
+                                }
+                            }
+                            sink.append(s);
+                        }
+                        // Sync
+                        tx.send(!sink.is_paused()).ok();
                     }
                 }
             }

@@ -55,6 +55,9 @@ enum Action {
     InstallPlatform { id: String, version: String, is_native: bool },
 
     Waveform { path: PathBuf },
+    PlayerStart { path: PathBuf, autoplay: bool },
+    #[serde(rename_all = "camelCase")]
+    WaveformGet { track_id: i64 },
     PlayerLoad { path: PathBuf },
     PlayerPlay, 
     PlayerPause,
@@ -481,6 +484,22 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 }
             });
         },
+        // Load + optionally start playback in one round trip (FlowTag)
+        Action::PlayerStart { path, autoplay } => {
+            set_currently_playing(&path);
+            // Decoder open touches the file: keep it off the async threads
+            let source = tokio::task::spawn_blocking(move || AudioSources::from_path(&path)).await??;
+            context.send(json!({
+                "action": "playerStarted",
+                "duration": source.duration() as u64
+            })).ok();
+            context.player.load_file(source);
+            if autoplay {
+                context.player.play();
+            }
+        },
+        // Cached waveform by track id (FlowTag)
+        Action::WaveformGet { track_id } => tagflow::waveform_get(context, track_id)?,
         // Load player file
         Action::PlayerLoad { path } => {
             // Protect the file from the flush worker while it may be held for playback

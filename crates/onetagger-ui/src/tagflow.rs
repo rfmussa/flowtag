@@ -165,6 +165,44 @@ pub(crate) fn flush_retry(context: &SocketContext) -> Result<(), Error> {
     flush_status_get(context)
 }
 
+/// Number of waveform bars sent to the UI
+const WAVEFORM_BARS: usize = 180;
+/// Stored bar scale: f32 (0..=1) quantized to a byte
+const WAVEFORM_SCALE: f32 = 255.0;
+
+fn waveform_message(track_id: i64, bars: &[u8]) -> Value {
+    let bars: Vec<f32> = bars.iter().map(|b| *b as f32 / WAVEFORM_SCALE).collect();
+    json!({ "action": "trackWaveform", "trackId": track_id, "bars": bars })
+}
+
+/// Waveform by track id: served from the DB cache, generated (and cached) otherwise
+pub(crate) fn waveform_get(context: &SocketContext, track_id: i64) -> Result<(), Error> {
+    if let Some(bars) = tracks::get_waveform(&context.db, track_id)? {
+        return context.send(waveform_message(track_id, &bars));
+    }
+    let sender = context.sender.clone();
+    let db = context.db.clone();
+    tokio::task::spawn_blocking(move || {
+        let result: Result<(), Error> = (|| {
+            let path = tracks::get_track_path(&db, track_id)?;
+            let source = onetagger_player::AudioSources::from_path(&path)?;
+            let (rx, _cancel) = source.generate_waveform(WAVEFORM_BARS as i16)?;
+            let mut bars: Vec<u8> = rx
+                .into_iter()
+                .map(|w| (w.clamp(0.0, 1.0) * WAVEFORM_SCALE) as u8)
+                .collect();
+            bars.resize(WAVEFORM_BARS, 0);
+            tracks::set_waveform(&db, track_id, &bars)?;
+            sender.send(waveform_message(track_id, &bars))?;
+            Ok(())
+        })();
+        if let Err(e) = result {
+            warn!("Waveform generation failed for track {track_id}: {e}");
+        }
+    });
+    Ok(())
+}
+
 pub(crate) fn flush_status_get(context: &SocketContext) -> Result<(), Error> {
     let (pending, errors) = flush::flush_status(&context.db)?;
     let errors: Vec<Value> = errors.into_iter()

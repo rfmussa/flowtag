@@ -164,6 +164,11 @@ pub fn mark_missing(db: &Db, folder_id: i64, seen_paths: &[String]) -> Result<us
     Ok(n)
 }
 
+/// Path of one track
+pub fn get_track_path(db: &Db, track_id: i64) -> Result<String, Error> {
+    Ok(db.conn().query_row("SELECT path FROM tracks WHERE id = ?1", [track_id], |r| r.get(0))?)
+}
+
 /// Cached waveform bars for a track (None when absent)
 pub fn get_waveform(db: &Db, track_id: i64) -> Result<Option<Vec<u8>>, Error> {
     let conn = db.conn();
