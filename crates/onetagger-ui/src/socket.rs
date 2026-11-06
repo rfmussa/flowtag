@@ -23,6 +23,7 @@ use futures_util::StreamExt;
 
 use crate::StartContext;
 use crate::sender::MessageSender;
+use crate::tagflow;
 use crate::quicktag::{QuickTag, QuickTagFile, QuickTagData};
 use crate::tageditor::TagEditor;
 use crate::browser::{FileBrowser, FolderBrowser};
@@ -82,6 +83,28 @@ enum Action {
 
     ManualTag { config: TaggerConfig, path: PathBuf },
     ManualTagApply { matches: Vec<TrackMatch>, path: PathBuf, config: TaggerConfig },
+
+    // FlowTag
+    TagFolderAdd { path: String },
+    TagFolderRemove { id: i64 },
+    TagFolderList,
+    TagLibraryScan { full: Option<bool> },
+    TagTracksLoad,
+    TagPoolLoad,
+    TagCreate { name: String, color: Option<String> },
+    #[serde(rename_all = "camelCase")]
+    TagUpdate { id: i64, name: Option<String>, color: Option<String>, group_id: Option<i64>, clear_group: Option<bool>, keybind: Option<Value>, clear_keybind: Option<bool> },
+    TagDelete { id: i64 },
+    GroupCreate { name: String, color: String },
+    GroupUpdate { id: i64, name: Option<String>, color: Option<String>, position: Option<i64> },
+    GroupDelete { id: i64 },
+    #[serde(rename_all = "camelCase")]
+    TrackAddTag { track_id: i64, name: String },
+    #[serde(rename_all = "camelCase")]
+    TrackRemoveTag { track_id: i64, tag_id: i64 },
+    #[serde(rename_all = "camelCase")]
+    FlushHint { track_id: Option<i64> },
+    FlushStatusGet,
 }
 
 
@@ -111,25 +134,27 @@ impl TaggerConfigs {
 }
 
 // Shared variables in socket
-struct SocketContext {
+pub(crate) struct SocketContext {
     player: AudioPlayer,
     spotify: Option<Spotify>,
     start_context: StartContext,
-    sender: MessageSender,
+    pub(crate) sender: MessageSender,
+    pub(crate) db: Arc<onetagger_db::Db>,
 }
 
 impl SocketContext {
-    pub fn new(start_context: StartContext, sender: MessageSender) -> SocketContext {
+    pub fn new(start_context: StartContext, sender: MessageSender, db: Arc<onetagger_db::Db>) -> SocketContext {
         SocketContext {
             player: AudioPlayer::new(),
             spotify: None,
             start_context,
             sender,
+            db,
         }
     }
 
     /// Queue a message for this connection (safe to call from any task/thread via a cloned sender)
-    pub fn send(&self, message: impl Serialize) -> Result<(), Error> {
+    pub(crate) fn send(&self, message: impl Serialize) -> Result<(), Error> {
         self.sender.send(message)
     }
 }
@@ -169,12 +194,12 @@ impl InitData {
     }
 }
 
-pub(crate) async fn handle_ws_connection(websocket: WebSocket, context: StartContext) -> Result<(), Error> {
+pub(crate) async fn handle_ws_connection(websocket: WebSocket, context: StartContext, db: Arc<onetagger_db::Db>) -> Result<(), Error> {
     // Split the socket: all writes go through a dedicated writer task, so handlers
     // and background jobs can push messages concurrently with the read loop.
     let (sink, mut stream) = websocket.split();
     let sender = MessageSender::spawn(sink);
-    let mut context = SocketContext::new(context, sender);
+    let mut context = SocketContext::new(context, sender, db);
 
     while let Some(message) = stream.next().await {
         match message {
@@ -677,8 +702,29 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             };
         },
 
-        
-        
+        // FlowTag
+        Action::TagFolderAdd { path } => tagflow::folder_add(context, &path)?,
+        Action::TagFolderRemove { id } => tagflow::folder_remove(context, id)?,
+        Action::TagFolderList => tagflow::folder_list(context)?,
+        Action::TagLibraryScan { full } => tagflow::library_scan(context, full.unwrap_or(false)),
+        Action::TagTracksLoad => tagflow::tracks_load(context)?,
+        Action::TagPoolLoad => tagflow::pool_load(context)?,
+        Action::TagCreate { name, color } => tagflow::tag_create(context, &name, color.as_deref())?,
+        Action::TagUpdate { id, name, color, group_id, clear_group, keybind, clear_keybind } => {
+            tagflow::tag_update(context, id, tagflow::TagPatch {
+                name, color, group_id, clear_group, keybind, clear_keybind
+            })?
+        },
+        Action::TagDelete { id } => tagflow::tag_delete(context, id)?,
+        Action::GroupCreate { name, color } => tagflow::group_create(context, &name, &color)?,
+        Action::GroupUpdate { id, name, color, position } => {
+            tagflow::group_update(context, id, name.as_deref(), color.as_deref(), position)?
+        },
+        Action::GroupDelete { id } => tagflow::group_delete(context, id)?,
+        Action::TrackAddTag { track_id, name } => tagflow::track_add_tag(context, track_id, &name)?,
+        Action::TrackRemoveTag { track_id, tag_id } => tagflow::track_remove_tag(context, track_id, tag_id)?,
+        Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
+        Action::FlushStatusGet => tagflow::flush_status_get(context)?,
     }
    
     Ok(())

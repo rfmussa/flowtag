@@ -4,6 +4,7 @@
 #[macro_use] extern crate onetagger_shared;
 
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use anyhow::Error;
 use axum::body::Body;
@@ -19,13 +20,14 @@ use serde::{Serialize, Deserialize};
 use quicktag::QuickTagFile;
 use tokio::runtime::Builder;
 use tokio::net::TcpListener;
-use onetagger_shared::{PORT, WEBSERVER_CALLBACKS};
+use onetagger_shared::{PORT, WEBSERVER_CALLBACKS, Settings};
 
 pub mod socket;
 pub mod sender;
 pub mod browser;
 pub mod quicktag;
 pub mod tageditor;
+pub mod tagflow;
 
 static CLIENT_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../client/dist");
 
@@ -39,8 +41,22 @@ pub struct StartContext {
     pub browser: bool,
 }
 
+/// Shared axum state for the websocket route
+#[derive(Clone)]
+struct WsState {
+    context: StartContext,
+    db: Arc<onetagger_db::Db>,
+}
+
 fn start_async_runtime(context: StartContext) -> Result<(), Error> {
     let expose = context.expose;
+    // Library database is opened once and shared by all connections
+    let db_path = Settings::get_folder()?.join("onetagger.db");
+    let db = onetagger_db::Db::open(&db_path).map_err(|e| {
+        error!("Failed opening library database at {:?}: {e}", db_path);
+        e
+    })?;
+    let state = WsState { context, db: Arc::new(db) };
     Builder::new_multi_thread().enable_all().build()?.block_on(async move {
         // Register routes
         let app = Router::new()
@@ -50,7 +66,7 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
             .route("/spotify", get(get_spotify_callback))
             .route("/{*path}", get(get_static_file))
             .route("/", get(get_static_file))
-            .with_state(context);
+            .with_state(state);
 
         // Start http server
         let host = match expose {
@@ -124,11 +140,11 @@ async fn get_audio(Query(GetQueryPath { path }): Query<GetQueryPath>) -> impl In
 }
 
 /// WS connection
-async fn get_ws(ws: WebSocketUpgrade, State(context): State<StartContext>) -> impl IntoResponse {
+async fn get_ws(ws: WebSocketUpgrade, State(state): State<WsState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| {
         debug!("WS Connected!");
         async move {
-            match socket::handle_ws_connection(socket, context).await {
+            match socket::handle_ws_connection(socket, state.context, state.db).await {
                 Ok(_) => {},
                 Err(e) => warn!("WS connection error: {e}"),
             }
