@@ -143,7 +143,10 @@ pub fn upsert_tracks(db: &Db, folder_id: i64, tracks: &[ScannedTrack]) -> Result
     Ok((added, updated))
 }
 
-/// Mark tracks under a folder that are NOT in `seen_paths` as missing. Returns how many.
+/// Sync the missing flag for a folder: tracks NOT in `seen_paths` become missing,
+/// and previously-missing tracks that are seen again recover (their stats may be
+/// unchanged, so the upsert diff alone would never clear the flag).
+/// Returns how many went missing.
 pub fn mark_missing(db: &Db, folder_id: i64, seen_paths: &[String]) -> Result<usize, Error> {
     let mut conn = db.conn();
     let tx = conn.transaction()?;
@@ -156,9 +159,16 @@ pub fn mark_missing(db: &Db, folder_id: i64, seen_paths: &[String]) -> Result<us
         }
     }
     let n = tx.execute(
-        "UPDATE tracks SET missing = 1 WHERE folder_id = ?1 AND path NOT IN (SELECT path FROM seen)",
+        "UPDATE tracks SET missing = 1 WHERE folder_id = ?1 AND missing = 0 AND path NOT IN (SELECT path FROM seen)",
         [folder_id],
     )?;
+    let recovered = tx.execute(
+        "UPDATE tracks SET missing = 0 WHERE folder_id = ?1 AND missing = 1 AND path IN (SELECT path FROM seen)",
+        [folder_id],
+    )?;
+    if recovered > 0 {
+        info!("{recovered} missing track(s) reappeared");
+    }
     tx.execute("DELETE FROM seen", [])?;
     tx.commit()?;
     Ok(n)
@@ -203,7 +213,7 @@ pub fn set_duration(db: &Db, track_id: i64, duration_ms: i64) -> Result<(), Erro
 /// Mark one track as needing a flush (used by flushHint and tests)
 pub fn mark_dirty(db: &Db, track_id: i64) -> Result<(), Error> {
     db.conn().execute(
-        "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2 WHERE id = ?1",
+        "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
         params![track_id, now()],
     )?;
     Ok(())
@@ -301,6 +311,21 @@ mod tests {
         let tracks = list_tracks(&db).unwrap();
         assert!(tracks.iter().find(|t| t.path == "/b.mp3").unwrap().missing);
         assert!(!tracks.iter().find(|t| t.path == "/a.mp3").unwrap().missing);
+    }
+
+    #[test]
+    fn missing_track_recovers_when_seen_again() {
+        let (dir, db) = test_db();
+        let root = dir.path().to_string_lossy().to_string();
+        let f = add_folder(&db, &root).unwrap();
+        upsert_tracks(&db, f.id, &[scanned("/a.mp3", "A", &[])]).unwrap();
+        // Vanishes on one scan...
+        mark_missing(&db, f.id, &[]).unwrap();
+        assert!(list_tracks(&db).unwrap()[0].missing);
+        // ...and reappears with UNCHANGED mtime/size (e.g. drive replugged): the
+        // upsert diff skips it, so mark_missing alone must clear the flag
+        mark_missing(&db, f.id, &["/a.mp3".to_string()]).unwrap();
+        assert!(!list_tracks(&db).unwrap()[0].missing, "reappeared track stayed missing");
     }
 
     #[test]

@@ -103,17 +103,7 @@ fn is_audio_file(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
-/// File stats as (mtime secs, size)
-fn file_stats(path: &Path) -> Option<(i64, i64)> {
-    let meta = std::fs::metadata(path).ok()?;
-    let mtime = meta
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs() as i64;
-    Some((mtime, meta.len() as i64))
-}
+use crate::file_stats;
 
 /// Scan all library roots: walk files, parse new/changed ones in parallel
 /// (everything when `full`), upsert, and mark vanished tracks missing.
@@ -123,6 +113,14 @@ pub fn scan(db: &Db, full: bool, progress: impl Fn(usize, usize) + Sync) -> Resu
     let mut result = ScanResult::default();
 
     for folder in tracks::list_folders(db)? {
+        // An unreachable root (unplugged drive, renamed mount) must not wipe the
+        // folder's library state by marking every track missing
+        if !Path::new(&folder.path).is_dir() {
+            warn!("Scan: library root unreachable, skipping: {}", folder.path);
+            result.failed += 1;
+            continue;
+        }
+
         // 1. Walk the tree
         let mut seen: Vec<(String, i64, i64)> = vec![];
         for entry in WalkDir::new(&folder.path).follow_links(true) {
@@ -234,5 +232,30 @@ mod tests {
         assert_eq!(res.removed, 1);
         let tracks = list_tracks(&db).unwrap();
         assert!(tracks.iter().find(|t| t.title == "My Track").unwrap().missing);
+    }
+
+    #[test]
+    fn unreachable_root_does_not_mark_everything_missing() {
+        let (dir, db) = test_db();
+        let root = dir.path().join("music");
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("a.mp3"), b"x").unwrap();
+        add_folder(&db, &root.to_string_lossy()).unwrap();
+        assert_eq!(scan(&db, false, |_, _| {}).unwrap().added, 1);
+
+        // The whole root disappears (unplugged drive): tracks must NOT be
+        // flagged missing, and the scan reports the failure instead
+        std::fs::remove_dir_all(&root).unwrap();
+        let res = scan(&db, false, |_, _| {}).unwrap();
+        assert_eq!(res.removed, 0, "unplugged root wiped the library state");
+        assert!(res.failed >= 1);
+        assert!(!list_tracks(&db).unwrap()[0].missing);
+
+        // Root returns with the same file (same stats): track stays present
+        std::fs::create_dir(&root).unwrap();
+        std::fs::write(root.join("a.mp3"), b"x").unwrap();
+        let res = scan(&db, false, |_, _| {}).unwrap();
+        assert_eq!(res.removed, 0);
+        assert!(!list_tracks(&db).unwrap()[0].missing);
     }
 }

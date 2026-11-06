@@ -525,7 +525,13 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             })).ok();
         },
         Action::PlayerVolume { volume } => context.player.volume(volume),
-        Action::PlayerStop => context.player.stop(),
+        Action::PlayerStop => {
+            context.player.stop();
+            // Release the flush-worker guard: the file handle is dropped with the sink
+            if let Ok(mut p) = CURRENT_PLAYER_PATH.lock() {
+                *p = None;
+            }
+        },
         Action::SpotifyAuthorize { client_id, client_secret } => {
             // Authorize cached
             if let Some(spotify) = Spotify::try_cached_token(&client_id, &client_secret) {

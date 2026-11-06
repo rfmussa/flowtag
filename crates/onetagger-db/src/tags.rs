@@ -140,7 +140,7 @@ pub fn delete_tag(db: &Db, id: i64) -> Result<(), Error> {
 /// Mark every track carrying `tag_id` as needing a file flush
 fn mark_tag_tracks_dirty(conn: &Connection, tag_id: i64) -> Result<(), Error> {
     conn.execute(
-        "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2
+        "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1
          WHERE id IN (SELECT track_id FROM track_tags WHERE tag_id = ?1)",
         params![tag_id, now()],
     )?;
@@ -169,7 +169,7 @@ pub fn add_tag_to_track(db: &Db, track_id: i64, name: &str) -> Result<(Vec<i64>,
     )?;
     if n > 0 {
         conn.execute(
-            "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2 WHERE id = ?1",
+            "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
             params![track_id, now()],
         )?;
     }
@@ -185,7 +185,7 @@ pub fn remove_tag_from_track(db: &Db, track_id: i64, tag_id: i64) -> Result<Vec<
     )?;
     if n > 0 {
         conn.execute(
-            "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2 WHERE id = ?1",
+            "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
             params![track_id, now()],
         )?;
     }

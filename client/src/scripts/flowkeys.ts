@@ -15,6 +15,9 @@ import { Keybind } from './utils';
  *             per-tag hotkeys toggle their tag on the selected track
  */
 export function handleFlowKeys(event: KeyboardEvent): boolean {
+    // Never act behind an open dialog (export confirm, settings, tag manager...)
+    if (document.querySelector('.q-dialog')) return false;
+
     const $1t = get1t();
     const store = getTagStore();
     const player = $1t.player.value;
@@ -55,7 +58,7 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         case 'Numpad3':
             player.seek(Math.round(player.duration * 0.75));
             return true;
-        case 'Tab':
+        // NOTE: Tab is deliberately NOT bound — it keeps normal focus navigation
         case 'KeyT':
             store.focusInputSignal.value++;
             return true;
@@ -64,9 +67,11 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     const selected = store.selectedTrack();
     if (!selected) return false;
 
-    // Done: hint an immediate flush and move on to the next untagged track
+    // Done: hint an immediate flush and move on to the next untagged track,
+    // which starts playing (spec: done = save + advance + autoplay)
     if (event.code === 'KeyD' && !event.ctrlKey && !event.metaKey) {
         $1t.send('flushHint', { trackId: selected.id });
+        player.wasPlaying = true;
         store.selectNextUntagged();
         return true;
     }

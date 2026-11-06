@@ -23,6 +23,11 @@ pub struct FlushJob {
     pub format: String,
     /// Tag names in display order
     pub tag_names: Vec<String>,
+    /// Version snapshot: the dirty flag is only cleared if it still matches
+    pub tag_version: i64,
+    /// Stats as known to the DB (detects external edits before we write)
+    pub mtime: i64,
+    pub size: i64,
 }
 
 /// Tracks whose tags changed at least `debounce_secs` ago (or with `debounce_secs` = 0, all
@@ -30,7 +35,7 @@ pub struct FlushJob {
 pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Result<Vec<FlushJob>, Error> {
     let conn = db.conn();
     let mut stmt = conn.prepare(
-        "SELECT id, path, format FROM tracks
+        "SELECT id, path, format, tag_version, mtime, size FROM tracks
          WHERE needs_flush = 1 AND missing = 0
            AND tag_updated_at <= ?1 AND flush_attempts < ?2
            AND next_flush_attempt_at <= ?4
@@ -38,7 +43,14 @@ pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Res
     )?;
     let rows = stmt
         .query_map(params![now - debounce_secs, MAX_FLUSH_ATTEMPTS, limit as i64, now], |r| {
-            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
+            Ok((
+                r.get::<_, i64>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+                r.get::<_, i64>(4)?,
+                r.get::<_, i64>(5)?,
+            ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
 
@@ -47,23 +59,35 @@ pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Res
         "SELECT t.name FROM track_tags tt JOIN tags t ON t.id = tt.tag_id
          WHERE tt.track_id = ?1 ORDER BY tt.position, t.id",
     )?;
-    for (track_id, path, format) in rows {
+    for (track_id, path, format, tag_version, mtime, size) in rows {
         let tag_names = tag_stmt
             .query_map([track_id], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
-        jobs.push(FlushJob { track_id, path, format, tag_names });
+        jobs.push(FlushJob { track_id, path, format, tag_names, tag_version, mtime, size });
     }
     Ok(jobs)
 }
 
-/// Record a successful flush: clear the dirty flag and store the file's post-write
-/// stats so the next scan doesn't treat our own write as an external change.
-pub fn mark_flushed(db: &Db, track_id: i64, mtime: i64, size: i64) -> Result<(), Error> {
-    db.conn().execute(
-        "UPDATE tracks SET needs_flush = 0, flush_attempts = 0, last_flush_error = NULL,
-                           next_flush_attempt_at = 0, mtime = ?2, size = ?3
+/// Record a successful flush. The dirty flag is only cleared when no edit landed
+/// after the job was snapshotted (tag_version unchanged). The stored file stats
+/// are only refreshed when `stats` is Some — the caller passes None when the file
+/// had been modified outside the app, so the next scan still re-parses it.
+pub fn mark_flushed(db: &Db, track_id: i64, tag_version: i64, stats: Option<(i64, i64)>) -> Result<(), Error> {
+    let conn = db.conn();
+    conn.execute(
+        "UPDATE tracks SET flush_attempts = 0, last_flush_error = NULL, next_flush_attempt_at = 0
          WHERE id = ?1",
-        params![track_id, mtime, size],
+        [track_id],
+    )?;
+    if let Some((mtime, size)) = stats {
+        conn.execute(
+            "UPDATE tracks SET mtime = ?2, size = ?3 WHERE id = ?1",
+            params![track_id, mtime, size],
+        )?;
+    }
+    conn.execute(
+        "UPDATE tracks SET needs_flush = 0 WHERE id = ?1 AND tag_version = ?2",
+        params![track_id, tag_version],
     )?;
     Ok(())
 }
@@ -130,6 +154,11 @@ fn write_tags_to_file(job: &FlushJob) -> Result<(i64, i64), Error> {
 /// caller asks to skip (e.g. the file currently playing). Skipped tracks stay
 /// due; failures are recorded with backoff. Returns one event per attempt.
 pub fn flush_pass(db: &Db, debounce_secs: i64, skip: &dyn Fn(&str) -> bool) -> Result<Vec<FlushEvent>, Error> {
+    // While a comment export is writing files, stay out of its way entirely:
+    // two concurrent load-modify-save cycles on one file lose one of the writes
+    if crate::export::EXPORT_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+        return Ok(vec![]);
+    }
     let jobs = due_for_flush(db, crate::now(), debounce_secs, FLUSH_BATCH)?;
     let mut events = Vec::with_capacity(jobs.len());
     for job in jobs {
@@ -137,9 +166,13 @@ pub fn flush_pass(db: &Db, debounce_secs: i64, skip: &dyn Fn(&str) -> bool) -> R
             debug!("Flush: skipping in-use file {}", job.path);
             continue;
         }
+        // If the file changed outside the app since the last scan, still write our
+        // tags (read-modify-write preserves the external edits) but keep the OLD
+        // stored stats so the next scan re-parses the external changes.
+        let externally_unchanged = crate::file_stats(&job.path) == Some((job.mtime, job.size));
         match write_tags_to_file(&job) {
-            Ok((mtime, size)) => {
-                mark_flushed(db, job.track_id, mtime, size)?;
+            Ok(post_stats) => {
+                mark_flushed(db, job.track_id, job.tag_version, externally_unchanged.then_some(post_stats))?;
                 info!("Flushed tags to {}", job.path);
                 events.push(FlushEvent { track_id: job.track_id, ok: true, error: None });
             }
@@ -236,6 +269,26 @@ mod tests {
     use crate::testutil::{insert_track, test_db};
 
     #[test]
+    fn edits_during_flush_are_not_lost() {
+        let (_d, db) = test_db();
+        let t = insert_track(&db, "/test-root/a.mp3");
+        add_tag_to_track(&db, t, "x").unwrap();
+        // Worker snapshots the job (captures tag_version)
+        let job = &due_for_flush(&db, crate::now() + 100, 0, 16).unwrap()[0];
+        // An edit lands while the file is being written
+        add_tag_to_track(&db, t, "y").unwrap();
+        // The worker finishes its (now stale) write
+        mark_flushed(&db, t, job.tag_version, Some((1, 2))).unwrap();
+        // The track must STILL be dirty so the new edit reaches the file
+        let (pending, _) = flush_status(&db).unwrap();
+        assert_eq!(pending, 1, "post-snapshot edit was silently dropped");
+        // Without an interleaved edit the flag clears normally
+        let job = &due_for_flush(&db, crate::now() + 100, 0, 16).unwrap()[0];
+        mark_flushed(&db, t, job.tag_version, Some((1, 2))).unwrap();
+        assert_eq!(flush_status(&db).unwrap().0, 0);
+    }
+
+    #[test]
     fn debounce_and_ordering() {
         let (_d, db) = test_db();
         let t1 = insert_track(&db, "/test-root/a.mp3");
@@ -262,7 +315,8 @@ mod tests {
         let (_d, db) = test_db();
         let t = insert_track(&db, "/test-root/a.mp3");
         add_tag_to_track(&db, t, "x").unwrap();
-        mark_flushed(&db, t, 123, 456).unwrap();
+        let version: i64 = db.conn().query_row("SELECT tag_version FROM tracks WHERE id = ?1", [t], |r| r.get(0)).unwrap();
+        mark_flushed(&db, t, version, Some((123, 456))).unwrap();
         let (pending, errors) = flush_status(&db).unwrap();
         assert_eq!(pending, 0);
         assert!(errors.is_empty());

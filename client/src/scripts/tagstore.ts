@@ -81,9 +81,17 @@ export class TagStore {
         $1t.send('tagTracksLoad');
     }
 
+    /** id -> tag map, rebuilt lazily when the pool changes (hot path at 20k tracks) */
+    private tagMap: Map<number, FlowTag> = new Map();
+    private tagMapSource: FlowTag[] = [];
+
     /** Fast lookups for chip rendering */
     tagById(id: number): FlowTag | undefined {
-        return this.tags.value.find((t) => t.id == id);
+        if (this.tagMapSource !== this.tags.value) {
+            this.tagMap = new Map(this.tags.value.map((t) => [t.id, t]));
+            this.tagMapSource = this.tags.value;
+        }
+        return this.tagMap.get(id);
     }
 
     tagByName(name: string): FlowTag | undefined {
@@ -117,6 +125,10 @@ export class TagStore {
         if (!trimmed) return;
         const known = this.tagByName(trimmed);
         if (known) {
+            // Already on the track: nothing to do (a send would not dirty the
+            // server track, leaving an optimistic pending dot stuck forever)
+            const track = this.tracks.value.find((t) => t.id === trackId);
+            if (track?.tagIds.includes(known.id)) return;
             this.replaceTrackTags(trackId, (ids) =>
                 ids.includes(known.id) ? ids : [...ids, known.id]);
             this.bumpCount(known.id, 1);
@@ -162,24 +174,48 @@ export class TagStore {
 
     // ---- Selection / navigation ----
 
+    /** Last known position of the selection within the visible list. Keeps the
+     * user's place when the selected track drops out of the view (e.g. tagging
+     * a track while "Untagged only" is on). */
+    private lastVisibleIndex = 0;
+
+    /** The selection's index in `visible`, falling back to its last known place */
+    private anchorIndex(visible: FlowTrack[]): number {
+        const idx = visible.findIndex((t) => t.id === this.selectedId.value);
+        if (idx !== -1) {
+            this.lastVisibleIndex = idx;
+            return idx;
+        }
+        return Math.min(this.lastVisibleIndex, Math.max(visible.length - 1, 0));
+    }
+
     /** Select by offset within the visible list */
     selectOffset(offset: number) {
         const visible = this.visibleTracks();
         if (visible.length === 0) return;
-        const idx = visible.findIndex((t) => t.id === this.selectedId.value);
-        const next = idx === -1 ? 0 : Math.min(Math.max(idx + offset, 0), visible.length - 1);
+        const idx = this.anchorIndex(visible);
+        const stillVisible = visible[idx]?.id === this.selectedId.value;
+        // When the current track vanished from the view, the anchor position
+        // already points at the "next" row, so a +1 step stays in place
+        const step = !stillVisible && offset > 0 ? offset - 1 : offset;
+        const next = Math.min(Math.max(idx + step, 0), visible.length - 1);
         this.selectedId.value = visible[next].id;
+        this.lastVisibleIndex = next;
     }
 
     /** Jump to the next untagged track after the current one (wraps around) */
     selectNextUntagged() {
         const visible = this.visibleTracks();
         if (visible.length === 0) return;
-        const start = Math.max(visible.findIndex((t) => t.id === this.selectedId.value), 0);
+        const stillVisible = visible.some((t) => t.id === this.selectedId.value);
+        const start = this.anchorIndex(visible);
+        // Anchor already points past a vanished track, so include it in the walk
+        const from = stillVisible ? start : start - 1;
         for (let i = 1; i <= visible.length; i++) {
-            const t = visible[(start + i) % visible.length];
+            const t = visible[(from + i + visible.length) % visible.length];
             if (t.tagIds.length === 0) {
                 this.selectedId.value = t.id;
+                this.lastVisibleIndex = visible.indexOf(t);
                 return;
             }
         }
@@ -245,6 +281,13 @@ export class TagStore {
                 if (json.ok) {
                     this.tracks.value = this.tracks.value.map((t) =>
                         t.id === json.trackId ? { ...t, needsFlush: false } : t);
+                } else if (json.error) {
+                    // Surface write failures immediately (not only after a reload)
+                    const others = this.flush.value.errors.filter((e) => e.trackId !== json.trackId);
+                    this.flush.value = {
+                        ...this.flush.value,
+                        errors: [...others, { trackId: json.trackId, error: json.error }],
+                    };
                 }
                 return true;
             case 'rekordboxExportProgress':

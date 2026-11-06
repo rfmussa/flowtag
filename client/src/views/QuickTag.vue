@@ -136,14 +136,16 @@ function togglePalette(e: Event) {
 
 // Selecting a track loads it into the player (playback from 0);
 // playback continues across switches when it was already running
-watch(store.selectedId, (id) => {
+watch(store.selectedId, (id, previousId) => {
     const track = store.selectedTrack();
     if (id === undefined || !track || track.missing) return;
     const player = $1t.player.value;
     const autoplay = player.playing || player.wasPlaying;
     player.startTrack(track.path, track.id, track.title, track.artist, autoplay);
-    // Hint the server to flush the previously edited track soon
-    $1t.send('flushHint', {});
+    // Expedite only the track just left (not every pending write at once)
+    if (previousId !== undefined) {
+        $1t.send('flushHint', { trackId: previousId });
+    }
 });
 
 onMounted(() => {

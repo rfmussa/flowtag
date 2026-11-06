@@ -136,7 +136,7 @@ fn comment_export_preserves_text_and_is_idempotent() {
     let track = &tracks::list_tracks(&db).unwrap()[0];
     tags::add_tag_to_track(&db, track.id, "Deep House").unwrap();
 
-    let res = onetagger_db::export::export_comments(&db, |_, _| {}).unwrap();
+    let res = onetagger_db::export::export_comments(&db, &|_| false, |_, _| {}).unwrap();
     assert_eq!((res.written, res.failed), (1, 0));
 
     // Comment preserved + hashtag appended
@@ -145,7 +145,7 @@ fn comment_export_preserves_text_and_is_idempotent() {
     assert_eq!(comment, "my old note #DeepHouse");
 
     // Second export: nothing to write
-    let res = onetagger_db::export::export_comments(&db, |_, _| {}).unwrap();
+    let res = onetagger_db::export::export_comments(&db, &|_| false, |_, _| {}).unwrap();
     assert_eq!((res.written, res.unchanged), (0, 1));
 
     // Export doesn't make the next scan re-parse our own write
@@ -155,7 +155,7 @@ fn comment_export_preserves_text_and_is_idempotent() {
     // Removing the last tag and re-exporting strips the stale hashtag block
     let pool = tags::list_tags(&db).unwrap();
     tags::remove_tag_from_track(&db, track.id, pool[0].id).unwrap();
-    let res = onetagger_db::export::export_comments(&db, |_, _| {}).unwrap();
+    let res = onetagger_db::export::export_comments(&db, &|_| false, |_, _| {}).unwrap();
     assert_eq!((res.written, res.failed), (1, 0));
     let tag_wrap = onetagger_tag::Tag::load_file(&track.path, false).unwrap();
     let comment = tag_wrap.tag().get_raw("COMM").unwrap()[0].clone();

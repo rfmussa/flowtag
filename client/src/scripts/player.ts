@@ -184,6 +184,17 @@ class Player {
     // FlowTag path: one round-trip start + DB-cached waveform by track id
     startTrack(path: string, trackId: number, title: string, artist: string, autoplay: boolean) {
         const $1t = get1t();
+
+        // Server-mode / external player setups use the legacy load path, which
+        // knows how to drive the <audio> element or external app
+        if ($1t.settings.value.clientSidePlayer || $1t.settings.value.externalAudioPlayer) {
+            this.title = title;
+            this.artists = artist ? [artist] : [];
+            this.wasPlaying = autoplay;
+            this.loadTrack(path);
+            return;
+        }
+
         this.path = path;
         this.title = title;
         this.artists = artist ? [artist] : [];

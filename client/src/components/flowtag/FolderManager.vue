@@ -35,6 +35,7 @@
 </template>
 
 <script lang='ts' setup>
+import { Dialog } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore } from '../../scripts/tagstore';
 
@@ -42,7 +43,16 @@ const store = getTagStore();
 const $1t = get1t();
 
 function remove(id: number) {
-    $1t.send('tagFolderRemove', { id });
+    const folder = store.folders.value.find((f) => f.id === id);
+    const count = store.tracks.value.filter((t) => t.path.startsWith((folder?.path ?? '') + '/')).length;
+    Dialog.create({
+        title: 'Remove folder?',
+        message: `${folder?.path ?? ''} — removes ${count} track(s) from the library, `
+            + 'including tags not yet written to their files. Audio files are not touched.',
+        cancel: true,
+        dark: true,
+        ok: { label: 'Remove', color: 'negative' },
+    }).onOk(() => $1t.send('tagFolderRemove', { id }));
 }
 
 // Async: the main app wires the 'browse' reply (context 'tagFolderAdd') to tagFolderAdd

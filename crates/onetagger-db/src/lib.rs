@@ -59,6 +59,18 @@ impl Db {
     }
 }
 
+/// File stats as (mtime secs, size), None when unreadable
+pub(crate) fn file_stats(path: impl AsRef<Path>) -> Option<(i64, i64)> {
+    let meta = std::fs::metadata(path).ok()?;
+    let mtime = meta
+        .modified()
+        .ok()?
+        .duration_since(std::time::UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
+    Some((mtime, meta.len() as i64))
+}
+
 /// Current unix time in seconds
 pub(crate) fn now() -> i64 {
     std::time::SystemTime::now()

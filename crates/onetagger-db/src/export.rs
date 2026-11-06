@@ -2,11 +2,24 @@
 //! field (searchable in Rekordbox; re-export replaces only our own block).
 
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use anyhow::Error;
 use serde::Serialize;
 use onetagger_tag::{FrameName, Tag};
 
 use crate::Db;
+
+/// True while a comment export runs; the flush worker pauses so the two never
+/// write the same file concurrently (last-save-wins would drop one change set)
+pub static EXPORT_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Clears EXPORT_ACTIVE even when the export panics or errors
+struct ExportGuard;
+impl Drop for ExportGuard {
+    fn drop(&mut self) {
+        EXPORT_ACTIVE.store(false, Ordering::SeqCst);
+    }
+}
 
 /// Outcome of a comment export run
 #[derive(Debug, Clone, Default, Serialize)]
@@ -15,6 +28,8 @@ pub struct ExportResult {
     pub written: usize,
     pub unchanged: usize,
     pub failed: usize,
+    /// Files skipped because they were in use (e.g. currently playing)
+    pub skipped: usize,
 }
 
 /// Comment frame per format
@@ -22,43 +37,62 @@ fn comment_frame() -> FrameName {
     FrameName::new("COMM", "COMMENT", "©cmt")
 }
 
-/// Write every tagged, present track's tags into its COMMENT field as hashtags.
+/// Write every present track's tags into its COMMENT field as hashtags.
 /// Existing comment text is preserved; only our trailing hashtag block changes.
-pub fn export_comments(db: &Db, progress: impl Fn(usize, usize)) -> Result<ExportResult, Error> {
+/// `skip` protects files in use (e.g. currently playing); while this runs, the
+/// flush worker pauses (EXPORT_ACTIVE).
+pub fn export_comments(
+    db: &Db,
+    skip: &dyn Fn(&str) -> bool,
+    progress: impl Fn(usize, usize),
+) -> Result<ExportResult, Error> {
+    EXPORT_ACTIVE.store(true, Ordering::SeqCst);
+    let _guard = ExportGuard;
+
     // Every present track: untagged ones must still be visited so a previously
     // written hashtag block is stripped after the last tag is removed
-    let jobs: Vec<(i64, String, Vec<String>)> = {
+    let jobs: Vec<(i64, String, Vec<String>, i64, i64)> = {
         let conn = db.conn();
-        let mut stmt = conn.prepare("SELECT t.id, t.path FROM tracks t WHERE t.missing = 0")?;
+        let mut stmt = conn.prepare("SELECT t.id, t.path, t.mtime, t.size FROM tracks t WHERE t.missing = 0")?;
         let rows = stmt
-            .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?
+            .query_map([], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?, r.get::<_, i64>(3)?))
+            })?
             .collect::<Result<Vec<_>, _>>()?;
         let mut tag_stmt = conn.prepare(
             "SELECT tg.name FROM track_tags tt JOIN tags tg ON tg.id = tt.tag_id
              WHERE tt.track_id = ?1 ORDER BY tt.position, tg.id",
         )?;
         rows.into_iter()
-            .map(|(id, path)| {
+            .map(|(id, path, mtime, size)| {
                 let names = tag_stmt
                     .query_map([id], |r| r.get::<_, String>(0))?
                     .collect::<Result<Vec<_>, _>>()?;
-                Ok((id, path, names))
+                Ok((id, path, names, mtime, size))
             })
             .collect::<Result<Vec<_>, Error>>()?
     };
 
     let total = jobs.len();
     let mut result = ExportResult::default();
-    for (i, (track_id, path, tag_names)) in jobs.into_iter().enumerate() {
+    for (i, (track_id, path, tag_names, db_mtime, db_size)) in jobs.into_iter().enumerate() {
+        if skip(&path) {
+            result.skipped += 1;
+            continue;
+        }
+        // Keep old stats when the file was changed outside the app, so the next
+        // scan still re-parses those external edits
+        let externally_unchanged = crate::file_stats(&path) == Some((db_mtime, db_size));
         match export_one(&path, &tag_names) {
             Ok(true) => {
                 result.written += 1;
-                // Record the new stats so the next scan doesn't re-parse our write
-                if let Some((mtime, size)) = file_stats(&path) {
-                    db.conn().execute(
-                        "UPDATE tracks SET mtime = ?2, size = ?3 WHERE id = ?1",
-                        rusqlite::params![track_id, mtime, size],
-                    )?;
+                if externally_unchanged {
+                    if let Some((mtime, size)) = crate::file_stats(&path) {
+                        db.conn().execute(
+                            "UPDATE tracks SET mtime = ?2, size = ?3 WHERE id = ?1",
+                            rusqlite::params![track_id, mtime, size],
+                        )?;
+                    }
                 }
             }
             Ok(false) => result.unchanged += 1,
@@ -73,17 +107,6 @@ pub fn export_comments(db: &Db, progress: impl Fn(usize, usize)) -> Result<Expor
     }
     progress(total, total);
     Ok(result)
-}
-
-fn file_stats(path: &str) -> Option<(i64, i64)> {
-    let meta = std::fs::metadata(path).ok()?;
-    let mtime = meta
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()?
-        .as_secs() as i64;
-    Some((mtime, meta.len() as i64))
 }
 
 /// Returns Ok(true) when the file was written, Ok(false) when already up to date

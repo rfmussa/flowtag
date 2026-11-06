@@ -52,6 +52,9 @@ const MIGRATIONS: &[&str] = &[
         bars BLOB NOT NULL
     );
     ",
+    // v2: tag_version guards the flusher against clearing edits made while a
+    // flush batch was in flight (bumped on every tag change of a track)
+    "ALTER TABLE tracks ADD COLUMN tag_version INTEGER NOT NULL DEFAULT 0;",
 ];
 
 /// Apply pending migrations. Idempotent: already-applied migrations are skipped
