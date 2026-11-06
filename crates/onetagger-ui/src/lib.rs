@@ -17,7 +17,10 @@ use axum::routing::get;
 use include_dir::Dir;
 use onetagger_player::AudioSources;
 use serde::{Serialize, Deserialize};
-use quicktag::QuickTagFile;
+use std::io::Cursor;
+use std::path::Path;
+use image::{ImageFormat, ImageReader};
+use onetagger_tag::Tag;
 use tokio::runtime::Builder;
 use tokio::net::TcpListener;
 use onetagger_shared::{PORT, WEBSERVER_CALLBACKS, Settings};
@@ -25,7 +28,6 @@ use onetagger_shared::{PORT, WEBSERVER_CALLBACKS, Settings};
 pub mod socket;
 pub mod sender;
 pub mod browser;
-pub mod quicktag;
 pub mod tageditor;
 pub mod tagflow;
 
@@ -128,9 +130,22 @@ struct GetQueryPath {
     path: String
 }
 
+/// Load album art from tag and downscale to a small JPEG thumbnail
+fn load_thumbnail(path: impl AsRef<Path>) -> Result<Vec<u8>, Error> {
+    let tag_wrap = Tag::load_file(path, false)?;
+    let tag = tag_wrap.tag();
+    let pictures = tag.get_art();
+    let picture = pictures.first().ok_or(anyhow!("Missing album art!"))?;
+    let img = ImageReader::new(Cursor::new(&picture.data)).with_guessed_format()?.decode()?;
+    let scaled = img.thumbnail_exact(50, 50);
+    let mut out = vec![];
+    scaled.write_to(&mut Cursor::new(&mut out), ImageFormat::Jpeg)?;
+    Ok(out)
+}
+
 /// Serve thumbnail
 async fn get_thumb(Query(GetQueryPath { path }): Query<GetQueryPath>) -> impl IntoResponse {
-    match QuickTagFile::get_art(&path) {
+    match load_thumbnail(&path) {
         Ok(art) => (StatusCode::OK, [(CONTENT_TYPE, "image/jpeg".to_string())], art),
         Err(e) => {
             warn!("Error loading album art: {} File: {}", e, path);

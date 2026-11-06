@@ -172,7 +172,8 @@ import { useQuasar } from 'quasar';
 import AutotaggerPlatforms from './AutotaggerPlatforms.vue';
 import AutotaggerTags from './AutotaggerTags.vue';
 import AutotaggerPlatformSpecific from './AutotaggerPlatformSpecific.vue';
-import { PLACEHOLDER_IMG, keyColor } from '../scripts/quicktag';
+import { keyColor } from '../scripts/musickey';
+import { PLACEHOLDER_IMG } from '../scripts/utils';
 
 const $q = useQuasar();
 const $1t = get1t();

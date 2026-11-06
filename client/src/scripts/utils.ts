@@ -115,5 +115,8 @@ interface RustDuration {
     nanos: number;
 }
 
+// Placeholder album art
+const PLACEHOLDER_IMG = (new URL('../assets/placeholder.png', import.meta.url)).toString();
+
 export type { Playlist, RustDuration };
-export { wsUrl, httpUrl, spotifyUrl, Separators, FrameName, Keybind, Spotify };
+export { wsUrl, httpUrl, spotifyUrl, Separators, FrameName, Keybind, Spotify, PLACEHOLDER_IMG };

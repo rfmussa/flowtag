@@ -95,8 +95,8 @@ class AutotaggerConfig {
     /// Load settings from JSON
     loadSettings(data: any) {
         Object.assign(this, data);
-        this.stylesCustomTag = Object.assign(FrameName.same('STYLE'), data.stylesCustomTag);
-        this.separators = Object.assign(new Separators(), data.separators);
+        this.stylesCustomTag = Object.assign(FrameName.same('STYLE'), data?.stylesCustomTag);
+        this.separators = Object.assign(new Separators(), data?.separators);
     }
 }
 

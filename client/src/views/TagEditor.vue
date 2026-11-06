@@ -759,14 +759,6 @@ const POPMLabel = computed(() => {
 onMounted(() => {
     $1t.onTagEditorEvent = wsCallback;
     loadFiles();
-
-    // Load QT track
-    if ($1t.quickTag.value.toTagEditor) {
-        loadFile($1t.quickTag.value.toTagEditor);
-        $1t.quickTag.value.toTagEditor = undefined;
-    } else if ($1t.quickTag.value.track.tracks.length == 1) {
-        loadFile($1t.quickTag.value.track.tracks[0].path);
-    }
 })
 
 // Unregister

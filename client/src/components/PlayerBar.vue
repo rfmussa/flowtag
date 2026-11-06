@@ -68,17 +68,6 @@
         </div>
 
         <div class='row col-2 justify-end'>
-            <!-- Playlist -->
-            <div v-if='enablePlaylist'>
-                <PlaylistDropZone
-                    tiny
-                    v-model="qtPlaylist"
-                    @update:model-value="loadQTPlaylist(); $1t.quickTagUnfocus()"
-                    @click.native='$1t.onQuickTagEvent("generatePlaylist"); $1t.quickTagUnfocus()'                    
-                    class="q-mt-sm q-mr-sm"
-                ></PlaylistDropZone>
-            </div>
-    
             <!-- Volume -->
             <div class="q-pt-sm" style="width: 88px">
                 <q-slider
@@ -100,48 +89,22 @@
 
 <script lang='ts' setup>
 import Waveform from './Waveform.vue';
-import PlaylistDropZone from "./PlaylistDropZone.vue";
-import { Playlist, httpUrl } from '../scripts/utils';
-import { computed, onDeactivated, onMounted, ref, watch } from 'vue';
+import { PLACEHOLDER_IMG, httpUrl } from '../scripts/utils';
+import { computed, onDeactivated, onMounted, ref } from 'vue';
 import { get1t } from '../scripts/onetagger';
-import { useRoute, useRouter } from 'vue-router';
-import { PLACEHOLDER_IMG } from '../scripts/quicktag';
 
 const $1t = get1t();
-const qtPlaylist = ref<Playlist>({});
-const enablePlaylist = ref(true);
 const playButton = ref<any>();
 
-function browseQuickTag() {
-    $1t.browse('qt', $1t.settings.value.path);
-    $1t.quickTagUnfocus();
-}
-
-// Load quicktag playlist
-function loadQTPlaylist() {
-    if (!qtPlaylist.value || !qtPlaylist.value.data) {
-        $1t.loadQuickTag();
-        return;
-    }
-    $1t.loadQuickTag(qtPlaylist.value);
-}
-
 onMounted(() => {
-    // Unfocus callback
+    // Unfocus callback (keeps Space from re-triggering the focused play button)
     $1t.quickTagUnfocus = () => {
         playButton.value!.$el.focus();
         playButton.value!.$el.blur();
     }
-    // Enable playlist dropzone
-    enablePlaylist.value = useRouter().currentRoute.value.path.includes('quicktag');
 });
 
 onDeactivated(() => $1t.quickTagUnfocus = () => {});
-
-watch(useRoute(), (r) => {
-    if (r.path == '/quicktag') enablePlaylist.value = true;
-    else enablePlaylist.value = false;
-});
 
 const art = computed(() => `${httpUrl()}/thumb?path=${encodeURIComponent($1t.player.value.path??'')}`);
 

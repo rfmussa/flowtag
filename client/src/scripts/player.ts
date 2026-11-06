@@ -1,5 +1,7 @@
 import { get1t, OneTagger } from "./onetagger";
 import { httpUrl, wsUrl } from "./utils";
+import router from "./router";
+import { getTagStore } from "./tagstore";
 
 const WAVES = 180;
 
@@ -27,8 +29,8 @@ class Player {
         setInterval(() => {
             if (this.position > this.duration) {
                 // Auto play next track
-                if ($1t.settings.value.autoPlayNext) {
-                    $1t.onQuickTagEvent('changeTrack', { offset: 1 });
+                if ($1t.settings.value.autoPlayNext && router.currentRoute.value.path.startsWith('/quicktag')) {
+                    getTagStore().selectOffset(1);
                 } else {
                     this.pause();
                 }

@@ -2,9 +2,8 @@ import { Dialog, DialogChainObject, Notify, setCssVar } from 'quasar';
 import { ref, Ref } from 'vue';
 import { AutotaggerConfig, AutotaggerPlatform, ConfigCallbackResponse, TaggerStatus } from './autotagger';
 import { Player } from './player';
-import { QTTrack, QuickTag, QuickTagFile } from './quicktag';
 import { Settings } from './settings';
-import { Keybind, Playlist, Spotify, wsUrl } from './utils';
+import { Playlist, Spotify, wsUrl } from './utils';
 import { ManualTag } from './manualtag';
 import ExitDialog from '../components/ExitDialog.vue';
 import router from './router';
@@ -21,7 +20,6 @@ class OneTagger {
     config: Ref<AutotaggerConfig> = ref(new AutotaggerConfig());
     lock: Ref<{ locked: boolean }> = ref({ locked: false });
     player: Ref<Player> = ref(new Player(this));
-    quickTag: Ref<QuickTag> = ref(new QuickTag());
     settings: Ref<Settings> = ref(new Settings());
     spotify: Ref<Spotify> = ref(new Spotify());
     helpDialog: Ref<{ open: boolean, route?: string }> = ref({ open: false });
@@ -34,9 +32,6 @@ class OneTagger {
     private ws!: WebSocket;
     private wsPromiseResolve?: (_: any) => void;
     private wsPromise?;
-
-    // Quicktag track loading
-    private nextQTTrack?: QTTrack;
 
     // Dialog when loading platforms
     loadingPlatformsDialog?: DialogChainObject;
@@ -102,8 +97,6 @@ class OneTagger {
     // SHOULD BE OVERWRITTEN
     quickTagUnfocus() {}
     onTaggingDone(_: any) {}
-    onQuickTagEvent(_: any, __?: any) {}
-    onQuickTagBrowserEvent(_: any) {}
     onTagEditorEvent(_: any) {}
     onAudioFeaturesEvent(_: any) {}
     onRenamerEvent(_: any) {}
@@ -243,29 +236,6 @@ class OneTagger {
                 if (this.settings.value.playOnSeek && !json.playing)
                     this.player.value.play();
                 break;
-            // Quicktag
-            case 'quickTagLoad':
-                this.lock.value.locked = false;
-                this.quickTag.value.tracks = json.data.files.map((t: QuickTagFile) => new QTTrack(t, this.settings.value.quickTag));
-                this.quickTag.value.failed = json.data.failed;
-                this.onQuickTagEvent('quickTagLoad');
-                break;
-            /*eslint-disable no-case-declarations*/
-            case 'quickTagSaved':
-                var i = this.quickTag.value.tracks.findIndex((t) => t.path == json.path);
-                if (i != -1) {
-                    this.quickTag.value.tracks[i] = new QTTrack(json.file, this.settings.value.quickTag);
-                } else {
-                    // this.onError('quickTagSaved: Invalid track');
-                }
-                this.quickTag.value.saving -= 1;
-                this.onQuickTagEvent('quickTagSaved');
-
-                break;
-            // Browser folder
-            case 'quickTagFolder':
-                this.onQuickTagBrowserEvent(json);
-                break;
             // Spotify
             case 'spotifyAuthorized':
                 this.spotify.value.authorized = json.value;
@@ -379,10 +349,6 @@ class OneTagger {
                     case 'tageditor':
                         this.onTagEditorEvent(json);
                         break;
-                    case 'quicktag':
-                        this.settings.value.path = json.path;
-                        this.loadQuickTag();
-                        break;
                     case 'renamer':
                         this.onRenamerEvent(json);
                         break;
@@ -394,25 +360,10 @@ class OneTagger {
 
             // Exit app
             case 'exit':
-                // QT pending changes
-                if (route == 'quicktag' && this.quickTag.value.track.isChanged()) {
-                    Dialog.create({
-                        component: ExitDialog,
-                        componentProps: {
-                            isQt: true
-                        },
-                        persistent: true,
-                        ok: false,
-                        cancel: false,
-                    });
-                }
                 // AT
-                else if (this.lock.value.locked && !this.taggerStatus.value.done) {
+                if (this.lock.value.locked && !this.taggerStatus.value.done) {
                     Dialog.create({
                         component: ExitDialog,
-                        componentProps: {
-                            isQt: false
-                        },
                         persistent: true,
                         ok: false,
                         cancel: false,
@@ -459,12 +410,6 @@ class OneTagger {
         // Autotagger path
         if (json.context == 'at')
             this.config.value.path = json.path;
-        // Quicktag path
-        if (json.context == 'qt') {
-            this.settings.value.path = json.path;
-            this.onQuickTagBrowserEvent({action: 'pathUpdate'});
-            this.loadQuickTag();
-        }
         // Audio features path
         if (json.context == 'af')
             this.onAudioFeaturesEvent(json);
@@ -511,12 +456,6 @@ class OneTagger {
         this.spotify.value.clientId = this.settings.value.audioFeatures.spotifyClientId;
         this.spotify.value.clientSecret = this.settings.value.audioFeatures.spotifyClientSecret;
 
-        // Migrate to enable subgenres
-        for (let i=0; i<this.settings.value.quickTag.genres.length; i++) {
-            if (!this.settings.value.quickTag.genres[i].subgenres) {
-                this.settings.value.quickTag.genres[i]['subgenres'] = [];
-            }
-        }
     }
 
     // Load autotagger profile
@@ -528,29 +467,6 @@ class OneTagger {
         this.settings.value.autoTaggerProfile = name;
         // Update custom values in case
         this.send('defaultCustomPlatformSettings');
-    }
-
-    // Load quicktag track
-    loadQTTrack(track?: QTTrack, force = false) {
-        // Check for unsaved changes
-        if (force || !this.quickTag.value.track.isChanged()) {
-            if (!track && !this.nextQTTrack)
-                return;
-            if (!track)
-                track = this.quickTag.value.tracks.find(t => t.path == this.nextQTTrack!.path);
-
-            // For autoplay
-            if (this.player.value.playing)
-                this.player.value.wasPlaying = true;
-
-            this.quickTag.value.track.loadSingle(new QTTrack(JSON.parse(JSON.stringify(track)), this.settings.value.quickTag));
-            this.player.value.loadTrack(track!.path);
-            this.nextQTTrack = undefined;
-            return;
-        }
-        // Prompt for unsaved changes
-        this.nextQTTrack = track;
-        this.onQuickTagEvent('onUnsavedChanges');
     }
 
     /// Load AT platforms
@@ -567,60 +483,6 @@ class OneTagger {
         });
     }
 
-    addQTTrack(track: QTTrack) {
-        this.quickTag.value.track.addTrack(new QTTrack(JSON.parse(JSON.stringify(track)), this.settings.value.quickTag));
-    }
-
-    /// Add or remove a track to the multitrack
-    toggleQTTrack(track: QTTrack) {
-        if (this.quickTag.value.track.getTrack(track.path)) {
-            this.quickTag.value.track.removeTrack(track);
-            return;
-        }
-        this.addQTTrack(track);
-    }
-
-    // Save quickTagTrack
-    async saveQTTrack() {
-        let changes = this.quickTag.value.track.getOutputs();
-        for (const change of changes) {
-            this.quickTag.value.saving += 1;
-            this.send('quickTagSave', { changes: change });
-        }
-        await this.quickTag.value.waitForSave();
-    }
-
-
-    // Quicktag
-    loadQuickTag(playlist?: Playlist, limit = true) { 
-        // Loading
-        if (playlist || this.settings.value.path) {
-            this.lock.value.locked = true;
-            this.quickTag.value.tracks = [];
-        }
-
-        // Load playlist
-        if (playlist) {
-            this.send('quickTagLoad', { playlist, separators: this.settings.value.quickTag.separators });
-            this.quickTag.value.wasLimited = false;
-            return;
-        }
-
-        // Load by path
-        if (this.settings.value.path) {
-            this.lock.value.locked = true;
-            this.send('quickTagLoad', {
-                path: this.settings.value.path,
-                recursive: this.settings.value.quickTag.recursive,
-                separators: this.settings.value.quickTag.separators,
-                limit: limit
-            });
-            this.saveSettings(false);
-            // Save limit info
-            this.quickTag.value.wasLimited = limit;
-        }
-    }
-
     /// Stop the tagging process
     stopTagging() {
         let ws = new WebSocket(wsUrl());
@@ -634,101 +496,6 @@ class OneTagger {
         // FlowTag view has its own keyboard map
         if (router.currentRoute.value.path.startsWith('/quicktag')) {
             return handleFlowKeys(event);
-        }
-
-        // QT Keybinds
-        if (this.quickTag.value.track.hasTracks()) {
-            // Arrow keys
-            if (event.key.startsWith('Arrow')) {
-                // Seek audio
-                if (event.key == 'ArrowLeft') {
-                    let pos = this.player.value.position - 10000;
-                    if (pos < 0)
-                        this.player.value.seek(0);
-                    else
-                        this.player.value.seek(pos)
-                }
-                // Seek forward
-                if (event.key == 'ArrowRight') {
-                    let pos = this.player.value.position + 30000;
-                    if (pos > this.player.value.duration)
-                        this.player.value.seek(this.player.value.duration);
-                    else
-                        this.player.value.seek(pos);
-                }
-
-                // Skip tracks using arrow keys
-                if (event.key == 'ArrowUp') {
-                    this.onQuickTagEvent(event.shiftKey ? 'addTrack' : 'changeTrack', { offset: -1 });
-                }
-                if (event.key == 'ArrowDown') {
-                    this.onQuickTagEvent(event.shiftKey ? 'addTrack' : 'changeTrack', { offset: 1 });
-                }
-                return true;
-            }
-            
-            // Play pause
-            if (event.code == "Space") {
-                if (this.player.value.playing)
-                    this.player.value.pause();
-                else 
-                    this.player.value.play();
-                return true;
-            }
-
-            // Save
-            if (event.code == "KeyS" && (event.ctrlKey || event.metaKey)) {
-                this.saveQTTrack().then(() => {
-                    Notify.create({
-                        message: "Track saved!",
-                        timeout: 3000,
-                        position: 'top-right'
-                    });
-                });
-                return true;
-            }
-
-            // Note tag
-            if (Keybind.check(event, this.settings.value.quickTag.noteTag.keybind)) {
-                this.onQuickTagEvent('onNoteTag');
-            }
-
-            // Moods
-            this.settings.value.quickTag.moods.forEach((mood) => {
-                if (Keybind.check(event, mood.keybind)) {
-                    this.quickTag.value.track!.mood = mood.mood;
-                }
-            });
-            // Genres
-            this.settings.value.quickTag.genres.forEach((genre) => {
-                if (Keybind.check(event, genre.keybind)) {
-                    this.quickTag.value.track!.toggleGenre(genre.genre);
-                }
-            });
-
-            // Energy
-            for (let i=0; i<5; i++) {
-                if (Keybind.check(event, this.settings.value.quickTag.energyKeys[i])) {
-                    this.quickTag.value.track.energy = i+1;
-                    return true;
-                }
-            }
-
-            // Custom values
-            this.settings.value.quickTag.custom.forEach((tag, tagIndex) => {
-                for (let i=0; i<tag.values.length; i++) {
-                    if (Keybind.check(event, tag.values[i].keybind)) {
-                        this.quickTag.value.track!.toggleCustom(tagIndex, tag.values[i].val);
-                    }
-                }
-            });
-
-            // Delete tracks
-            if ((event.code == "Delete" && (event.ctrlKey || event.metaKey)) || (event.code == 'Backspace' && (event.ctrlKey || event.metaKey))) {
-                this.onQuickTagEvent('onDeleteTrack');
-            }
-
-            return true;
         }
 
         // Tag editor save
