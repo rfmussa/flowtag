@@ -1,0 +1,10 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "onetagger-server",
+      "url": "http://localhost:36913",
+      "port": 36913
+    }
+  ]
+}
