@@ -42,9 +42,14 @@ impl Db {
         })
     }
 
-    /// Lock the underlying connection
+    /// Lock the underlying connection. A poisoned mutex (a panic while holding the
+    /// lock) is recovered rather than propagated: the SQLite connection itself stays
+    /// valid, and panicking every later caller would turn one bug into a dead app.
     pub fn conn(&self) -> MutexGuard<'_, Connection> {
-        self.conn.lock().expect("DB mutex poisoned")
+        self.conn.lock().unwrap_or_else(|poisoned| {
+            error!("DB mutex was poisoned by an earlier panic; recovering");
+            poisoned.into_inner()
+        })
     }
 
     /// Path this database was opened at

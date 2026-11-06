@@ -16,13 +16,13 @@ pub fn list_folders(db: &Db) -> Result<Vec<DbFolder>, Error> {
     Ok(folders)
 }
 
-/// Add a library root folder (validated against existing roots)
+/// Add a library root folder (validated against existing roots, stored canonicalized)
 pub fn add_folder(db: &Db, path: &str) -> Result<DbFolder, Error> {
     let existing = list_folders(db)?.into_iter().map(|f| f.path).collect::<Vec<_>>();
-    validate_folder(path, &existing)?;
+    let canonical = validate_folder(path, &existing)?;
     let conn = db.conn();
-    conn.execute("INSERT INTO folders (path) VALUES (?1)", [path])?;
-    Ok(DbFolder { id: conn.last_insert_rowid(), path: path.to_string() })
+    conn.execute("INSERT INTO folders (path) VALUES (?1)", [&canonical])?;
+    Ok(DbFolder { id: conn.last_insert_rowid(), path: canonical })
 }
 
 /// Remove a library root folder and (via cascade) all its tracks
@@ -89,12 +89,10 @@ pub fn track_stats_for_folder(db: &Db, folder_id: i64) -> Result<HashMap<String,
 
 fn link_tag_names(conn: &Connection, track_id: i64, tag_names: &[String]) -> Result<(), Error> {
     for (pos, name) in tag_names.iter().enumerate() {
-        let name = match crate::validate::validate_tag_name(name) {
-            Ok(n) => n,
-            Err(_) => continue, // Skip malformed names coming from files
+        // Skip malformed names coming from files rather than failing the scan
+        let Ok((tag_id, _created)) = crate::tags::get_or_create_tag_conn(conn, name, None) else {
+            continue;
         };
-        conn.execute("INSERT OR IGNORE INTO tags (name, color) VALUES (?1, ?2)", params![name, crate::tags::DEFAULT_TAG_COLOR])?;
-        let tag_id: i64 = conn.query_row("SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE", [&name], |r| r.get(0))?;
         conn.execute(
             "INSERT OR IGNORE INTO track_tags (track_id, tag_id, position) VALUES (?1, ?2, ?3)",
             params![track_id, tag_id, pos as i64],

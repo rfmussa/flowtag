@@ -3558,6 +3558,7 @@ name = "onetagger-db"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "dunce",
  "lofty",
  "log",
  "onetagger-tag",

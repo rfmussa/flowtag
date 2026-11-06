@@ -18,7 +18,7 @@ pub fn validate_tag_name(name: &str) -> Result<String, Error> {
     if name.is_empty() {
         bail!("Tag name cannot be empty");
     }
-    if name.len() > MAX_NAME_LEN {
+    if name.chars().count() > MAX_NAME_LEN {
         bail!("Tag name too long (max {MAX_NAME_LEN} characters)");
     }
     if name.starts_with('#') {
@@ -42,22 +42,28 @@ pub fn validate_color(color: &str) -> Result<(), Error> {
 }
 
 /// Validate a library root folder path: must exist, be a directory, and not be
-/// nested inside (or contain) any existing root.
-pub fn validate_folder(path: &str, existing: &[String]) -> Result<(), Error> {
-    let p = std::path::Path::new(path);
+/// nested inside (or contain) any existing root. Paths are canonicalized (symlinks
+/// and `..` resolved) before comparison. Returns the canonical path to store.
+pub fn validate_folder(path: &str, existing: &[String]) -> Result<String, Error> {
+    let p = dunce::canonicalize(path)
+        .map_err(|_| anyhow::anyhow!("Folder does not exist: {path}"))?;
     if !p.is_dir() {
-        bail!("Folder does not exist or is not a directory: {path}");
+        bail!("Not a directory: {path}");
     }
     for root in existing {
-        let r = std::path::Path::new(root);
-        if p.starts_with(r) {
+        // An existing root that no longer resolves can't conflict
+        let r = match dunce::canonicalize(root) {
+            Ok(r) => r,
+            Err(_) => continue,
+        };
+        if p.starts_with(&r) {
             bail!("Folder is already covered by library root: {root}");
         }
-        if r.starts_with(p) {
+        if r.starts_with(&p) {
             bail!("Folder contains existing library root: {root}");
         }
     }
-    Ok(())
+    Ok(p.to_string_lossy().to_string())
 }
 
 #[cfg(test)]
@@ -88,6 +94,27 @@ mod tests {
         assert!(validate_color("#00d2b").is_err());
         assert!(validate_color("#00d2bg").is_err());
         assert!(validate_color("#00d2bf0").is_err());
+    }
+
+    #[test]
+    fn tag_name_length_counts_characters_not_bytes() {
+        // 40 Cyrillic chars = 80 UTF-8 bytes; must be accepted
+        assert!(validate_tag_name(&"д".repeat(40)).is_ok());
+        assert!(validate_tag_name(&"д".repeat(65)).is_err());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn folder_validation_canonicalizes_symlinks() {
+        let dir = tempfile::tempdir().unwrap();
+        let real = dir.path().join("real");
+        std::fs::create_dir(&real).unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let real_s = real.to_string_lossy().to_string();
+        let link_s = link.to_string_lossy().to_string();
+        // The symlink points at an existing root: must be rejected as duplicate coverage
+        assert!(validate_folder(&link_s, &[real_s]).is_err());
     }
 
     #[test]

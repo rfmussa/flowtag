@@ -38,9 +38,4 @@ impl MessageSender {
         self.tx.send(text).map_err(|_| anyhow!("Websocket connection closed"))?;
         Ok(())
     }
-
-    /// Whether the connection (writer task) is still alive.
-    pub fn is_alive(&self) -> bool {
-        !self.tx.is_closed()
-    }
 }

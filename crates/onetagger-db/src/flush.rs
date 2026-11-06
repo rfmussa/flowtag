@@ -6,6 +6,9 @@ use crate::Db;
 /// Max flush retries before a track is left in the error state
 pub const MAX_FLUSH_ATTEMPTS: i64 = 5;
 
+/// Base backoff after a failed flush attempt; doubles per attempt (30s, 60s, 120s, ...)
+pub const FLUSH_BACKOFF_BASE_SECS: i64 = 30;
+
 /// A track due to have its tags written to the file
 #[derive(Debug, Clone)]
 pub struct FlushJob {
@@ -24,10 +27,11 @@ pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Res
         "SELECT id, path, format FROM tracks
          WHERE needs_flush = 1 AND missing = 0
            AND tag_updated_at <= ?1 AND flush_attempts < ?2
+           AND next_flush_attempt_at <= ?4
          ORDER BY tag_updated_at LIMIT ?3",
     )?;
     let rows = stmt
-        .query_map(params![now - debounce_secs, MAX_FLUSH_ATTEMPTS, limit as i64], |r| {
+        .query_map(params![now - debounce_secs, MAX_FLUSH_ATTEMPTS, limit as i64, now], |r| {
             Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -51,18 +55,22 @@ pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Res
 pub fn mark_flushed(db: &Db, track_id: i64, mtime: i64, size: i64) -> Result<(), Error> {
     db.conn().execute(
         "UPDATE tracks SET needs_flush = 0, flush_attempts = 0, last_flush_error = NULL,
-                           mtime = ?2, size = ?3
+                           next_flush_attempt_at = 0, mtime = ?2, size = ?3
          WHERE id = ?1",
         params![track_id, mtime, size],
     )?;
     Ok(())
 }
 
-/// Record a failed flush attempt (track stays dirty, attempts incremented)
+/// Record a failed flush attempt: the track stays dirty, attempts are incremented,
+/// and the next retry is scheduled with exponential backoff (30s, 60s, 120s, ...).
 pub fn mark_flush_error(db: &Db, track_id: i64, error: &str) -> Result<(), Error> {
     db.conn().execute(
-        "UPDATE tracks SET flush_attempts = flush_attempts + 1, last_flush_error = ?2 WHERE id = ?1",
-        params![track_id, error],
+        "UPDATE tracks SET flush_attempts = flush_attempts + 1,
+                           last_flush_error = ?2,
+                           next_flush_attempt_at = ?3 + ?4 * (1 << MIN(flush_attempts, 10))
+         WHERE id = ?1",
+        params![track_id, error, crate::now(), FLUSH_BACKOFF_BASE_SECS],
     )?;
     Ok(())
 }
@@ -124,17 +132,39 @@ mod tests {
     }
 
     #[test]
+    fn flush_error_backoff() {
+        let (_d, db) = test_db();
+        let t = insert_track(&db, "/test-root/a.mp3");
+        add_tag_to_track(&db, t, "x").unwrap();
+        let now = crate::now();
+        db.conn().execute("UPDATE tracks SET tag_updated_at = ?1", [now - 100]).unwrap();
+        assert_eq!(due_for_flush(&db, now, 5, 16).unwrap().len(), 1);
+        // After a failure the track is NOT retried immediately...
+        mark_flush_error(&db, t, "transient lock").unwrap();
+        assert!(due_for_flush(&db, now, 5, 16).unwrap().is_empty());
+        assert!(due_for_flush(&db, now + 5, 5, 16).unwrap().is_empty());
+        // ...but becomes due again after the first backoff window (30s)
+        assert_eq!(due_for_flush(&db, now + 31, 5, 16).unwrap().len(), 1);
+        // Second failure doubles the wait (60s from the failure)
+        mark_flush_error(&db, t, "transient lock").unwrap();
+        assert!(due_for_flush(&db, now + 59, 5, 16).unwrap().is_empty());
+        assert_eq!(due_for_flush(&db, now + 61, 5, 16).unwrap().len(), 1);
+    }
+
+    #[test]
     fn flush_errors_capped() {
         let (_d, db) = test_db();
         let t = insert_track(&db, "/test-root/a.mp3");
         add_tag_to_track(&db, t, "x").unwrap();
         db.conn().execute("UPDATE tracks SET tag_updated_at = 0", []).unwrap();
+        // Query far enough in the future that backoff windows have always elapsed
+        let future = crate::now() + 1_000_000;
         for _ in 0..MAX_FLUSH_ATTEMPTS {
-            assert_eq!(due_for_flush(&db, 100, 5, 16).unwrap().len(), 1);
+            assert_eq!(due_for_flush(&db, future, 5, 16).unwrap().len(), 1);
             mark_flush_error(&db, t, "io error").unwrap();
         }
         // Capped out: no longer due, error visible in status
-        assert!(due_for_flush(&db, 100, 5, 16).unwrap().is_empty());
+        assert!(due_for_flush(&db, future, 5, 16).unwrap().is_empty());
         let (pending, errors) = flush_status(&db).unwrap();
         assert_eq!(pending, 1);
         assert_eq!(errors.len(), 1);

@@ -346,27 +346,30 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 },
             };
 
-            // Start
-            let start = timestamp!();
-            context.send(json!({
-                "action": "startTagging",
-                "files": file_count,
-                "type": tagger_type
-            })).ok();
-            // Tagging
-            for status in rx {
-                context.send(json!({
-                    "action": "taggingProgress",
-                    "status": status
+            // Drain tagging progress on a blocking task: the status receiver blocks
+            // between updates, and inline it would pin this connection (and a runtime
+            // worker thread) for the whole run — StopTagging could never be received.
+            let sender = context.sender.clone();
+            tokio::task::spawn_blocking(move || {
+                let start = timestamp!();
+                sender.send(json!({
+                    "action": "startTagging",
+                    "files": file_count,
+                    "type": tagger_type
                 })).ok();
-            }
-            info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
-            // Done
-            context.send(json!({
-                "action": "taggingDone",
-                "path": folder_path,
-                "data": *tagger_finished.lock().unwrap()
-            })).ok();
+                for status in rx {
+                    sender.send(json!({
+                        "action": "taggingProgress",
+                        "status": status
+                    })).ok();
+                }
+                info!("Tagging finished, took: {} seconds.", (timestamp!() - start) / 1000);
+                sender.send(json!({
+                    "action": "taggingDone",
+                    "path": folder_path,
+                    "data": *tagger_finished.lock().unwrap()
+                })).ok();
+            });
         },
         Action::StopTagging => {
             onetagger_autotag::STOP_TAGGING.store(true, Ordering::SeqCst);

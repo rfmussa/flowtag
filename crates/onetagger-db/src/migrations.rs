@@ -23,6 +23,7 @@ const MIGRATIONS: &[&str] = &[
         needs_flush INTEGER NOT NULL DEFAULT 0,
         tag_updated_at INTEGER NOT NULL DEFAULT 0,
         flush_attempts INTEGER NOT NULL DEFAULT 0,
+        next_flush_attempt_at INTEGER NOT NULL DEFAULT 0,
         last_flush_error TEXT
     );
     CREATE INDEX idx_tracks_flush ON tracks(needs_flush) WHERE needs_flush = 1;

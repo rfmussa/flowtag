@@ -50,19 +50,25 @@ fn find_tag_by_name(conn: &Connection, name: &str) -> Result<Option<i64>, Error>
         .optional()?)
 }
 
-/// Create a tag, or return the existing one with the same (case-insensitive) name.
-/// Returns (tag, created).
-pub fn get_or_create_tag(db: &Db, name: &str, color: Option<&str>) -> Result<(DbTag, bool), Error> {
+/// Connection-level get-or-create, shared by the public API and the scanner's
+/// file-tag import. Returns (tag_id, created).
+pub(crate) fn get_or_create_tag_conn(conn: &Connection, name: &str, color: Option<&str>) -> Result<(i64, bool), Error> {
     let name = validate_tag_name(name)?;
-    let conn = db.conn();
-    if let Some(id) = find_tag_by_name(&conn, &name)? {
-        return Ok((get_tag_inner(&conn, id)?, false));
+    if let Some(id) = find_tag_by_name(conn, &name)? {
+        return Ok((id, false));
     }
     let color = color.unwrap_or(DEFAULT_TAG_COLOR);
     validate_color(color)?;
     conn.execute("INSERT INTO tags (name, color) VALUES (?1, ?2)", params![name, color])?;
-    let id = conn.last_insert_rowid();
-    Ok((get_tag_inner(&conn, id)?, true))
+    Ok((conn.last_insert_rowid(), true))
+}
+
+/// Create a tag, or return the existing one with the same (case-insensitive) name.
+/// Returns (tag, created).
+pub fn get_or_create_tag(db: &Db, name: &str, color: Option<&str>) -> Result<(DbTag, bool), Error> {
+    let conn = db.conn();
+    let (id, created) = get_or_create_tag_conn(&conn, name, color)?;
+    Ok((get_tag_inner(&conn, id)?, created))
 }
 
 /// Update a tag's name/color/group/keybind. Renaming to an existing (case-insensitive)
@@ -300,6 +306,27 @@ mod tests {
         assert_eq!(merged.count, 2);
         let tags = list_tags(&db).unwrap();
         assert_eq!(tags.len(), 1);
+    }
+
+    #[test]
+    fn merge_appends_positions_after_existing() {
+        let (_d, db) = test_db();
+        let t = insert_track(&db, "/test-root/a.mp3");
+        // Track has "keep" at position 0 and "old" at position 1
+        add_tag_to_track(&db, t, "keep").unwrap();
+        let old = get_or_create_tag(&db, "old", None).unwrap().0;
+        add_tag_to_track(&db, t, "old").unwrap();
+        let target = get_or_create_tag(&db, "target", None).unwrap().0;
+        // Merging "old" into "target": the merged link inherits the source position
+        // (the source link is deleted in the same operation, so no duplicates)
+        update_tag(&db, old.id, Some("target"), None, None, None).unwrap();
+        let conn = db.conn();
+        let mut stmt = conn.prepare("SELECT tag_id, position FROM track_tags WHERE track_id = ?1 ORDER BY position").unwrap();
+        let rows: Vec<(i64, i64)> = stmt.query_map([t], |r| Ok((r.get(0)?, r.get(1)?))).unwrap().collect::<Result<_, _>>().unwrap();
+        let positions: Vec<i64> = rows.iter().map(|r| r.1).collect();
+        let unique: std::collections::HashSet<i64> = positions.iter().copied().collect();
+        assert_eq!(unique.len(), positions.len(), "duplicate positions after merge: {rows:?}");
+        assert_eq!(rows.last().unwrap().0, target.id, "merged tag must come last");
     }
 
     #[test]
