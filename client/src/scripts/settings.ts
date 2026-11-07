@@ -5,21 +5,38 @@ import { Keybind } from "./utils";
 const FLOWTAG_ACTIONS = ['prev', 'next', 'focusTag', 'focusFilter', 'done', 'edit', 'lookup'] as const;
 type FlowTagAction = typeof FLOWTAG_ACTIONS[number];
 
+/** Optional track-list columns (title/artist/chips are always on) */
+interface FlowTagColumns {
+    year: boolean;
+    bpm: boolean;
+    key: boolean;
+    path: boolean;
+    added: boolean;
+}
+const DEFAULT_COLUMNS: FlowTagColumns = { year: true, bpm: true, key: true, path: false, added: false };
+
 /** FlowTag-specific settings */
 class FlowTagSettings {
     /** Custom keybind per action; a missing entry means the built-in default key */
     keybinds: Partial<Record<FlowTagAction, Keybind>> = {};
+    columns: FlowTagColumns = { ...DEFAULT_COLUMNS };
 
     static fromJson(data: any): FlowTagSettings {
         const s = new FlowTagSettings();
-        const raw = (data && typeof data === 'object' && data.keybinds && typeof data.keybinds === 'object')
-            ? data.keybinds : {};
+        const safe = (data && typeof data === 'object') ? data : {};
+        const raw = (safe.keybinds && typeof safe.keybinds === 'object') ? safe.keybinds : {};
         const keybinds: Partial<Record<FlowTagAction, Keybind>> = {};
         for (const action of FLOWTAG_ACTIONS) {
             const kb = (raw as any)[action];
             if (kb && typeof kb.key === 'string' && kb.key) keybinds[action] = Keybind.fromJson(kb);
         }
         s.keybinds = keybinds;
+        const cols = (safe.columns && typeof safe.columns === 'object') ? safe.columns : {};
+        const columns = { ...DEFAULT_COLUMNS };
+        for (const key of Object.keys(DEFAULT_COLUMNS) as (keyof FlowTagColumns)[]) {
+            if (typeof (cols as any)[key] === 'boolean') columns[key] = (cols as any)[key];
+        }
+        s.columns = columns;
         return s;
     }
 }

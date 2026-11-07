@@ -22,6 +22,8 @@ pub struct DbTrack {
     pub bpm: Option<i64>,
     pub key: Option<String>,
     pub year: Option<i64>,
+    /// Unix seconds when the track entered the library (mtime for pre-v5 rows)
+    pub added_at: i64,
     pub missing: bool,
     pub needs_flush: bool,
     pub tag_ids: Vec<i64>,

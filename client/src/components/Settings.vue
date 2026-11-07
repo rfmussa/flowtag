@@ -41,6 +41,14 @@
                 </span>
             </div>
 
+            <!-- Columns -->
+            <div class='ft-label section'>Track list columns</div>
+            <div class='hint'>Title, artist and tags are always shown.</div>
+            <div v-for='col in COLUMN_OPTIONS' :key='col.key' class='row-item'>
+                <span class='row-label'>{{ col.label }}</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.flowtag.columns[col.key]' @update:model-value='save' />
+            </div>
+
             <!-- Lookup -->
             <div class='ft-label section'>Lookup (M)</div>
             <div class='row-item'>
@@ -101,6 +109,14 @@ function normalizeCode(code: string): string {
     return code.toLowerCase().replace('key', '').replace('digit', '').replace('numpad', '');
 }
 const FIXED_KEYS = new Set(FIXED_FLOWTAG_CODES.map(normalizeCode));
+
+const COLUMN_OPTIONS = [
+    { key: 'year', label: 'Year' },
+    { key: 'bpm', label: 'BPM' },
+    { key: 'key', label: 'Key' },
+    { key: 'path', label: 'Path' },
+    { key: 'added', label: 'Date added' },
+] as const;
 
 function defaultKeyLabel(action: FlowTagAction): string {
     return FLOWTAG_ACTION_DEFAULTS[action].replace('Key', '');

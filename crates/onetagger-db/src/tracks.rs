@@ -47,7 +47,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year
+        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at
          FROM tracks ORDER BY path",
     )?;
     let tracks = stmt
@@ -64,6 +64,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
                 bpm: r.get(8)?,
                 key: r.get(9)?,
                 year: r.get(10)?,
+                added_at: r.get(11)?,
                 tag_ids: vec![],
             })
         })?
@@ -133,8 +134,8 @@ pub fn upsert_tracks(db: &Db, folder_id: i64, tracks: &[ScannedTrack]) -> Result
             }
             None => {
                 tx.execute(
-                    "INSERT INTO tracks (folder_id, path, format, title, artist, duration_ms, mtime, size, bpm, key, year)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    "INSERT INTO tracks (folder_id, path, format, title, artist, duration_ms, mtime, size, bpm, key, year, added_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, unixepoch())",
                     params![folder_id, t.path, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, t.bpm, t.key, t.year],
                 )?;
                 let id = tx.last_insert_rowid();

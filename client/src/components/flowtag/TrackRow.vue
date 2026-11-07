@@ -12,23 +12,37 @@
     <q-icon v-if='track.missing' name='mdi-file-alert-outline' size='13px' class='row-missing'>
         <q-tooltip>File missing</q-tooltip>
     </q-icon>
-    <span class='row-meta ft-num'>{{ track.year ?? '' }}</span>
-    <span class='row-meta row-bpm ft-num'>{{ track.bpm ?? '' }}</span>
-    <span class='row-key ft-mono' :style='{ color: track.key ? keyColor(track.key) : undefined }'>{{ track.key ?? '' }}</span>
+    <span v-if='cols.path' class='row-path' :title='track.path'>{{ track.path }}</span>
+    <span v-if='cols.added' class='row-added ft-num'>{{ addedDate }}</span>
+    <span v-if='cols.year' class='row-meta ft-num'>{{ track.year ?? '' }}</span>
+    <span v-if='cols.bpm' class='row-meta row-bpm ft-num'>{{ track.bpm ?? '' }}</span>
+    <span v-if='cols.key' class='row-key ft-mono' :style='{ color: track.key ? keyColor(track.key) : undefined }'>{{ track.key ?? '' }}</span>
 </div>
 </template>
 
 <script lang='ts' setup>
+import { computed } from 'vue';
 import TagChips from './TagChips.vue';
 import { FlowTrack } from '../../scripts/tagstore';
 import { keyColor } from '../../scripts/musickey';
+import { get1t } from '../../scripts/onetagger';
 
-defineProps<{
+const props = defineProps<{
     track: FlowTrack;
     selected: boolean;
     anchor?: boolean;
 }>();
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>();
+
+const cols = computed(() => get1t().settings.value.flowtag.columns);
+
+/** added_at as a compact ISO date */
+const addedDate = computed(() => {
+    if (!props.track.addedAt) return '';
+    const d = new Date(props.track.addedAt * 1000);
+    const p = (n: number) => n.toString().padStart(2, '0');
+    return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+});
 </script>
 
 <style lang='scss'>
@@ -81,6 +95,25 @@ const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>();
         flex-shrink: 0;
     }
     .row-missing { color: var(--ft-text-3); flex-shrink: 0; }
+    // Full path, leading-truncated so the filename end stays readable
+    .row-path {
+        width: 200px;
+        font-size: 11px;
+        color: var(--ft-text-3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        direction: rtl;
+        text-align: left;
+        flex-shrink: 0;
+    }
+    .row-added {
+        width: 74px;
+        text-align: right;
+        font-size: 11px;
+        color: var(--ft-text-3);
+        flex-shrink: 0;
+    }
     .row-meta {
         width: 34px;
         text-align: right;

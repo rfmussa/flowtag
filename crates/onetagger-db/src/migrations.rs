@@ -12,6 +12,20 @@ enum Migration {
 
 /// v4: tags created before auto-coloring all wear the old teal default and are
 /// indistinguishable. Re-spread them across the palette (custom colors stay).
+/// v5: add tracks.added_at. Pre-existing rows take their file mtime as the
+/// best available approximation of when they entered the library.
+/// Idempotent: safe to re-run on a database that already has the column.
+fn add_added_at(conn: &Connection) -> Result<(), Error> {
+    let has_column = conn
+        .prepare("SELECT 1 FROM pragma_table_info('tracks') WHERE name = 'added_at'")?
+        .exists([])?;
+    if !has_column {
+        conn.execute_batch("ALTER TABLE tracks ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    conn.execute("UPDATE tracks SET added_at = mtime WHERE added_at = 0", [])?;
+    Ok(())
+}
+
 fn recolor_legacy_teal_tags(conn: &Connection) -> Result<(), Error> {
     let mut stmt = conn.prepare("SELECT id FROM tags WHERE color = ?1 ORDER BY id")?;
     let ids: Vec<i64> = stmt
@@ -89,6 +103,8 @@ const MIGRATIONS: &[Migration] = &[
     "),
     // v4: spread legacy teal-default tags across the color palette
     Migration::Code(recolor_legacy_teal_tags),
+    // v5: tracks remember when they entered the library
+    Migration::Code(add_added_at),
 ];
 
 /// Apply pending migrations. Idempotent: already-applied migrations are skipped
@@ -164,5 +180,58 @@ mod tests {
         let conn = db.conn();
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM tags", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 0);
+    }
+
+    /// v5 adds added_at; rows that predate it inherit their file mtime as the
+    /// best available "date added", and the migration is idempotent.
+    #[test]
+    fn v5_backfills_added_at_from_mtime() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(dir.path().join("test.db")).unwrap();
+        let conn = db.conn();
+        conn.execute("INSERT INTO folders (path) VALUES ('/x')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (folder_id, path, format, title, mtime, size, added_at)
+             VALUES (1, '/x/a.mp3', 'mp3', 'A', 1700000000, 10, 0)",
+            [],
+        ).unwrap();
+        // Roll back and re-run: the backfill must fill the zeroed row
+        conn.pragma_update(None, "user_version", 4).unwrap();
+        super::migrate(&conn).unwrap();
+        let added: i64 = conn
+            .query_row("SELECT added_at FROM tracks WHERE path = '/x/a.mp3'", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(added, 1_700_000_000, "pre-v5 rows take mtime as added_at");
+    }
+
+    /// Newly scanned tracks record the moment they entered the library
+    #[test]
+    fn new_tracks_get_added_at_now() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = Db::open(dir.path().join("test.db")).unwrap();
+        let folder_id = {
+            let conn = db.conn();
+            conn.execute("INSERT INTO folders (path) VALUES ('/x')", []).unwrap();
+            conn.last_insert_rowid()
+        };
+        let track = crate::ScannedTrack {
+            path: "/x/new.mp3".into(),
+            format: "mp3".into(),
+            title: "New".into(),
+            artist: "".into(),
+            duration_ms: None,
+            bpm: None,
+            key: None,
+            year: None,
+            mtime: 1_600_000_000,
+            size: 10,
+            tag_names: vec![],
+        };
+        crate::tracks::upsert_tracks(&db, folder_id, &[track]).unwrap();
+        let added: i64 = db.conn()
+            .query_row("SELECT added_at FROM tracks WHERE path = '/x/new.mp3'", [], |r| r.get(0))
+            .unwrap();
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        assert!((added - now).abs() < 60, "added_at should be scan time, got {added}");
     }
 }
