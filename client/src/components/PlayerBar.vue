@@ -1,17 +1,37 @@
 <template>
 <div>
 
-    <div class="row q-mx-md">
+    <!-- Compact: slim strip, waveform hidden -->
+    <div v-if='compact' class='compact-row'>
+        <div class='compact-progress' :style='{ width: progress + "%" }'></div>
+        <q-btn
+            round flat dense size='12px'
+            :icon='$1t.player.value.playing ? "mdi-pause" : "mdi-play"'
+            :ripple='false'
+            @click='$1t.player.value.playing ? $1t.player.value.pause() : $1t.player.value.play()'
+            ref='playButton'
+        ></q-btn>
+        <span class='compact-title' v-if='$1t.player.value.title'>{{ $1t.player.value.title }}</span>
+        <span class='compact-artist' v-if='$1t.player.value.artists?.length'>{{ $1t.player.value.artists.join(', ') }}</span>
+        <span class='compact-spacer'></span>
+        <span class='monospace'>{{ fmt($1t.player.value.position) }} / {{ fmt($1t.player.value.duration) }}</span>
+        <button type='button' class='ft-btn' title='Expand player' @click='toggleCompact'>
+            <q-icon name='mdi-chevron-up' size='15px' />
+        </button>
+    </div>
+
+    <!-- Full bar -->
+    <div v-else class="row q-mx-md">
         <!-- Meta -->
         <div class="row col-2">
 
             <!-- Album art -->
             <div class='q-mt-sm'>
-                <q-img 
-                    :src='art' 
-                    width='46px' 
-                    height='46px' 
-                    class='rounded-borders' 
+                <q-img
+                    :src='art'
+                    width='46px'
+                    height='46px'
+                    class='rounded-borders'
                     :placeholder-src='PLACEHOLDER_IMG'
                 >
                     <template v-slot:error>
@@ -62,12 +82,12 @@
                         ref='playButton'
                     ></q-btn>
                 </div>
-    
+
                 <div><Waveform></Waveform></div>
             </div>
         </div>
 
-        <div class='row col-2 justify-end'>
+        <div class='row col-2 justify-end items-center'>
             <!-- Volume -->
             <div class="q-pt-sm" style="width: 88px">
                 <q-slider
@@ -80,7 +100,9 @@
                     style="margin-top: 6px"
                 ></q-slider>
             </div>
-    
+            <button type='button' class='ft-btn q-ml-sm' title='Compact player' @click='toggleCompact'>
+                <q-icon name='mdi-chevron-down' size='15px' />
+            </button>
         </div>
     </div>
 
@@ -96,11 +118,39 @@ import { get1t } from '../scripts/onetagger';
 const $1t = get1t();
 const playButton = ref<any>();
 
+// Compact footer: per-machine convenience, survives restarts
+const COMPACT_KEY = 'flowtag-compact-player';
+const compact = ref(false);
+try { compact.value = localStorage.getItem(COMPACT_KEY) === '1'; } catch (e) { /* storage unavailable */ }
+
+/** The track list sizes itself against this (QuickTag: calc(100vh - var(--player-h))) */
+function applyPlayerHeight() {
+    document.documentElement.style.setProperty('--player-h', compact.value ? '36px' : '60px');
+}
+applyPlayerHeight();
+
+function toggleCompact() {
+    compact.value = !compact.value;
+    applyPlayerHeight();
+    try { localStorage.setItem(COMPACT_KEY, compact.value ? '1' : '0'); } catch (e) { /* storage unavailable */ }
+}
+
+function fmt(ms: number): string {
+    const s = Math.max(Math.round((ms ?? 0) / 1000), 0);
+    return `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+}
+
+const progress = computed(() => {
+    const d = $1t.player.value.duration;
+    if (!d) return 0;
+    return Math.min(($1t.player.value.position / d) * 100, 100);
+});
+
 onMounted(() => {
     // Unfocus callback (keeps Space from re-triggering the focused play button)
     $1t.quickTagUnfocus = () => {
-        playButton.value!.$el.focus();
-        playButton.value!.$el.blur();
+        playButton.value?.$el?.focus();
+        playButton.value?.$el?.blur();
     }
 });
 
@@ -109,3 +159,41 @@ onDeactivated(() => $1t.quickTagUnfocus = () => {});
 const art = computed(() => `${httpUrl()}/thumb?path=${encodeURIComponent($1t.player.value.path??'')}`);
 
 </script>
+
+<style lang='scss' scoped>
+.compact-row {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 36px;
+    padding: 0 12px;
+    overflow: hidden;
+}
+.compact-progress {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 2px;
+    background: var(--ft-text-3);
+    transition: width 300ms linear;
+}
+.compact-title {
+    font-size: 12.5px;
+    font-weight: 500;
+    color: var(--ft-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 40%;
+}
+.compact-artist {
+    font-size: 12px;
+    color: var(--ft-text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+}
+.compact-spacer { flex: 1; }
+</style>

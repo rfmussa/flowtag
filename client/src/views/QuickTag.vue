@@ -262,8 +262,9 @@ onMounted(() => {
 
 <style lang='scss'>
 .flowtag {
-    // Full viewport minus the player footer (the only other chrome left)
-    height: calc(100vh - 60px);
+    // Full viewport minus the player footer (the only other chrome left);
+    // --player-h is set by PlayerBar (60px full, 36px compact)
+    height: calc(100vh - var(--player-h, 60px));
     background: var(--ft-bg);
 
     // Quiet the Quasar controls that remain inside the theme
