@@ -48,8 +48,10 @@ interface Suggestion { id?: number; name: string; color: string; count?: number 
 // when the text matches nothing exactly
 const suggestions = computed<Suggestion[]>(() => {
     const q = text.value.trim();
-    const track = store.selectedTrack();
-    const applied = track && track.id === props.trackId ? new Set(track.tagIds) : new Set<number>();
+    // Resolve by the prop, not the selection: the miniplayer tags the playing
+    // track, which may differ from this window's selected row
+    const track = store.tracks.value.find((t) => t.id === props.trackId);
+    const applied = track ? new Set(track.tagIds) : new Set<number>();
     const matches: Suggestion[] = store
         .suggest(q, 8 + applied.size)
         .filter((t) => !applied.has(t.id))
@@ -97,9 +99,10 @@ function onKey(e: KeyboardEvent) {
             e.preventDefault();
             break;
         case 'Backspace':
-            // Empty input: remove the last chip
+            // Empty input: remove the target track's last chip (by prop, not
+            // selection — the miniplayer tags the playing track)
             if (!text.value && props.trackId !== undefined) {
-                const track = store.selectedTrack();
+                const track = store.tracks.value.find((t) => t.id === props.trackId);
                 const last = track?.tagIds[track.tagIds.length - 1];
                 if (last !== undefined) store.removeTag(props.trackId, last);
                 e.preventDefault();

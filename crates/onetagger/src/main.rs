@@ -115,6 +115,8 @@ pub fn start_webview() -> Result<(), Error> {
     // Setup wry
     let event_loop = EventLoopBuilder::with_user_event().build();
     let proxy = event_loop.create_proxy();
+    // Kept for the event loop itself (later clones are consumed by handlers)
+    let loop_proxy = proxy.clone();
     let window = WindowBuilder::new()
         .with_title("FlowTag")
         .with_min_inner_size(Size::Logical(LogicalSize::new(1150.0, 550.0)))
@@ -170,6 +172,9 @@ pub fn start_webview() -> Result<(), Error> {
             }
             if message.body() == "exit" {
                 proxy.send_event(CustomWindowEvent::Exit).ok();
+            }
+            if message.body() == "toggleMini" {
+                proxy.send_event(CustomWindowEvent::ToggleMini).ok();
             }
         });
 
@@ -241,15 +246,21 @@ pub fn start_webview() -> Result<(), Error> {
     };
 
     // Event loop
-    event_loop.run(move |event, _, control_flow| {
+    let main_window_id = window.id();
+    let mut mini: Option<(tao::window::Window, wry::WebView)> = None;
+    event_loop.run(move |event, target, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         match event {
             Event::NewEvents(StartCause::Init) => {
                 debug!("Started webview!");
             },
-            // Check for unsaved progress
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
+            // Check for unsaved progress (mini just closes)
+            Event::WindowEvent { event: WindowEvent::CloseRequested, window_id, .. } => {
+                if window_id != main_window_id {
+                    mini = None;
+                    return;
+                }
                 match webview.evaluate_script("window.onWebviewEvent({\"action\": \"exit\"})") {
                     Ok(_) => {},
                     Err(e) => {
@@ -293,7 +304,23 @@ pub fn start_webview() -> Result<(), Error> {
             Event::UserEvent(CustomWindowEvent::Exit) => {
                 debug!("Exitting webview loop...");
                 *control_flow = ControlFlow::Exit;
-            }
+            },
+            // Floating miniplayer
+            Event::UserEvent(CustomWindowEvent::ToggleMini) => {
+                if mini.is_some() {
+                    mini = None;
+                } else {
+                    match create_mini(target, loop_proxy.clone()) {
+                        Ok(m) => mini = Some(m),
+                        Err(e) => error!("Failed creating miniplayer: {e}"),
+                    }
+                }
+            },
+            Event::UserEvent(CustomWindowEvent::DragMini) => {
+                if let Some((w, _)) = &mini {
+                    w.drag_window().ok();
+                }
+            },
             _ => ()
         }
 
@@ -307,6 +334,47 @@ enum CustomWindowEvent {
     Exit,
     /// Client player state for the OS Now Playing panel
     Media(onetagger_ui::media::NowPlaying),
+    /// Open/close the floating miniplayer window
+    ToggleMini,
+    /// The frameless miniplayer is dragged by its background
+    DragMini,
+}
+
+/// Create the always-on-top frameless miniplayer window
+fn create_mini(
+    target: &tao::event_loop::EventLoopWindowTarget<CustomWindowEvent>,
+    proxy: tao::event_loop::EventLoopProxy<CustomWindowEvent>,
+) -> Result<(tao::window::Window, wry::WebView), Error> {
+    let window = WindowBuilder::new()
+        .with_title("FlowTag Mini")
+        .with_inner_size(Size::Logical(LogicalSize::new(400.0, 178.0)))
+        .with_resizable(false)
+        .with_decorations(false)
+        .with_always_on_top(true)
+        .with_theme(Some(Theme::Dark))
+        .build(target)?;
+
+    let builder = WebViewBuilder::new()
+        .with_url(&format!("http://127.0.0.1:{PORT}/#/mini"))
+        .with_ipc_handler(move |message| {
+            match message.body().as_str() {
+                "closeMini" => { proxy.send_event(CustomWindowEvent::ToggleMini).ok(); },
+                "dragMini" => { proxy.send_event(CustomWindowEvent::DragMini).ok(); },
+                _ => {}
+            }
+        });
+
+    #[cfg(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android"))]
+    let webview = builder.build(&window)?;
+    #[cfg(not(any(target_os = "windows", target_os = "macos", target_os = "ios", target_os = "android")))]
+    let webview = {
+        use tao::platform::unix::WindowExtUnix;
+        use wry::WebViewBuilderExtUnix;
+        let vbox = window.default_vbox().unwrap();
+        builder.build_gtk(vbox)?
+    };
+
+    Ok((window, webview))
 }
 
 /// OS media controls (macOS Now Playing / MPRIS). Created on the main thread

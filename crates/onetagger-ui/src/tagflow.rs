@@ -76,9 +76,13 @@ fn run_scan(db: &Db, sender: &MessageSender, full: bool) -> Result<(), Error> {
     let result = scan::scan(db, full, |done, total| {
         sender.send(json!({ "action": "tagScanProgress", "done": done, "total": total })).ok();
     })?;
+    let changed = result.added + result.updated + result.removed > 0;
     sender.send(json!({ "action": "tagScanDone", "result": result }))?;
-    sender.send(pool_message(db)?)?;
-    sender.send(tracks_message(db)?)?;
+    // Resending 20k rows makes a no-op rescan feel slow; skip it when clean
+    if changed || full {
+        sender.send(pool_message(db)?)?;
+        sender.send(tracks_message(db)?)?;
+    }
     Ok(())
 }
 
@@ -92,7 +96,7 @@ pub(crate) fn pool_load(context: &SocketContext) -> Result<(), Error> {
 
 pub(crate) fn tag_create(context: &SocketContext, name: &str, color: Option<&str>) -> Result<(), Error> {
     let (tag, _created) = tags::get_or_create_tag(&context.db, name, color)?;
-    context.send(json!({ "action": "tagCreated", "tag": tag }))
+    context.broadcast(json!({ "action": "tagCreated", "tag": tag }))
 }
 
 pub(crate) fn tag_update(context: &SocketContext, id: i64, patch: TagPatch) -> Result<(), Error> {
@@ -110,35 +114,35 @@ pub(crate) fn tag_update(context: &SocketContext, id: i64, patch: TagPatch) -> R
     let tag = tags::update_tag(
         &context.db, id, patch.name.as_deref(), patch.color.as_deref(), group_id, keybind
     )?;
-    context.send(json!({ "action": "tagUpdated", "tag": tag }))
+    context.broadcast(json!({ "action": "tagUpdated", "tag": tag }))
 }
 
 pub(crate) fn tag_delete(context: &SocketContext, id: i64) -> Result<(), Error> {
     tags::delete_tag(&context.db, id)?;
-    context.send(json!({ "action": "tagDeleted", "id": id }))?;
+    context.broadcast(json!({ "action": "tagDeleted", "id": id }))?;
     pool_load(context)
 }
 
 pub(crate) fn group_create(context: &SocketContext, name: &str, color: &str) -> Result<(), Error> {
     tags::create_group(&context.db, name, color)?;
-    pool_load(context)
+    context.broadcast(pool_message(&context.db)?)
 }
 
 pub(crate) fn group_update(
     context: &SocketContext, id: i64, name: Option<&str>, color: Option<&str>, position: Option<i64>
 ) -> Result<(), Error> {
     tags::update_group(&context.db, id, name, color, position)?;
-    pool_load(context)
+    context.broadcast(pool_message(&context.db)?)
 }
 
 pub(crate) fn group_delete(context: &SocketContext, id: i64) -> Result<(), Error> {
     tags::delete_group(&context.db, id)?;
-    pool_load(context)
+    context.broadcast(pool_message(&context.db)?)
 }
 
 pub(crate) fn track_add_tag(context: &SocketContext, track_id: i64, name: &str) -> Result<(), Error> {
     let (tag_ids, new_tag) = tags::add_tag_to_track(&context.db, track_id, name)?;
-    context.send(json!({
+    context.broadcast(json!({
         "action": "trackTagsChanged",
         "trackId": track_id,
         "tagIds": tag_ids,
@@ -148,7 +152,7 @@ pub(crate) fn track_add_tag(context: &SocketContext, track_id: i64, name: &str) 
 
 pub(crate) fn track_remove_tag(context: &SocketContext, track_id: i64, tag_id: i64) -> Result<(), Error> {
     let tag_ids = tags::remove_tag_from_track(&context.db, track_id, tag_id)?;
-    context.send(json!({
+    context.broadcast(json!({
         "action": "trackTagsChanged",
         "trackId": track_id,
         "tagIds": tag_ids
@@ -158,7 +162,7 @@ pub(crate) fn track_remove_tag(context: &SocketContext, track_id: i64, tag_id: i
 /// Bulk tag add (multi-select): one transaction, one compact echo
 pub(crate) fn tracks_add_tag(context: &SocketContext, track_ids: &[i64], name: &str) -> Result<(), Error> {
     let (tag, created) = tags::add_tag_to_tracks(&context.db, track_ids, name)?;
-    context.send(json!({
+    context.broadcast(json!({
         "action": "tracksTagsChanged",
         "trackIds": track_ids,
         "tagId": tag.id,
@@ -170,7 +174,7 @@ pub(crate) fn tracks_add_tag(context: &SocketContext, track_ids: &[i64], name: &
 /// Bulk tag remove (multi-select)
 pub(crate) fn tracks_remove_tag(context: &SocketContext, track_ids: &[i64], tag_id: i64) -> Result<(), Error> {
     tags::remove_tag_from_tracks(&context.db, track_ids, tag_id)?;
-    context.send(json!({
+    context.broadcast(json!({
         "action": "tracksTagsChanged",
         "trackIds": track_ids,
         "tagId": tag_id,
@@ -197,7 +201,7 @@ pub(crate) fn track_meta_set(context: &SocketContext, track_id: i64, meta: &onet
         return Err(anyhow::anyhow!("Stop playback before editing this file's tags"));
     }
     let saved = onetagger_db::meta::write_track_meta(&context.db, track_id, meta)?;
-    context.send(json!({
+    context.broadcast(json!({
         "action": "trackMetaChanged",
         "trackId": track_id,
         "meta": saved

@@ -14,12 +14,14 @@ export interface FlowTrack {
     bpm?: number;
     key?: string;
     year?: number;
+    /** Unix seconds when the track entered the library */
+    addedAt: number;
     missing: boolean;
     needsFlush: boolean;
     tagIds: number[];
 }
 
-export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year';
+export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year' | 'added';
 
 export interface FlowTag {
     id: number;
@@ -95,6 +97,9 @@ export class TagStore {
     manualTagSignal: Ref<number> = ref(0);
     /** Latest trackMeta reply (inspector fills its form from this) */
     inspectorMeta: Ref<{ trackId: number; meta: TrackMeta } | undefined> = ref(undefined);
+    /** Player state mirrored from whichever window is driving playback
+     *  (nowPlayingChanged broadcast); `at` = wall clock of the snapshot */
+    nowPlaying: Ref<{ playing: boolean; title: string; artist: string; positionMs: number; durationMs: number; path: string; at: number } | undefined> = ref(undefined);
     /** Incremented when a trackMetaChanged echo lands (a save completed) */
     metaSavedSignal: Ref<number> = ref(0);
     /** Filter text typed in the header */
@@ -222,6 +227,7 @@ export class TagStore {
                 case 'artist': return a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
                 case 'bpm': return nums(a.bpm, b.bpm);
                 case 'year': return nums(a.year, b.year);
+                case 'added': return a.addedAt - b.addedAt;
                 case 'key': {
                     if (!a.key && !b.key) return 0;
                     if (!a.key) return dir;
@@ -508,8 +514,22 @@ export class TagStore {
                 }
                 return true;
             }
+            case 'nowPlayingChanged':
+                this.nowPlaying.value = {
+                    playing: !!json.playing,
+                    title: json.title ?? '',
+                    artist: json.artist ?? '',
+                    positionMs: json.positionMs ?? 0,
+                    durationMs: json.durationMs ?? 0,
+                    path: json.path ?? '',
+                    at: Date.now(),
+                };
+                return true;
             // OS media keys (play/pause/next from Control Center, AirPods, F8...)
             case 'mediaKey': {
+                // Only the main window drives the (single, server-side) player;
+                // the miniplayer mirrors state and must not double-execute
+                if (window.location.hash.startsWith('#/mini')) return true;
                 const player = get1t().player.value;
                 switch (json.key) {
                     case 'playPause': player.playing ? player.pause() : player.play(); break;

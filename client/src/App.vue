@@ -11,7 +11,7 @@
             </q-page-container>
 
             <!-- Player -->
-            <q-footer class="flowtag-theme">
+            <q-footer v-if='!isMini' class="flowtag-theme">
                 <PlayerBar v-if='$1t.info.value.ready'></PlayerBar>
             </q-footer>
         </q-layout>
@@ -41,7 +41,8 @@
 
 <script lang='ts' setup>
 import { useQuasar } from 'quasar';
-import { onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
 
@@ -54,6 +55,9 @@ const $q = useQuasar();
 
 const settings = ref(false);
 const sizeDialog = ref(false);
+const route = useRoute();
+// The miniplayer window: no footer, no min-size demands, no media sync of its own
+const isMini = computed(() => route.path === '/mini' || window.location.hash.startsWith('#/mini'));
 
 // When settings closed
 function settingsClosed() {
@@ -72,14 +76,14 @@ function setWaveformWidth() {
 
 function onResize() {
     setWaveformWidth();
-    sizeDialog.value = window.innerHeight < 550 || window.innerWidth < 1200;
+    sizeDialog.value = !isMini.value && (window.innerHeight < 550 || window.innerWidth < 1200);
 }
 
 // Setup
 onMounted(() => {
     $q.dark.set(true);
     setWaveformWidth();
-    initMediaSync();
+    if (!isMini.value) initMediaSync();
     window.addEventListener("resize", onResize);
     window.addEventListener('flowtag-open-settings', openSettings);
 });

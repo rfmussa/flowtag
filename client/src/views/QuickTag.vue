@@ -47,6 +47,9 @@
         <button type='button' class='ft-btn icon-only' :aria-label='paletteOpen ? "Hide tag palette" : "Show tag palette"' @click='togglePalette'>
             <q-icon :name='paletteOpen ? "mdi-dock-right" : "mdi-dock-left"' size='15px' />
         </button>
+        <button v-if='hasShell' type='button' class='ft-btn icon-only' aria-label='Toggle miniplayer' @click='toggleMini'>
+            <q-icon name='mdi-picture-in-picture-bottom-right' size='15px' />
+        </button>
         <button type='button' class='ft-btn icon-only' aria-label='Settings' @click='openSettings'>
             <q-icon name='mdi-cog-outline' size='15px' />
         </button>
@@ -166,6 +169,7 @@ const sortOptions = [
     { label: 'BPM', value: 'bpm' },
     { label: 'Key', value: 'key' },
     { label: 'Year', value: 'year' },
+    { label: 'Added', value: 'added' },
 ];
 
 function readPaletteOpen(): boolean {
@@ -213,6 +217,17 @@ function confirmExport(e: Event) {
 function openSettings(e: Event) {
     blurTarget(e);
     window.dispatchEvent(new CustomEvent('flowtag-open-settings'));
+}
+
+// Floating miniplayer: only the native shell can spawn windows
+// @ts-ignore
+const hasShell = typeof window.ipc !== 'undefined';
+function toggleMini(e: Event) {
+    blurTarget(e);
+    try {
+        // @ts-ignore
+        window.ipc.postMessage('toggleMini');
+    } catch (err) { /* browser mode */ }
 }
 
 // M: online metadata lookup for the selected track (Beatport/Discogs/...).
@@ -303,9 +318,31 @@ onMounted(() => {
     }
 }
 
+// The sort select masquerades as a ghost control (q-field chrome suppressed)
 .flowtag .sort-select {
-    min-width: 72px;
-    .q-field__native { color: var(--ft-text-2); }
+    min-width: 64px;
+    .q-field__control {
+        min-height: 26px;
+        height: 26px;
+        padding: 0 4px 0 10px;
+        border-radius: 6px;
+        transition: background 80ms ease-out;
+        &::before, &::after { display: none; }
+        &:hover { background: var(--ft-hover); }
+    }
+    .q-field__native {
+        color: var(--ft-text-2);
+        font-size: 12.5px;
+        font-weight: 500;
+        min-height: 26px;
+        padding: 0;
+    }
+    .q-field__append {
+        color: var(--ft-text-3);
+        min-height: 26px;
+        height: 26px;
+        .q-icon { font-size: 16px; }
+    }
 }
 .flowtag .dir-btn { padding: 0 5px; height: 26px; }
 .flowtag .icon-only { padding: 0 6px; }

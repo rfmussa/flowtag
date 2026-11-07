@@ -118,6 +118,9 @@ enum Action {
         #[serde(flatten)]
         now_playing: crate::media::NowPlaying,
     },
+    /// Transport command from a secondary window (miniplayer): broadcast to
+    /// every client as a mediaKey message, same path as OS media keys
+    RemoteCommand { key: String },
 }
 
 
@@ -172,6 +175,7 @@ pub(crate) struct SocketContext {
     pub(crate) sender: MessageSender,
     pub(crate) db: Arc<onetagger_db::Db>,
     pub(crate) flush_wake: std::sync::mpsc::Sender<()>,
+    pub(crate) events: tokio::sync::broadcast::Sender<String>,
 }
 
 impl SocketContext {
@@ -180,6 +184,7 @@ impl SocketContext {
         sender: MessageSender,
         db: Arc<onetagger_db::Db>,
         flush_wake: std::sync::mpsc::Sender<()>,
+        events: tokio::sync::broadcast::Sender<String>,
     ) -> SocketContext {
         SocketContext {
             player: AudioPlayer::new(),
@@ -188,12 +193,20 @@ impl SocketContext {
             sender,
             db,
             flush_wake,
+            events,
         }
     }
 
     /// Queue a message for this connection (safe to call from any task/thread via a cloned sender)
     pub(crate) fn send(&self, message: impl Serialize) -> Result<(), Error> {
         self.sender.send(message)
+    }
+
+    /// Queue a message for EVERY connection, this one included — used for
+    /// state echoes that must keep all windows in sync (tags, now playing)
+    pub(crate) fn broadcast(&self, message: impl Serialize) -> Result<(), Error> {
+        self.events.send(serde_json::to_string(&message)?).ok();
+        Ok(())
     }
 }
 
@@ -262,7 +275,7 @@ pub(crate) async fn handle_ws_connection(
         }
     });
 
-    let mut context = SocketContext::new(context, sender, db, flush_wake);
+    let mut context = SocketContext::new(context, sender, db, flush_wake, events);
 
     while let Some(message) = stream.next().await {
         match message {
@@ -771,7 +784,27 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
         Action::TrackMetaGet { track_id } => tagflow::track_meta_get(context, track_id)?,
         Action::TrackMetaSet { track_id, meta } => tagflow::track_meta_set(context, track_id, &meta)?,
-        Action::NowPlaying { now_playing } => crate::media::push_now_playing(now_playing),
+        Action::NowPlaying { now_playing } => {
+            // Secondary windows (miniplayer) mirror this; the shell feeds the OS
+            context.broadcast(json!({
+                "action": "nowPlayingChanged",
+                "playing": now_playing.playing,
+                "title": now_playing.title,
+                "artist": now_playing.artist,
+                "positionMs": now_playing.position_ms,
+                "durationMs": now_playing.duration_ms,
+                "path": now_playing.path,
+            }))?;
+            crate::media::push_now_playing(now_playing);
+        },
+        Action::RemoteCommand { key } => {
+            match key.as_str() {
+                "playPause" | "play" | "pause" | "next" | "prev" => {
+                    context.broadcast(json!({ "action": "mediaKey", "key": key }))?;
+                },
+                _ => warn!("Ignoring unknown remote command: {key}"),
+            }
+        },
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,
         Action::RekordboxExport { mode } => tagflow::rekordbox_export(context, &mode)?,
