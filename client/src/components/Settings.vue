@@ -3,7 +3,7 @@
     <q-card flat class='settings-card flowtag-theme'>
 
         <div class='settings-head'>
-            <span class='ft-label'>Settings</span>
+            <span class='ft-title'>Settings</span>
             <button type='button' class='ft-btn' @click='$1t.send("openSettingsFolder")'>
                 <q-icon name='mdi-folder-outline' size='14px' />
                 Data folder

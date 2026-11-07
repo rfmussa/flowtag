@@ -15,6 +15,7 @@
         :selected='store.isSelected(item.id)'
         :anchor='item.id === store.selectedId.value'
         :alt='index % 2 === 1'
+        :playing='item.path === playerPath'
         @click='(ev) => select(item, ev)'
     />
 </q-virtual-scroll>
@@ -23,11 +24,16 @@
 <script lang='ts' setup>
 import { computed, ref, watch } from 'vue';
 import { QVirtualScroll } from 'quasar';
+import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../../scripts/tagstore';
 import TrackRow from './TrackRow.vue';
 
+const $1t = get1t();
 const store = getTagStore();
 const scroller = ref<QVirtualScroll>();
+
+// The actively playing file (may differ from the anchor with continue-playback)
+const playerPath = computed(() => $1t.player.value.path);
 
 // Recomputes only when tracks / filter / toggle change
 const visible = computed(() => {

@@ -4,6 +4,7 @@
     :class='{"flowtag-row-alt": alt, "flowtag-row-selected": selected, "flowtag-row-anchor": anchor}'
     @click='emit("click", $event)'
 >
+    <q-icon v-if='playing' name='mdi-volume-high' size='12px' class='row-playing' />
     <span class='row-title' :title='track.title'>{{ track.title }}</span>
     <span class='row-artist' :title='track.artist'>{{ track.artist }}</span>
     <span class='row-spacer'></span>
@@ -33,6 +34,8 @@ const props = defineProps<{
     anchor?: boolean;
     /** Odd list index: zebra stripe (index-based so it survives slice shifts) */
     alt?: boolean;
+    /** This row's file is the one currently loaded in the player */
+    playing?: boolean;
 }>();
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>();
 
@@ -64,6 +67,11 @@ const addedDate = computed(() => {
 
     &:hover { background: var(--ft-hover); }
 
+    .row-playing {
+        color: var(--ft-playing);
+        flex-shrink: 0;
+        margin-right: -4px; // tuck against the title; the row gap adds the rest
+    }
     .row-title {
         font-size: 13px;
         font-weight: 500;

@@ -2,7 +2,7 @@
 <q-dialog v-model='open'>
     <q-card class='track-inspector flowtag-theme'>
         <div class='insp-head row items-center no-wrap'>
-            <div class='insp-title'>Edit metadata</div>
+            <div class='ft-title'>Edit metadata</div>
             <q-space />
             <div class='insp-path ft-mono ellipsis' :title='track?.path'>{{ track?.path }}</div>
         </div>
@@ -155,7 +155,6 @@ watch(open, (v) => {
     .insp-head {
         padding: 14px 16px 10px;
         gap: 12px;
-        .insp-title { font-size: 14px; font-weight: 600; color: var(--ft-text); }
         .insp-path { max-width: 55%; color: var(--ft-text-3); direction: rtl; text-align: right; }
     }
 
