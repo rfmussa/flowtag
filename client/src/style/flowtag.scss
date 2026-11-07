@@ -1,0 +1,169 @@
+// FlowTag visual system — "Linear-crisp" register.
+// Pure-neutral dark (no blue cast), hairline borders, subtle elevation,
+// tight type ramp. Color on screen comes from the user's data (tag colors,
+// Camelot keys); the chrome stays monochrome.
+
+.flowtag-theme {
+    // Surfaces
+    --ft-bg: #111112;
+    --ft-panel: #151517;
+    --ft-raised: #1c1c1f;
+    --ft-overlay: #212124;
+    // Lines
+    --ft-line: rgba(255, 255, 255, 0.07);
+    --ft-line-strong: rgba(255, 255, 255, 0.14);
+    // Text (neutral ramp)
+    --ft-text: #ededef;
+    --ft-text-2: #a6a6ad;
+    --ft-text-3: #717179;
+    // Interaction
+    --ft-hover: rgba(255, 255, 255, 0.04);
+    --ft-active: rgba(255, 255, 255, 0.07);
+    --ft-focus: rgba(255, 255, 255, 0.4);
+    // Semantic (muted, used sparingly)
+    --ft-warn: #d29922;
+    --ft-danger: #e5534b;
+
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    color: var(--ft-text);
+    letter-spacing: 0.005em;
+
+    // The app globally forces `* { font-family: Dosis !important }`; FlowTag
+    // opts out into the system UI face (and keeps the teal brand color out of
+    // its chrome — Quasar controls inside the theme go neutral)
+    &, & *:not(.wavefont) {
+        font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif !important;
+    }
+    --q-primary: #ededef;
+
+    // Browser surfaces carry the design too
+    ::selection { background: rgba(255, 255, 255, 0.2); }
+    caret-color: var(--ft-text);
+
+    ::-webkit-scrollbar { width: 10px; height: 10px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.12);
+        border-radius: 5px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+    }
+    ::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.22); }
+
+    :focus-visible {
+        outline: 2px solid var(--ft-focus);
+        outline-offset: 1px;
+        border-radius: 4px;
+    }
+
+    // ---- Primitives ----
+
+    // Data numerals: always tabular
+    .ft-num {
+        font-variant-numeric: tabular-nums;
+        font-feature-settings: 'tnum';
+    }
+
+    .ft-mono {
+        font-family: 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace !important;
+        font-variant-numeric: tabular-nums;
+        font-size: 11.5px;
+    }
+
+    // Ghost button: quiet until hovered
+    .ft-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 6px;
+        border: none;
+        background: transparent;
+        color: var(--ft-text-2);
+        font-size: 12.5px;
+        font-weight: 500;
+        cursor: pointer;
+        transition: background 80ms ease-out, color 80ms ease-out;
+
+        &:hover { background: var(--ft-hover); color: var(--ft-text); }
+        &:active { background: var(--ft-active); }
+        &.ft-btn-primary {
+            background: var(--ft-raised);
+            border: 1px solid var(--ft-line-strong);
+            color: var(--ft-text);
+            &:hover { background: var(--ft-overlay); }
+        }
+    }
+
+    // Field: hairline, focus brightens the border (no colored glow)
+    .ft-field {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 6px;
+        background: var(--ft-panel);
+        border: 1px solid var(--ft-line);
+        transition: border-color 80ms ease-out;
+
+        &:hover { border-color: var(--ft-line-strong); }
+        &:focus-within { border-color: var(--ft-focus); }
+
+        input {
+            flex: 1;
+            min-width: 0;
+            background: none;
+            border: none;
+            outline: none;
+            color: var(--ft-text);
+            font-size: 12.5px;
+            font-family: inherit;
+            &::placeholder { color: var(--ft-text-3); }
+        }
+    }
+
+    // Keycap hint
+    .ft-kbd {
+        font-family: 'SF Mono', ui-monospace, Menlo, monospace !important;
+        font-size: 10px;
+        line-height: 1;
+        color: var(--ft-text-3);
+        background: var(--ft-raised);
+        border: 1px solid var(--ft-line);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        padding: 3px 5px;
+    }
+
+    // Section label
+    .ft-label {
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        color: var(--ft-text-3);
+    }
+
+    // Floating panels (menus, autocomplete): real elevation, offset + blur
+    .ft-pop {
+        background: var(--ft-overlay);
+        border: 1px solid var(--ft-line-strong);
+        border-radius: 8px;
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    }
+}
+
+// The player footer joins the theme on the FlowTag route
+.q-footer.flowtag-theme {
+    background: var(--ft-panel) !important;
+    border-top: 1px solid var(--ft-line);
+
+    .monospace {
+        font-family: 'SF Mono', ui-monospace, Menlo, monospace !important;
+        font-variant-numeric: tabular-nums;
+        font-size: 11px;
+        color: var(--ft-text-3);
+    }
+}

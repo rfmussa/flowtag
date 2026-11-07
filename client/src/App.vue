@@ -50,7 +50,7 @@
 
 
             <!-- Footer -->
-            <q-footer reveal class="bg-darker text-white" v-if="footer">
+            <q-footer reveal class="bg-darker text-white" :class='isRoute("quicktag") ? "flowtag-theme" : ""' v-if="footer">
                 
                 <PlayerBar v-if='($1t.settings.value.tagEditorPlayer && isRoute("tageditor")) || isRoute("quicktag")'></PlayerBar>
                 

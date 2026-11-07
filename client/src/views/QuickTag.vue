@@ -1,101 +1,98 @@
 <template>
-<div class='flowtag column no-wrap'>
+<div class='flowtag flowtag-theme column no-wrap'>
 
-    <!-- Header bar -->
-    <div class='row items-center q-px-md q-py-sm header-bar no-wrap'>
+    <!-- Header -->
+    <div class='header-bar row items-center no-wrap'>
         <FolderManager />
-        <ScanStatus class='q-ml-md' />
+        <ScanStatus class='q-ml-sm' />
+
+        <div class='seg q-ml-md' role='group' aria-label='Scope'>
+            <button type='button' class='seg-btn' :class='{on: !store.untaggedOnly.value}' @click='setUntagged(false, $event)'>All</button>
+            <button type='button' class='seg-btn' :class='{on: store.untaggedOnly.value}' @click='setUntagged(true, $event)'>Untagged</button>
+        </div>
+
         <q-select
             v-model='store.sortBy.value'
             :options='sortOptions'
             dense options-dense borderless emit-value map-options
-            class='q-ml-md sort-select'
-            popup-content-class='bg-darker'
-        >
-            <template v-slot:prepend><q-icon name='mdi-sort' size='xs' /></template>
-        </q-select>
-        <q-btn
-            dense flat round size='sm'
-            :icon='store.sortDesc.value ? "mdi-arrow-down" : "mdi-arrow-up"'
-            @click='toggleSortDir'
-        >
-            <q-tooltip>{{ store.sortDesc.value ? 'Descending' : 'Ascending' }}</q-tooltip>
-        </q-btn>
-        <!-- Active tag filters (crate browsing) -->
-        <template v-if='store.filterTagIds.value.length > 0'>
-            <q-chip
-                v-for='tagId in store.filterTagIds.value'
-                :key='tagId'
-                dense removable square
-                class='q-ml-sm filter-chip'
-                :style='{ backgroundColor: store.tagById(tagId)?.color, color: chipTextColor(store.tagById(tagId)?.color ?? "") }'
-                @remove='store.toggleTagFilter(tagId)'
-            >
-                {{ store.tagById(tagId)?.name }}
-            </q-chip>
-            <q-btn dense flat round size='xs' icon='mdi-close-circle-outline' class='q-ml-xs' @click='store.clearTagFilters()'>
-                <q-tooltip>Clear tag filters</q-tooltip>
-            </q-btn>
-        </template>
-        <q-space />
-        <FlushIndicator class='q-mr-md' />
-        <q-input
-            v-model='store.filter.value'
-            dense outlined clearable
-            debounce='50'
-            placeholder='Filter tracks or tags'
-            class='filter-input q-mr-md'
+            class='q-ml-sm sort-select'
+            popup-content-class='flowtag-theme ft-pop'
         />
-        <q-toggle v-model='store.untaggedOnly.value' label='Untagged only' dense class='q-mr-md' />
-        <q-btn dense flat no-caps icon='mdi-tag-multiple' label='Manage' class='q-px-sm' @click='openManager'></q-btn>
-        <q-btn dense flat no-caps icon='mdi-export' label='Export' class='q-px-sm' @click='confirmExport'>
-            <q-tooltip>Write tags as #hashtags into each file's comment (Rekordbox-searchable)</q-tooltip>
-        </q-btn>
-        <q-btn
-            dense flat round
-            class='q-ml-xs'
-            :icon='paletteOpen ? "mdi-dock-right" : "mdi-dock-left"'
-            @click='togglePalette'
-        >
-            <q-tooltip>{{ paletteOpen ? 'Hide tag palette' : 'Show tag palette' }}</q-tooltip>
-        </q-btn>
+        <button type='button' class='ft-btn dir-btn' :aria-label='store.sortDesc.value ? "Sort descending" : "Sort ascending"' @click='toggleSortDir'>
+            <q-icon :name='store.sortDesc.value ? "mdi-arrow-down-thin" : "mdi-arrow-up-thin"' size='15px' />
+        </button>
+
+        <!-- Active tag filters -->
+        <template v-if='store.filterTagIds.value.length > 0'>
+            <span v-for='tagId in store.filterTagIds.value' :key='tagId' class='flowtag-chip filter-chip q-ml-sm'>
+                <span class='chip-dot' :style='{ background: store.tagById(tagId)?.color }'></span>
+                <span class='chip-name'>{{ store.tagById(tagId)?.name }}</span>
+                <button type='button' class='chip-x' :aria-label='`Stop filtering by ${store.tagById(tagId)?.name}`' @click='store.toggleTagFilter(tagId)'>×</button>
+            </span>
+        </template>
+
+        <q-space />
+
+        <span class='counts ft-num'>{{ taggedCount.toLocaleString() }} <span class='counts-dim'>/ {{ store.tracks.value.length.toLocaleString() }} tagged</span></span>
+        <FlushIndicator class='q-ml-md' />
+
+        <label class='ft-field search-field q-ml-md'>
+            <q-icon name='mdi-magnify' size='14px' class='search-icon' />
+            <input ref='filterEl' v-model='filterInput' type='text' placeholder='Filter tracks or tags' spellcheck='false' @keydown.escape.prevent='blurFilter' />
+            <span v-if='!filterInput' class='ft-kbd'>F</span>
+        </label>
+
+        <button type='button' class='ft-btn q-ml-sm' @click='openManager'>Manage</button>
+        <button type='button' class='ft-btn' @click='confirmExport' title="Write tags as #hashtags into each file's comment (Rekordbox-searchable)">Export</button>
+        <button type='button' class='ft-btn icon-only' :aria-label='paletteOpen ? "Hide tag palette" : "Show tag palette"' @click='togglePalette'>
+            <q-icon :name='paletteOpen ? "mdi-dock-right" : "mdi-dock-left"' size='15px' />
+        </button>
     </div>
+
+    <!-- Session progress: one quiet line -->
+    <div class='progress-line' aria-hidden='true'><div class='progress-fill' :style='{ width: progressPct + "%" }'></div></div>
 
     <!-- Track list + palette -->
     <div class='col row no-wrap list-row'>
-    <div class='col list-area'>
-        <div v-if='store.folders.value.length === 0 && store.loaded.value' class='column items-center justify-center full-height text-grey-5'>
-            <q-icon name='mdi-music-box-multiple-outline' size='64px' class='q-mb-md' />
-            <div class='text-h6'>No music folders yet</div>
-            <div class='q-mb-md'>Add a folder and scan it to start tagging</div>
-            <FolderManager />
+        <div class='col list-area'>
+            <div v-if='store.folders.value.length === 0 && store.loaded.value' class='column items-center justify-center full-height empty-state'>
+                <q-icon name='mdi-music-box-multiple-outline' size='44px' class='empty-icon' />
+                <div class='empty-title'>No music folders yet</div>
+                <div class='empty-sub'>Add a folder — a 20,000-track library scans in seconds.</div>
+                <FolderManager class='q-mt-md' />
+            </div>
+            <div v-else-if='!store.loaded.value' class='column items-center justify-center full-height'>
+                <q-spinner size='28px' color='grey-6' />
+            </div>
+            <TrackList v-else />
         </div>
-        <div v-else-if='!store.loaded.value' class='column items-center justify-center full-height'>
-            <q-circular-progress indeterminate color='primary' size='48px' />
+        <div v-if='paletteOpen' class='palette-col'>
+            <TagPalette />
         </div>
-        <TrackList v-else />
-    </div>
-    <div v-if='paletteOpen' class='palette-col'>
-        <TagPalette />
-    </div>
     </div>
 
     <!-- Tagging panel -->
-    <div class='tag-panel q-px-md q-py-sm'>
-        <div v-if='selected' class='row items-center no-wrap'>
-            <div class='track-meta q-mr-md'>
-                <div class='text-weight-bold ellipsis'>{{ selected.title }}</div>
-                <div class='text-caption text-grey-6 ellipsis'>{{ selected.artist }}</div>
+    <div class='tag-panel row items-center no-wrap'>
+        <template v-if='selected'>
+            <div class='panel-meta'>
+                <span class='panel-title' :title='selected.title'>{{ selected.title }}</span>
+                <span class='panel-artist' :title='selected.artist'>{{ selected.artist }}</span>
             </div>
-            <q-badge v-if='multiCount > 1' color='primary' class='q-mr-md' outline>
+            <span v-if='multiCount > 1' class='multi-badge ft-num'>
                 {{ multiCount }} tracks
-                <q-tooltip>Tag edits apply to all selected tracks (Esc to clear)</q-tooltip>
-            </q-badge>
-            <TagChips :tag-ids='selected.tagIds' :track-id='selected.id' removable class='q-mr-md chips' />
+                <q-tooltip>Tag edits apply to all selected tracks — Esc clears</q-tooltip>
+            </span>
+            <TagChips :tag-ids='selected.tagIds' :track-id='selected.id' removable class='panel-chips' />
             <TagInput :track-id='selected.id' />
-        </div>
-        <div v-else class='text-grey-6 text-center q-py-xs'>
-            Select a track (<b>J</b>/<b>K</b> or click), press <b>T</b> to tag, <b>D</b> when done — <b>Space</b> plays
+        </template>
+        <div v-else class='panel-hint'>
+            <span class='ft-kbd'>J</span><span class='ft-kbd'>K</span> select
+            <span class='hint-sep'></span>
+            <span class='ft-kbd'>T</span> tag
+            <span class='hint-sep'></span>
+            <span class='ft-kbd'>D</span> done &amp; next
+            <span class='hint-sep'></span>
+            <span class='ft-kbd'>Space</span> play
         </div>
     </div>
 
@@ -112,7 +109,7 @@ import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
-import TagChips, { chipTextColor } from '../components/flowtag/TagChips.vue';
+import TagChips from '../components/flowtag/TagChips.vue';
 import TagInput from '../components/flowtag/TagInput.vue';
 import TagPalette from '../components/flowtag/TagPalette.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
@@ -127,6 +124,26 @@ const selected = computed(() => {
     return store.selectedTrack();
 });
 const multiCount = computed(() => store.allSelected().length);
+const taggedCount = computed(() => store.tracks.value.reduce((n, t) => n + (t.tagIds.length > 0 ? 1 : 0), 0));
+const progressPct = computed(() => {
+    const total = store.tracks.value.length;
+    return total === 0 ? 0 : Math.round((taggedCount.value / total) * 1000) / 10;
+});
+
+// Debounced filter binding (the old q-input had debounce built in)
+const filterInput = ref(store.filter.value);
+let filterTimer: any;
+watch(filterInput, (v) => {
+    clearTimeout(filterTimer);
+    filterTimer = setTimeout(() => { store.filter.value = v ?? ''; }, 60);
+});
+
+// F focuses the filter (from the global keyboard map)
+const filterEl = ref<HTMLInputElement>();
+watch(store.focusFilterSignal, () => filterEl.value?.focus());
+function blurFilter() {
+    filterEl.value?.blur();
+}
 
 const managerOpen = ref(false);
 const paletteOpen = ref(readPaletteOpen());
@@ -140,11 +157,6 @@ const sortOptions = [
     { label: 'Year', value: 'year' },
 ];
 
-function toggleSortDir(e: Event) {
-    blurTarget(e);
-    store.sortDesc.value = !store.sortDesc.value;
-}
-
 function readPaletteOpen(): boolean {
     try {
         return localStorage.getItem(PALETTE_KEY) !== 'false';
@@ -155,6 +167,16 @@ function readPaletteOpen(): boolean {
 
 function blurTarget(e: Event) {
     (e.currentTarget as HTMLElement | null)?.blur();
+}
+
+function setUntagged(v: boolean, e: Event) {
+    blurTarget(e);
+    store.untaggedOnly.value = v;
+}
+
+function toggleSortDir(e: Event) {
+    blurTarget(e);
+    store.sortDesc.value = !store.sortDesc.value;
 }
 
 function openManager(e: Event) {
@@ -205,54 +227,136 @@ onMounted(() => {
 });
 </script>
 
-<style lang='scss' scoped>
+<style lang='scss'>
 .flowtag {
     height: calc(100vh - 100px);
-}
-.header-bar {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.07);
-    flex-shrink: 0;
-}
-.filter-input {
-    width: 260px;
-}
-.sort-select {
-    min-width: 110px;
-    font-size: 13px;
-}
-.filter-chip {
-    font-size: 11px;
-}
-.list-row {
-    min-height: 0;
-}
-.list-area {
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-}
-.palette-col {
-    width: 230px;
-    flex-shrink: 0;
-    border-left: 1px solid rgba(255, 255, 255, 0.07);
-    min-height: 0;
-    overflow: hidden;
-}
-.tag-panel {
-    border-top: 1px solid rgba(255, 255, 255, 0.07);
-    flex-shrink: 0;
-    min-height: 56px;
+    background: var(--ft-bg);
 
-    .track-meta {
-        width: 220px;
+    // Quiet the Quasar controls that remain inside the theme
+    .q-btn { color: var(--ft-text-2); }
+    .q-field--borderless .q-field__control { color: var(--ft-text-2); font-size: 12.5px; }
+}
+
+.flowtag .header-bar {
+    height: 46px;
+    box-sizing: border-box;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--ft-line);
+    background: var(--ft-bg);
+    flex-shrink: 0;
+}
+
+.flowtag .seg {
+    display: inline-flex;
+    background: var(--ft-panel);
+    border: 1px solid var(--ft-line);
+    border-radius: 6px;
+    padding: 2px;
+
+    .seg-btn {
+        border: none;
+        background: transparent;
+        color: var(--ft-text-3);
+        font-size: 12px;
+        font-weight: 500;
+        font-family: inherit;
+        padding: 3px 10px;
+        border-radius: 4px;
+        cursor: pointer;
+        &:hover { color: var(--ft-text-2); }
+        &.on { background: var(--ft-raised); color: var(--ft-text); }
+    }
+}
+
+.flowtag .sort-select {
+    min-width: 72px;
+    .q-field__native { color: var(--ft-text-2); }
+}
+.flowtag .dir-btn { padding: 0 5px; height: 26px; }
+.flowtag .icon-only { padding: 0 6px; }
+
+.flowtag .filter-chip { height: 24px; }
+
+.flowtag .counts {
+    font-size: 12px;
+    color: var(--ft-text-2);
+    .counts-dim { color: var(--ft-text-3); }
+}
+
+.flowtag .search-field {
+    width: 230px;
+    .search-icon { color: var(--ft-text-3); }
+}
+
+.flowtag .progress-line {
+    height: 2px;
+    background: var(--ft-panel);
+    flex-shrink: 0;
+    .progress-fill {
+        height: 100%;
+        background: var(--ft-text-3);
+        transition: width 300ms ease-out;
+    }
+}
+
+.flowtag .list-row { min-height: 0; }
+.flowtag .list-area { min-height: 0; min-width: 0; overflow: hidden; }
+
+.flowtag .palette-col {
+    width: 240px;
+    flex-shrink: 0;
+    border-left: 1px solid var(--ft-line);
+    background: var(--ft-panel);
+    min-height: 0;
+    overflow: hidden;
+}
+
+.flowtag .empty-state {
+    .empty-icon { color: var(--ft-text-3); margin-bottom: 14px; }
+    .empty-title { font-size: 15px; font-weight: 600; color: var(--ft-text); }
+    .empty-sub { font-size: 12.5px; color: var(--ft-text-3); margin-top: 4px; }
+}
+
+.flowtag .tag-panel {
+    border-top: 1px solid var(--ft-line);
+    background: var(--ft-bg);
+    flex-shrink: 0;
+    min-height: 52px;
+    box-sizing: border-box;
+    padding: 0 16px;
+    gap: 12px;
+
+    .panel-meta {
+        display: flex;
+        align-items: baseline;
+        gap: 8px;
         min-width: 120px;
-    }
-    .chips {
-        max-width: 40%;
+        max-width: 300px;
         overflow: hidden;
+        .panel-title { font-size: 13px; font-weight: 600; color: var(--ft-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .panel-artist { font-size: 12px; color: var(--ft-text-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; flex-shrink: 0; max-width: 45%; }
+    }
+    .multi-badge {
+        font-size: 11.5px;
+        font-weight: 600;
+        color: var(--ft-text);
+        background: var(--ft-raised);
+        border: 1px solid var(--ft-line-strong);
+        border-radius: 5px;
+        padding: 2px 8px;
+        flex-shrink: 0;
+    }
+    .panel-chips { max-width: 38%; overflow: hidden; }
+    .panel-hint {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        width: 100%;
+        justify-content: center;
+        font-size: 12px;
+        color: var(--ft-text-3);
+        .hint-sep { width: 14px; }
     }
 }
-.full-height {
-    height: 100%;
-}
+.flowtag .full-height { height: 100%; }
 </style>

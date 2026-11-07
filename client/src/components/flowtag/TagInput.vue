@@ -13,7 +13,7 @@
         @blur='onBlur'
     />
     <!-- Suggestions -->
-    <div v-if='open && trackId !== undefined && suggestions.length > 0' class='suggestions bg-dark'>
+    <div v-if='open && trackId !== undefined && suggestions.length > 0' class='suggestions'>
         <div
             v-for='(tag, i) in suggestions'
             :key='tag.id ?? "new"'
@@ -122,50 +122,61 @@ function onBlur() {
 }
 .tag-input {
     width: 100%;
-    background: rgba(255, 255, 255, 0.07);
-    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-sizing: border-box;
+    background: var(--ft-panel);
+    border: 1px solid var(--ft-line);
     border-radius: 6px;
-    color: white;
-    padding: 6px 12px;
-    font-size: 14px;
+    color: var(--ft-text);
+    padding: 7px 12px;
+    font-size: 13px;
+    font-family: inherit;
     outline: none;
+    transition: border-color 80ms ease-out;
 
-    &:focus {
-        border-color: var(--q-primary);
-    }
+    &::placeholder { color: var(--ft-text-3); }
+    &:hover { border-color: var(--ft-line-strong); }
+    &:focus { border-color: var(--ft-focus); }
 }
 .suggestions {
     position: absolute;
-    bottom: calc(100% + 4px);
+    bottom: calc(100% + 6px);
     left: 0;
     min-width: 260px;
     max-width: 100%;
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 6px;
+    background: var(--ft-overlay);
+    border: 1px solid var(--ft-line-strong);
+    border-radius: 8px;
     overflow: hidden;
     z-index: 100;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+    padding: 4px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
 }
 .suggestion {
-    height: 30px;
+    height: 28px;
     cursor: pointer;
-    font-size: 13px;
+    font-size: 12.5px;
+    border-radius: 5px;
+    color: var(--ft-text-2);
 
     &.highlighted {
-        background: rgba(255, 255, 255, 0.1);
+        background: var(--ft-active);
+        color: var(--ft-text);
     }
     .dot {
-        width: 10px;
-        height: 10px;
+        width: 8px;
+        height: 8px;
         border-radius: 50%;
         flex-shrink: 0;
     }
     .name {
         flex: 1;
         min-width: 0;
+        font-weight: 500;
     }
     .count {
-        font-size: 11px;
+        font-size: 10.5px;
+        font-variant-numeric: tabular-nums;
+        color: var(--ft-text-3);
     }
 }
 </style>

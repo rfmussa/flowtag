@@ -1,18 +1,21 @@
 <template>
-<span class='flowtag-chips'>
-    <q-chip
+<span class='flowtag-chips' :class='{"flowtag-chips-dense": dense}'>
+    <span
         v-for='tag in resolved'
         :key='tag.id'
-        dense
-        square
         class='flowtag-chip'
-        :class='{"flowtag-chip-dense": dense}'
-        :style='{ backgroundColor: tag.color, color: chipTextColor(tag.color) }'
-        :label='tag.name'
         :title='tag.name'
-        :removable='removable && trackId !== undefined'
-        @remove='store.removeTag(trackId!, tag.id)'
-    ></q-chip>
+    >
+        <span class='chip-dot' :style='{ background: tag.color }'></span>
+        <span class='chip-name'>{{ tag.name }}</span>
+        <button
+            v-if='removable && trackId !== undefined'
+            type='button'
+            class='chip-x'
+            :aria-label='`Remove ${tag.name}`'
+            @click.stop='store.removeTag(trackId!, tag.id)'
+        >×</button>
+    </span>
 </span>
 </template>
 
@@ -61,13 +64,57 @@ const resolved = computed<FlowTag[]>(() => {
     display: inline-flex;
     flex-wrap: nowrap;
     align-items: center;
+    gap: 4px;
 }
 .flowtag-chip {
-    border-radius: 4px;
-    margin: 0 2px;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    height: 22px;
+    padding: 0 8px;
+    border-radius: 11px;
+    border: 1px solid var(--ft-line);
+    background: var(--ft-panel);
     flex-shrink: 0;
+    max-width: 150px;
+
+    .chip-dot {
+        width: 7px;
+        height: 7px;
+        border-radius: 50%;
+        flex-shrink: 0;
+    }
+    .chip-name {
+        font-size: 11.5px;
+        font-weight: 500;
+        color: var(--ft-text-2);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    .chip-x {
+        border: none;
+        background: none;
+        padding: 0 0 0 1px;
+        margin-right: -3px;
+        font-size: 13px;
+        line-height: 1;
+        color: var(--ft-text-3);
+        cursor: pointer;
+        border-radius: 50%;
+        width: 14px;
+        height: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        &:hover { color: var(--ft-text); background: var(--ft-active); }
+    }
+    &:hover { border-color: var(--ft-line-strong); .chip-name { color: var(--ft-text); } }
 }
-.flowtag-chip-dense {
-    font-size: 11px;
+.flowtag-chips-dense .flowtag-chip {
+    height: 20px;
+    padding: 0 7px;
+    .chip-name { font-size: 11px; }
+    .chip-dot { width: 6px; height: 6px; }
 }
 </style>

@@ -1,41 +1,40 @@
 <template>
 <div class='tag-palette scroll'>
-    <div v-if='sections.length === 0' class='text-grey-6 text-caption q-pa-sm'>
-        No tags yet. Type a tag to create one.
+    <div v-if='sections.length === 0' class='palette-empty'>
+        No tags yet. Press <span class='ft-kbd'>T</span> and type to create one.
     </div>
 
     <div v-for='section in sections' :key='section.key' class='section'>
-        <div class='section-header row items-center no-wrap'>
-            <span class='dot' :style='{ backgroundColor: section.color }'></span>
-            <span class='ellipsis'>{{ section.name }}</span>
+        <div class='section-header'>
+            <span class='section-dot' :style='{ backgroundColor: section.color }'></span>
+            <span class='section-name'>{{ section.name }}</span>
         </div>
-        <div class='chips'>
-            <button
-                v-for='tag in section.tags'
-                :key='tag.id'
-                type='button'
-                class='pal-chip'
-                :class='{ active: activeIds.has(tag.id), disabled: !hasSelection && !filterIds.has(tag.id), filtering: filterIds.has(tag.id) }'
-                :style='{ backgroundColor: tag.color, color: chipTextColor(tag.color) }'
-                :title='`${tag.name} — click: toggle on track · ⌘click: filter list`'
-                @mousedown.prevent
-                @click='toggle(tag, $event)'
-            >
-                <span class='name ellipsis'>{{ tag.name }}</span>
-                <span v-if='keyLabel(tag)' class='key'>{{ keyLabel(tag) }}</span>
-                <span class='count'>{{ tag.count }}</span>
-            </button>
-        </div>
+        <button
+            v-for='tag in section.tags'
+            :key='tag.id'
+            type='button'
+            class='pal-row'
+            :class='{ active: activeIds.has(tag.id), disabled: !hasSelection && !filterIds.has(tag.id), filtering: filterIds.has(tag.id) }'
+            :title='`${tag.name} — click: toggle on track · ⌘click: filter list`'
+            @mousedown.prevent
+            @click='toggle(tag, $event)'
+        >
+            <span class='pal-dot' :style='{ background: tag.color }'></span>
+            <span class='pal-name'>{{ tag.name }}</span>
+            <span v-if='keyLabel(tag)' class='ft-kbd pal-key'>{{ keyLabel(tag) }}</span>
+            <span class='pal-count ft-num'>{{ tag.count }}</span>
+        </button>
     </div>
+
+    <div class='palette-hint'><span class='ft-kbd'>⌘</span> click a tag to filter the list</div>
 </div>
 </template>
 
 <script lang='ts' setup>
 import { computed } from 'vue';
 import { FlowTag, getTagStore } from '../../scripts/tagstore';
-import { chipTextColor } from './TagChips.vue';
 
-const UNGROUPED_COLOR = '#757575';
+const UNGROUPED_COLOR = '#717179';
 
 interface Section { key: string; name: string; color: string; tags: FlowTag[] }
 
@@ -88,49 +87,85 @@ function toggle(tag: FlowTag, e: MouseEvent) {
 <style lang='scss'>
 .tag-palette {
     height: 100%;
-    padding: 6px 8px;
+    padding: 10px 8px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
 
-    .section { margin-bottom: 8px; }
-    .section-header {
-        font-size: 11px;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-        opacity: 0.75;
-        margin-bottom: 3px;
-        .dot { width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; flex-shrink: 0; }
+    .palette-empty {
+        font-size: 12px;
+        color: var(--ft-text-3);
+        padding: 8px;
+        line-height: 1.6;
     }
-    .chips { display: flex; flex-wrap: wrap; gap: 3px; }
-    .pal-chip {
-        display: inline-flex;
+
+    .section { margin-bottom: 14px; }
+    .section-header {
+        display: flex;
         align-items: center;
-        max-width: 100%;
-        border: 1px solid transparent;
-        border-radius: 4px;
-        padding: 1px 5px;
-        font-size: 11px;
-        line-height: 18px;
+        gap: 7px;
+        padding: 0 8px 5px;
+        .section-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+        .section-name {
+            font-size: 10.5px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--ft-text-3);
+        }
+    }
+
+    .pal-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        box-sizing: border-box;
+        height: 26px;
+        padding: 0 8px;
+        border: none;
+        background: transparent;
+        border-radius: 5px;
         cursor: pointer;
-        outline: none;
-        .name { min-width: 0; }
-        .key {
-            margin-left: 4px;
-            padding: 0 3px;
-            border-radius: 3px;
-            font-size: 9px;
-            font-weight: bold;
-            background: rgba(0, 0, 0, 0.3);
-            color: #fff;
+        font-family: inherit;
+        text-align: left;
+
+        .pal-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .pal-name {
+            flex: 1;
+            min-width: 0;
+            font-size: 12.5px;
+            font-weight: 500;
+            color: var(--ft-text-2);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
-        .count { margin-left: 4px; font-size: 9px; opacity: 0.7; }
-        &:hover:not(.disabled) { filter: brightness(1.15); }
-        &.active { border-color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5); }
-        &.disabled { opacity: 0.4; cursor: default; }
+        .pal-key { flex-shrink: 0; }
+        .pal-count { font-size: 10.5px; color: var(--ft-text-3); flex-shrink: 0; }
+
+        &:hover { background: var(--ft-hover); .pal-name { color: var(--ft-text); } }
+        &.active {
+            background: var(--ft-active);
+            .pal-name { color: var(--ft-text); font-weight: 600; }
+        }
         &.filtering {
-            border-style: dashed;
-            border-color: #fff;
-            box-shadow: 0 0 0 2px var(--q-primary);
-            opacity: 1;
+            background: var(--ft-raised);
+            box-shadow: inset 0 0 0 1px var(--ft-line-strong);
+            .pal-name { color: var(--ft-text); }
+            .pal-dot { box-shadow: 0 0 0 2px var(--ft-bg), 0 0 0 3px var(--ft-text-3); }
         }
+        &.disabled { opacity: 0.45; cursor: default; }
+    }
+
+    .palette-hint {
+        margin-top: auto;
+        padding: 8px;
+        font-size: 11px;
+        color: var(--ft-text-3);
+        display: flex;
+        align-items: center;
+        gap: 5px;
     }
 }
 </style>

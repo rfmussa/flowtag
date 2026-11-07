@@ -2,7 +2,7 @@
 <q-virtual-scroll
     ref='scroller'
     :items='visible'
-    :virtual-scroll-item-size='48'
+    :virtual-scroll-item-size='40'
     class='track-scroll'
     v-slot='{ item }'
 >
@@ -10,6 +10,7 @@
         :key='item.id'
         :track='item'
         :selected='store.isSelected(item.id)'
+        :anchor='item.id === store.selectedId.value'
         @click='(ev) => select(item, ev)'
     />
 </q-virtual-scroll>

@@ -75,6 +75,8 @@ export class TagStore {
     selectedIds: Ref<number[]> = ref([]);
     /** Incremented to ask the TagInput component to focus itself */
     focusInputSignal: Ref<number> = ref(0);
+    /** Incremented to ask the header filter field to focus itself */
+    focusFilterSignal: Ref<number> = ref(0);
     /** Filter text typed in the header */
     filter: Ref<string> = ref('');
     /** Show only untagged tracks */

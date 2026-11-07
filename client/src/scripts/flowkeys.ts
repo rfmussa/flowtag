@@ -79,6 +79,10 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         case 'KeyT':
             store.focusInputSignal.value++;
             return true;
+        case 'KeyF':
+            if (event.metaKey || event.ctrlKey) return false; // keep browser find-ish combos free
+            store.focusFilterSignal.value++;
+            return true;
     }
 
     // Undo the last tag edit
