@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- FlowTag app icon: the tag-chip motif from the design system cover.
+     Dark Linear-crisp tile, three chips with palette dots (green/violet/red). -->
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Tile: standard macOS grid margin, 22.5% radius, flat brand surface -->
+  <rect x="100" y="100" width="824" height="824" rx="185" fill="#151517"/>
+  <rect x="103" y="103" width="818" height="818" rx="182" fill="none" stroke="rgba(255,255,255,0.09)" stroke-width="6"/>
+
+  <!-- Three tag chips, left-aligned like the track list -->
+  <g>
+    <rect x="292" y="268" width="380" height="120" rx="60" fill="#232327" stroke="rgba(255,255,255,0.22)" stroke-width="7"/>
+    <circle cx="382" cy="328" r="36" fill="#30a46c"/>
+
+    <rect x="292" y="452" width="470" height="120" rx="60" fill="#232327" stroke="rgba(255,255,255,0.22)" stroke-width="7"/>
+    <circle cx="382" cy="512" r="36" fill="#6e56cf"/>
+
+    <rect x="292" y="636" width="330" height="120" rx="60" fill="#232327" stroke="rgba(255,255,255,0.22)" stroke-width="7"/>
+    <circle cx="382" cy="696" r="36" fill="#e5484d"/>
+  </g>
+</svg>
