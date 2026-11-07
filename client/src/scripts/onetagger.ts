@@ -1,4 +1,4 @@
-import { Dialog, DialogChainObject, Notify, setCssVar } from 'quasar';
+import { Dialog, DialogChainObject, Notify } from 'quasar';
 import { ref, Ref } from 'vue';
 import { AutotaggerConfig, AutotaggerPlatform, ConfigCallbackResponse, TaggerStatus } from './autotagger';
 import { Player } from './player';
@@ -432,9 +432,7 @@ class OneTagger {
         // Notification
         if (notif)
             Notify.create({
-                message: "Settings saved!",
-                color: 'primary',
-                textColor: 'black',
+                message: "Settings saved",
                 timeout: 500,
                 position: 'top-right'
             });
@@ -451,8 +449,6 @@ class OneTagger {
         this.player.value.volume = this.settings.value.volume??0.5;
         this.player.value.audio.volume = this.player.value.volume;
         this.player.value.setVolume(this.player.value.volume);
-        setCssVar('primary', this.settings.value.primaryColor??'#00D2BF');
-        if (!this.settings.value.tagEditorCustom) this.settings.value.tagEditorCustom = [];
         this.spotify.value.clientId = this.settings.value.audioFeatures.spotifyClientId;
         this.spotify.value.clientSecret = this.settings.value.audioFeatures.spotifyClientSecret;
 

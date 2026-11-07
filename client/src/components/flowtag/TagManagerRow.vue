@@ -62,7 +62,7 @@ import { computed, ref, watch } from 'vue';
 import { Dialog, Notify } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTag, FlowGroup, getTagStore } from '../../scripts/tagstore';
-import { RESERVED_FLOWTAG_CODES } from '../../scripts/flowkeys';
+import { reservedFlowtagCodes } from '../../scripts/flowkeys';
 import KeybindVue from '../Keybind.vue';
 
 const props = defineProps<{ tag: FlowTag, groups: FlowGroup[] }>();
@@ -99,7 +99,6 @@ function setGroup(groupId: number | null) {
 function normalizeCode(code: string): string {
     return code.toLowerCase().replace('key', '').replace('digit', '').replace('numpad', '');
 }
-const RESERVED_KEYS = new Set(RESERVED_FLOWTAG_CODES.map(normalizeCode));
 
 // Bumped to remount the picker so a rejected recording isn't shown as set
 const keybindNonce = ref(0);
@@ -115,8 +114,10 @@ function setKeybind(keybind?: any) {
         return;
     }
     const hasModifier = !!(keybind.ctrl || keybind.alt || keybind.shift);
-    if (!hasModifier && RESERVED_KEYS.has(String(keybind.key))) {
-        reject('That key is used by FlowTag (J/K/T/D/space/digits...). Add a modifier or pick another.');
+    // Recomputed per attempt: shortcut binds are configurable in Settings
+    const reserved = new Set(reservedFlowtagCodes().map(normalizeCode));
+    if (!hasModifier && reserved.has(String(keybind.key))) {
+        reject('That key is used by a FlowTag shortcut or transport key. Add a modifier or pick another.');
         return;
     }
     const clash = store.tags.value.find((t) => t.id !== props.tag.id && t.keybind

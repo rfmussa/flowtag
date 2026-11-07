@@ -1,144 +1,164 @@
 <template>
 <q-dialog v-model='open' @hide='close()'>
+    <q-card flat class='settings-card flowtag-theme'>
 
-    <q-card flat class='parent-card bg-dark q-pa-lg'>
-        <!-- Header -->
-        <q-card-section>            
-            <div class='text-subtitle2 text-bold q-mb-sm text-center text-uppercase text-primary'>Settings</div>
-            <q-tabs v-model='tab'>
-                <q-tab label='Preferences' class='q-pa-lg' name='advanced'></q-tab>
-            </q-tabs>
-        </q-card-section>
+        <div class='settings-head'>
+            <span class='ft-label'>Settings</span>
+            <button type='button' class='ft-btn' @click='$1t.send("openSettingsFolder")'>
+                <q-icon name='mdi-folder-outline' size='14px' />
+                Data folder
+            </button>
+        </div>
 
-        <!-- Content -->
-        <q-card-section>
-            <!-- Advanced -->
-            <div v-if='tab == "advanced"'>
-                
-                <!-- Open settings folder -->
-                <div class='text-center q-mb-xl'>
-                <q-btn dense push
-                    color='primary'
-                    class='rounded-borders q-px-md q-mt-xs text-weight-medium text-black'
-                    @click='$1t.send("openSettingsFolder")'
-                >Open data folder</q-btn>
-                </div>
-                
-                <q-separator class='q-mx-auto' :style='"max-width: 513px; margin-top: -8px; margin-bottom: 35px"' inset color="darker"/>
-                
-                <div class='text-uppercase text-primary text-subtitle2 text-bold q-mt-lg q-mb-xs text-left'>Auto Tag</div>
-                <q-checkbox
-                    v-model='$1t.settings.value.autoTaggerSinglePage'
-                    label="Show as single page"
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.showAutoTaggerProfiles'
-                    label="Show profiles"
-                    class='checkbox'
-                ></q-checkbox><br>
-                <div class='text-uppercase text-primary text-subtitle2 text-bold q-mt-lg q-mb-xs text-left'>Quick Tag</div>
-                <q-checkbox
-                    v-model='$1t.settings.value.continuePlayback'
-                    label='Continue playback when switching to a different track'
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.playOnSeek'
-                    label='Start/continue playback after seeking'
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.autoPlayNext'
-                    label='Go to next track when playback ends'
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.externalAudioPlayer'
-                    label='Use external audio player'
-                    class='checkbox'
-                ></q-checkbox><br>
-
-                <div class='text-uppercase text-primary text-subtitle2 text-bold q-mt-lg q-mb-xs text-left'>Edit Tags</div>
-                <q-checkbox
-                    v-model='$1t.settings.value.tagEditorDouble'
-                    label="Show 'Your list'"
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.tagEditorAutosave'
-                    label='Autosave changes when switching to a different track'
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.tagEditorPlayer'
-                    label='Show player in tag editor'
-                    class='checkbox'
-                ></q-checkbox><br>
-
-                <div class='text-uppercase text-primary text-subtitle2 text-bold q-mt-lg q-mb-xs text-left'>Display</div>
-                <q-checkbox
-                    v-model='$1t.settings.value.helpButton'
-                    label='Show help button'
-                    class='checkbox'
-                ></q-checkbox>     
-                
-                <div class='text-uppercase text-primary text-subtitle2 text-bold q-mt-lg q-mb-xs text-left'>Advanced</div>
-                <q-checkbox
-                    v-model='$1t.settings.value.clientSidePlayer'
-                    label='Client side player (for server mode)'
-                    class='checkbox'
-                ></q-checkbox><br>
-                <q-checkbox
-                    v-model='$1t.settings.value.nonNativeBrowser'
-                    label='Client side folder browser'
-                    class='checkbox'
-                ></q-checkbox>    
-                        
-                <!-- Color picker -->
-                <div class='text-uppercase text-primary text-subtitle2 text-bold q-mt-lg q-mb-md text-left'>Primary color</div>
-                <q-color 
-                    v-model='$1t.settings.value.primaryColor'
-                    @change='colorChange'
-                    flat
-                ></q-color>
-                <q-btn
-                    @click='$1t.settings.value.primaryColor = "#00d2bf"; colorChange()'
-                    color='primary'
-                    flat
-                    class='q-mt-sm'
-                >
-                    Reset color to default
-                </q-btn>
+        <div class='settings-body'>
+            <!-- Playback -->
+            <div class='ft-label section'>Playback</div>
+            <div class='row-item'>
+                <span class='row-label'>Keep playing when switching tracks</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.continuePlayback' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
+                <span class='row-label'>Resume playback after seeking</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.playOnSeek' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
+                <span class='row-label'>Advance to next track when playback ends</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.autoPlayNext' @update:model-value='save' />
             </div>
 
-        </q-card-section>
-    </q-card>
+            <!-- Keyboard -->
+            <div class='ft-label section'>Keyboard</div>
+            <div class='hint'>Click the keyboard icon to remap. Per-tag hotkeys are set in Manage tags.</div>
+            <div v-for='action in FLOWTAG_ACTIONS' :key='action' class='row-item'>
+                <span class='row-label'>{{ FLOWTAG_ACTION_LABELS[action] }}</span>
+                <span class='bind'>
+                    <span v-if='!$1t.settings.value.flowtag.keybinds[action]' class='ft-kbd'>{{ defaultKeyLabel(action) }}</span>
+                    <Keybind
+                        :key='action + "-" + nonce'
+                        :model-value='$1t.settings.value.flowtag.keybinds[action]'
+                        @update:model-value='(kb: any) => setBind(action, kb)'
+                    />
+                </span>
+            </div>
 
+            <!-- Lookup -->
+            <div class='ft-label section'>Lookup (M)</div>
+            <div class='row-item'>
+                <span class='row-label'>Single-page platform settings</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.autoTaggerSinglePage' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
+                <span class='row-label'>Show lookup profiles</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.showAutoTaggerProfiles' @update:model-value='save' />
+            </div>
+
+            <!-- Advanced -->
+            <div class='ft-label section'>Advanced</div>
+            <div class='row-item'>
+                <span class='row-label'>Webview devtools <span class='sub'>takes effect after restart</span></span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.devtools' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
+                <span class='row-label'>In-app folder browser</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.nonNativeBrowser' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
+                <span class='row-label'>Open tracks in external audio player</span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.externalAudioPlayer' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
+                <span class='row-label'>Client-side player <span class='sub'>server mode</span></span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.clientSidePlayer' @update:model-value='save' />
+            </div>
+        </div>
+
+    </q-card>
 </q-dialog>
 </template>
 
 <script lang='ts' setup>
 import { ref, watch } from 'vue';
+import { Notify } from 'quasar';
 import { get1t } from '../scripts/onetagger';
-import { setCssVar } from 'quasar';
+import { getTagStore } from '../scripts/tagstore';
+import { FLOWTAG_ACTIONS, FlowTagAction } from '../scripts/settings';
+import { FLOWTAG_ACTION_DEFAULTS, FLOWTAG_ACTION_LABELS, FIXED_FLOWTAG_CODES } from '../scripts/flowkeys';
+import { Keybind as KeybindClass } from '../scripts/utils';
+import Keybind from './Keybind.vue';
 
 const props = defineProps({
     modelValue: { type: Boolean, required: true }
 });
 const $1t = get1t();
+const store = getTagStore();
 const open = ref(props.modelValue);
-const tab = ref('advanced');
+// Bumped to remount a recorder whose recording was rejected
+const nonce = ref(0);
 const emit = defineEmits(['close']);
 
-// Primary color change
-function colorChange() {
-    setCssVar('primary', $1t.settings.value.primaryColor);
+/** Keybind.key form of a KeyboardEvent.code ('KeyJ' -> 'j', 'Digit1' -> '1') */
+function normalizeCode(code: string): string {
+    return code.toLowerCase().replace('key', '').replace('digit', '').replace('numpad', '');
+}
+const FIXED_KEYS = new Set(FIXED_FLOWTAG_CODES.map(normalizeCode));
+
+function defaultKeyLabel(action: FlowTagAction): string {
+    return FLOWTAG_ACTION_DEFAULTS[action].replace('Key', '');
+}
+
+/** The bind an action currently responds to (custom, or the modifier-less default) */
+function effectiveBind(action: FlowTagAction): KeybindClass {
+    const kb = $1t.settings.value.flowtag.keybinds[action];
+    if (kb && kb.key) return KeybindClass.fromJson(kb);
+    return KeybindClass.fromJson({ key: normalizeCode(FLOWTAG_ACTION_DEFAULTS[action]) });
+}
+
+function sameBind(a: { key?: string, ctrl?: boolean, alt?: boolean, shift?: boolean }, b: KeybindClass): boolean {
+    return a.key === b.key && !!a.ctrl === !!b.ctrl && !!a.alt === !!b.alt && !!a.shift === !!b.shift;
+}
+
+function reject(message: string) {
+    Notify.create({ type: 'warning', message });
+    nonce.value++;
+}
+
+function setBind(action: FlowTagAction, kb?: any) {
+    const current = $1t.settings.value.flowtag.keybinds;
+    // Reset to default
+    if (!kb || !kb.key) {
+        const next = { ...current };
+        delete next[action];
+        $1t.settings.value.flowtag.keybinds = next;
+        save();
+        return;
+    }
+    const hasModifier = !!(kb.ctrl || kb.alt || kb.shift);
+    if (!hasModifier && FIXED_KEYS.has(String(kb.key))) {
+        reject('That key is a fixed transport key (space, arrows, digits).');
+        return;
+    }
+    for (const other of FLOWTAG_ACTIONS) {
+        if (other !== action && sameBind(kb, effectiveBind(other))) {
+            reject(`Already used by "${FLOWTAG_ACTION_LABELS[other]}".`);
+            return;
+        }
+    }
+    const clash = store.tags.value.find((t) => t.keybind && sameBind(kb, KeybindClass.fromJson(t.keybind)));
+    if (clash) {
+        reject(`Already used as the hotkey of tag "${clash.name}".`);
+        return;
+    }
+    $1t.settings.value.flowtag.keybinds = { ...current, [action]: KeybindClass.fromJson(kb) };
+    save();
+}
+
+function save() {
+    $1t.saveSettings(false);
 }
 
 // Save on close
 function close() {
-    $1t.saveSettings();
+    $1t.saveSettings(false);
     emit("close");
 }
 
@@ -146,15 +166,54 @@ function close() {
 watch(props, () => {
     open.value = props.modelValue;
 });
-
-
 </script>
 
-<style>
-.parent-card {
-    max-height: 80vh;
-    height: 78vh;
-    width: 70vw;
-    min-width: 600px;
+<style lang='scss' scoped>
+.settings-card {
+    width: 540px;
+    max-width: 92vw;
+    max-height: 82vh;
+    padding: 18px 24px 22px;
+}
+.settings-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 4px;
+}
+.settings-body {
+    overflow-y: auto;
+    max-height: calc(82vh - 70px);
+}
+.section {
+    margin: 20px 0 4px;
+}
+.hint {
+    font-size: 11.5px;
+    color: var(--ft-text-3);
+    margin: 2px 0 4px;
+}
+.row-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 34px;
+    border-bottom: 1px solid var(--ft-line);
+    &:last-child { border-bottom: none; }
+}
+.row-label {
+    font-size: 12.5px;
+    color: var(--ft-text-2);
+    .sub {
+        font-size: 11px;
+        color: var(--ft-text-3);
+        margin-left: 6px;
+    }
+}
+.bind {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
 }
 </style>

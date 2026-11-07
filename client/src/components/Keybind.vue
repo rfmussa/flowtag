@@ -12,7 +12,7 @@
 
     <!-- Dialog picker -->
     <q-dialog @keydown='keydown' v-model='overlay'>
-        <q-card>
+        <q-card class='flowtag-theme'>
             <q-card-section>
                 <div class='text-h6'>Set keybind</div>
             </q-card-section>
