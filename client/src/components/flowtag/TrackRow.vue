@@ -1,7 +1,7 @@
 <template>
 <div
     class='flowtag-row'
-    :class='{"flowtag-row-selected": selected, "flowtag-row-anchor": anchor}'
+    :class='{"flowtag-row-alt": alt, "flowtag-row-selected": selected, "flowtag-row-anchor": anchor}'
     @click='emit("click", $event)'
 >
     <span class='row-title' :title='track.title'>{{ track.title }}</span>
@@ -31,6 +31,8 @@ const props = defineProps<{
     track: FlowTrack;
     selected: boolean;
     anchor?: boolean;
+    /** Odd list index: zebra stripe (index-based so it survives slice shifts) */
+    alt?: boolean;
 }>();
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>();
 
@@ -128,6 +130,12 @@ const addedDate = computed(() => {
         flex-shrink: 0;
         font-weight: 600;
     }
+}
+
+// Zebra stripe: just enough lift to separate neighbors at a glance
+// (hover/selected/anchor all out-rank it)
+.flowtag-row-alt {
+    background: rgba(255, 255, 255, 0.02);
 }
 
 // Range-selected rows: a quiet fill

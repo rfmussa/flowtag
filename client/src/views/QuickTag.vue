@@ -424,7 +424,9 @@ onMounted(() => {
         align-items: center;
         gap: 6px;
         width: 100%;
-        justify-content: center;
+        // Left-aligned like everything else on the surface (rows, header)
+        justify-content: flex-start;
+        padding-left: 6px;
         font-size: 12px;
         color: var(--ft-text-3);
         .hint-sep { width: 14px; }

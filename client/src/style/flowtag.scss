@@ -146,6 +146,14 @@
         color: var(--ft-text-3);
     }
 
+    // Reduced motion: transitions here only ease background/border colors,
+    // so ending them instantly preserves every state change
+    @media (prefers-reduced-motion: reduce) {
+        &, & * {
+            transition-duration: 0.01ms !important;
+        }
+    }
+
     // Floating panels (menus, autocomplete): real elevation, offset + blur
     .ft-pop {
         background: var(--ft-overlay);

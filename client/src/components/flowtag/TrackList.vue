@@ -7,13 +7,14 @@
     :virtual-scroll-slice-ratio-before='2'
     :virtual-scroll-slice-ratio-after='2'
     class='track-scroll'
-    v-slot='{ item }'
+    v-slot='{ item, index }'
 >
     <TrackRow
         :key='item.id'
         :track='item'
         :selected='store.isSelected(item.id)'
         :anchor='item.id === store.selectedId.value'
+        :alt='index % 2 === 1'
         @click='(ev) => select(item, ev)'
     />
 </q-virtual-scroll>
