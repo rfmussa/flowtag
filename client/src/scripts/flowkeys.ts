@@ -5,7 +5,7 @@ import { Keybind } from './utils';
 
 /** Key codes the FlowTag view claims; per-tag hotkeys must avoid these */
 export const RESERVED_FLOWTAG_CODES = [
-    'Space', 'KeyJ', 'KeyK', 'KeyT', 'KeyD',
+    'Space', 'KeyJ', 'KeyK', 'KeyT', 'KeyD', 'KeyE', 'KeyM',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
     'Digit0', 'Digit1', 'Digit2', 'Digit3',
     'Numpad0', 'Numpad1', 'Numpad2', 'Numpad3',
@@ -22,6 +22,7 @@ export const RESERVED_FLOWTAG_CODES = [
  * Transport:  Space play/pause · J/↑ prev · K/↓ next (vim-style) ·
  *             ←/→ seek -10s/+30s · 1/2/3 seek 25/50/75% · 0 seek start
  * Tagging:    T or Tab focus the tag input · D save + jump to next untagged ·
+ *             E edit file metadata · M online metadata lookup ·
  *             per-tag hotkeys toggle their tag on the selected track
  */
 export function handleFlowKeys(event: KeyboardEvent): boolean {
@@ -101,6 +102,16 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         $1t.send('flushHint', { trackId: selected.id });
         player.wasPlaying = true;
         store.selectNextUntagged();
+        return true;
+    }
+
+    // Track inspector (edit file metadata) / online lookup for the selected track
+    if (event.code === 'KeyE' && !event.ctrlKey && !event.metaKey) {
+        store.inspectorSignal.value++;
+        return true;
+    }
+    if (event.code === 'KeyM' && !event.ctrlKey && !event.metaKey) {
+        store.manualTagSignal.value++;
         return true;
     }
 

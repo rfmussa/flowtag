@@ -1,6 +1,6 @@
 <template>
 <q-dialog v-model='show' persistent>
-<q-card style='min-width: 650px; min-height: 50vh;' class='q-pa-lg'>
+<q-card style='min-width: 650px; min-height: 50vh;' class='q-pa-lg flowtag-theme'>
 
     <!-- Title -->
     <q-card-section>
@@ -138,7 +138,7 @@
 
 <!-- Error list -->
 <q-dialog v-model='errorList'>
-<q-card style='min-width: 420px;'>
+<q-card style='min-width: 420px;' class='flowtag-theme'>
     <!-- Title -->
     <q-card-section>
         <div class='q-mt-md text-subtitle2 text-bold text-center text-red'>ERRORS</div>

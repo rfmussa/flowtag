@@ -33,7 +33,7 @@ pub struct ExportResult {
 }
 
 /// Comment frame per format
-fn comment_frame() -> FrameName {
+pub(crate) fn comment_frame() -> FrameName {
     FrameName::new("COMM", "COMMENT", "©cmt")
 }
 

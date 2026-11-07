@@ -54,6 +54,18 @@ export interface FlushState {
     errors: { trackId: number; error: string }[];
 }
 
+/** Standard file metadata edited in the track inspector (E) */
+export interface TrackMeta {
+    title: string;
+    artist: string;
+    album: string;
+    genre: string;
+    year?: number | null;
+    bpm?: number | null;
+    key: string;
+    comment: string;
+}
+
 /**
  * Client-side state for the FlowTag view. All filtering/sorting/autocomplete runs
  * on this in-memory data; the websocket only carries mutations and their echoes.
@@ -77,6 +89,14 @@ export class TagStore {
     focusInputSignal: Ref<number> = ref(0);
     /** Incremented to ask the header filter field to focus itself */
     focusFilterSignal: Ref<number> = ref(0);
+    /** Incremented to open the track inspector (E) for the selected track */
+    inspectorSignal: Ref<number> = ref(0);
+    /** Incremented to open the online lookup / Manual Tag (M) for the selected track */
+    manualTagSignal: Ref<number> = ref(0);
+    /** Latest trackMeta reply (inspector fills its form from this) */
+    inspectorMeta: Ref<{ trackId: number; meta: TrackMeta } | undefined> = ref(undefined);
+    /** Incremented when a trackMetaChanged echo lands (a save completed) */
+    metaSavedSignal: Ref<number> = ref(0);
     /** Filter text typed in the header */
     filter: Ref<string> = ref('');
     /** Show only untagged tracks */
@@ -451,6 +471,28 @@ export class TagStore {
             case 'flushStatus':
                 this.flush.value = { pending: json.pending ?? 0, errors: json.errors ?? [] };
                 return true;
+            case 'trackMeta':
+                this.inspectorMeta.value = { trackId: json.trackId, meta: json.meta };
+                return true;
+            case 'trackMetaChanged': {
+                // Mirror the list-view columns; an emptied title falls back to
+                // the filename stem, same as the server-side DB row
+                const m: TrackMeta = json.meta ?? {};
+                this.tracks.value = this.tracks.value.map((t) => {
+                    if (t.id !== json.trackId) return t;
+                    const stem = t.path.split('/').pop()?.replace(/\.[^.]+$/, '') ?? t.path;
+                    return {
+                        ...t,
+                        title: (m.title ?? '').trim() || stem,
+                        artist: (m.artist ?? '').trim(),
+                        bpm: m.bpm ?? undefined,
+                        key: (m.key ?? '').trim() || undefined,
+                        year: m.year ?? undefined,
+                    };
+                });
+                this.metaSavedSignal.value++;
+                return true;
+            }
             case 'playerStarted': {
                 const player = get1t().player.value;
                 player.duration = json.duration || 1;

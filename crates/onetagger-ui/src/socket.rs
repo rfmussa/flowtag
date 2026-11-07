@@ -109,6 +109,10 @@ enum Action {
     FlushStatusGet,
     FlushRetry,
     RekordboxExport { mode: String },
+    #[serde(rename_all = "camelCase")]
+    TrackMetaGet { track_id: i64 },
+    #[serde(rename_all = "camelCase")]
+    TrackMetaSet { track_id: i64, meta: onetagger_db::meta::TrackMeta },
 }
 
 
@@ -760,6 +764,8 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::TracksAddTag { track_ids, name } => tagflow::tracks_add_tag(context, &track_ids, &name)?,
         Action::TracksRemoveTag { track_ids, tag_id } => tagflow::tracks_remove_tag(context, &track_ids, tag_id)?,
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
+        Action::TrackMetaGet { track_id } => tagflow::track_meta_get(context, track_id)?,
+        Action::TrackMetaSet { track_id, meta } => tagflow::track_meta_set(context, track_id, &meta)?,
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,
         Action::RekordboxExport { mode } => tagflow::rekordbox_export(context, &mode)?,

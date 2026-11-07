@@ -1,54 +1,23 @@
 import { createRouter, createWebHashHistory } from 'vue-router';
 
-import Index from '../views/Index.vue';
-import TagEditor from '../views/TagEditor.vue';
-import Renamer from '../views/Renamer.vue';
+import QuickTag from '../views/QuickTag.vue';
 
-// Required for hot reload, idk why it broke
-const AutotaggerStatus = () => import('../views/AutotaggerStatus.vue');
-const Autotagger = () => import('../views/Autotagger.vue');
-const QuickTag = () => import('../views/QuickTag.vue');
-const AudioFeatures = () => import('../views/AudioFeatures.vue');
-
-const history = createWebHashHistory();
-
+// FlowTag is the app: every path lands on the tagging surface.
+// The /quicktag path is kept (not '/') so route-conditional logic and
+// saved hashes from older builds keep working.
 const routes = [
-    {
-        path: '/',
-        component: Index
-    },
-    {
-        path: '/autotagger',
-        component: Autotagger
-    },
-    {
-        path: '/autotagger/status',
-        component: AutotaggerStatus
-    },
     {
         path: '/quicktag',
         component: QuickTag
     },
     {
-        path: '/audiofeatures',
-        component: AudioFeatures
-    },
-    {
-        path: '/audiofeatures/status',
-        component: AutotaggerStatus
-    },
-    {
-        path: '/tageditor',
-        component: TagEditor
-    },
-    {
-        path: '/renamer',
-        component: Renamer
+        path: '/:pathMatch(.*)*',
+        redirect: '/quicktag'
     }
 ];
 
 const router = createRouter({
-    history,
+    history: createWebHashHistory(),
     routes
 });
 

@@ -47,6 +47,9 @@
         <button type='button' class='ft-btn icon-only' :aria-label='paletteOpen ? "Hide tag palette" : "Show tag palette"' @click='togglePalette'>
             <q-icon :name='paletteOpen ? "mdi-dock-right" : "mdi-dock-left"' size='15px' />
         </button>
+        <button type='button' class='ft-btn icon-only' aria-label='Settings' @click='openSettings'>
+            <q-icon name='mdi-cog-outline' size='15px' />
+        </button>
     </div>
 
     <!-- Session progress: one quiet line -->
@@ -92,11 +95,17 @@
             <span class='hint-sep'></span>
             <span class='ft-kbd'>D</span> done &amp; next
             <span class='hint-sep'></span>
+            <span class='ft-kbd'>E</span> edit
+            <span class='hint-sep'></span>
+            <span class='ft-kbd'>M</span> lookup
+            <span class='hint-sep'></span>
             <span class='ft-kbd'>Space</span> play
         </div>
     </div>
 
     <TagManager v-model='managerOpen' />
+    <TrackInspector />
+    <ManualTag :path='manualTagPath' @exit='onManualTagExit' />
 </div>
 </template>
 
@@ -113,6 +122,8 @@ import TagChips from '../components/flowtag/TagChips.vue';
 import TagInput from '../components/flowtag/TagInput.vue';
 import TagPalette from '../components/flowtag/TagPalette.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
+import TrackInspector from '../components/flowtag/TrackInspector.vue';
+import ManualTag from '../components/ManualTag.vue';
 
 const PALETTE_KEY = 'flowtag.paletteOpen';
 
@@ -198,6 +209,27 @@ function confirmExport(e: Event) {
     });
 }
 
+// Settings dialog lives app-level (App.vue); ask it to open
+function openSettings(e: Event) {
+    blurTarget(e);
+    window.dispatchEvent(new CustomEvent('flowtag-open-settings'));
+}
+
+// M: online metadata lookup for the selected track (Beatport/Discogs/...).
+// Playback stops first so an eventual Apply can write the file.
+const manualTagPath = ref<string | undefined>();
+watch(store.manualTagSignal, () => {
+    const track = store.selectedTrack();
+    if (!track || track.missing) return;
+    $1t.player.value.stop();
+    manualTagPath.value = track.path;
+});
+function onManualTagExit() {
+    manualTagPath.value = undefined;
+    // Pick up whatever the lookup wrote (mtime diff -> only that file re-parses)
+    $1t.send('tagLibraryScan', { full: false });
+}
+
 function togglePalette(e: Event) {
     blurTarget(e);
     paletteOpen.value = !paletteOpen.value;
@@ -230,7 +262,8 @@ onMounted(() => {
 
 <style lang='scss'>
 .flowtag {
-    height: calc(100vh - 100px);
+    // Full viewport minus the player footer (the only other chrome left)
+    height: calc(100vh - 60px);
     background: var(--ft-bg);
 
     // Quiet the Quasar controls that remain inside the theme

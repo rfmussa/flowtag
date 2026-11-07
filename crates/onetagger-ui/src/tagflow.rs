@@ -178,6 +178,32 @@ pub(crate) fn tracks_remove_tag(context: &SocketContext, track_ids: &[i64], tag_
     }))
 }
 
+/// Track inspector: current metadata, read fresh from the file
+pub(crate) fn track_meta_get(context: &SocketContext, track_id: i64) -> Result<(), Error> {
+    let path = tracks::get_track_path(&context.db, track_id)?;
+    let meta = onetagger_db::meta::read_track_meta(&path)?;
+    context.send(json!({
+        "action": "trackMeta",
+        "trackId": track_id,
+        "meta": meta
+    }))
+}
+
+/// Track inspector: write metadata to the file and the DB row. The client
+/// stops playback before saving; this guard catches anything that slips past.
+pub(crate) fn track_meta_set(context: &SocketContext, track_id: i64, meta: &onetagger_db::meta::TrackMeta) -> Result<(), Error> {
+    let path = tracks::get_track_path(&context.db, track_id)?;
+    if crate::socket::is_currently_playing(&path) {
+        return Err(anyhow::anyhow!("Stop playback before editing this file's tags"));
+    }
+    let saved = onetagger_db::meta::write_track_meta(&context.db, track_id, meta)?;
+    context.send(json!({
+        "action": "trackMetaChanged",
+        "trackId": track_id,
+        "meta": saved
+    }))
+}
+
 /// Expedite pending flushes (never dirties a clean track) and wake the worker
 pub(crate) fn flush_hint(context: &SocketContext, track_id: Option<i64>) -> Result<(), Error> {
     flush::expedite(&context.db, track_id)?;
