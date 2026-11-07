@@ -55,6 +55,14 @@ const MIGRATIONS: &[&str] = &[
     // v2: tag_version guards the flusher against clearing edits made while a
     // flush batch was in flight (bumped on every tag change of a track)
     "ALTER TABLE tracks ADD COLUMN tag_version INTEGER NOT NULL DEFAULT 0;",
+    // v3: DJ metadata columns. Existing rows get stats reset so the next scan
+    // re-parses every file once and backfills them.
+    "
+    ALTER TABLE tracks ADD COLUMN bpm INTEGER;
+    ALTER TABLE tracks ADD COLUMN key TEXT;
+    ALTER TABLE tracks ADD COLUMN year INTEGER;
+    UPDATE tracks SET mtime = 0, size = -1;
+    ",
 ];
 
 /// Apply pending migrations. Idempotent: already-applied migrations are skipped

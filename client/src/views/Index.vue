@@ -51,11 +51,7 @@
                         <q-card-section>
                             <div class='col-3 text-primary text-bold text-subtitle2'>QUICK TAG</div>
                             <div class ='col-3 text-grey-4 text-subtitle2 q-pt-sm' style='line-height: 24px'>
-                                Tag your local audio files quickly based on 
-                                    <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Energy</span></q-badge> , 
-                                    <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Mood</span></q-badge> , 
-                                    <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Genre</span></q-badge>
-                                and other you defined. Key bind compatible. Or use <span class='text-primary text-bold text-subtitle2'>MANUAL TAG</span> to fetch metadata per track.<br>
+                                Tag your local audio files with freeform, color-coded tags. Press T to type with autocomplete, bind per-tag hotkeys, D saves & jumps to next. Export to Rekordbox comments. Or use <span class='text-primary text-bold text-subtitle2'>MANUAL TAG</span> to fetch metadata per track.<br>
                                 
                                 <q-btn dense push color='primary' class='rounded-borders q-px-sm q-mt-md text-black text-weight-medium text-caption' @click='help("quicktag")'>Read more</q-btn>
                             </div>                

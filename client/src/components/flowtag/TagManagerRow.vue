@@ -47,7 +47,7 @@
 
     <!-- Hotkey -->
     <div class='hotkey q-mr-xs'>
-        <KeybindVue :model-value='tag.keybind' @update:model-value='setKeybind' />
+        <KeybindVue :key='keybindNonce' :model-value='tag.keybind' @update:model-value='setKeybind' />
     </div>
 
     <!-- Delete -->
@@ -59,9 +59,10 @@
 
 <script lang='ts' setup>
 import { computed, ref, watch } from 'vue';
-import { Dialog } from 'quasar';
+import { Dialog, Notify } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTag, FlowGroup, getTagStore } from '../../scripts/tagstore';
+import { RESERVED_FLOWTAG_CODES } from '../../scripts/flowkeys';
 import KeybindVue from '../Keybind.vue';
 
 const props = defineProps<{ tag: FlowTag, groups: FlowGroup[] }>();
@@ -94,9 +95,40 @@ function setGroup(groupId: number | null) {
     else $1t.send('tagUpdate', { id: props.tag.id, groupId });
 }
 
-function setKeybind(keybind?: object) {
-    if (keybind) $1t.send('tagUpdate', { id: props.tag.id, keybind: JSON.parse(JSON.stringify(keybind)) });
-    else $1t.send('tagUpdate', { id: props.tag.id, clearKeybind: true });
+/** Keybind.key is stored like KeyboardEvent.code lowercased without the Key/Digit/Numpad prefix ('j', '1', 'f5') */
+function normalizeCode(code: string): string {
+    return code.toLowerCase().replace('key', '').replace('digit', '').replace('numpad', '');
+}
+const RESERVED_KEYS = new Set(RESERVED_FLOWTAG_CODES.map(normalizeCode));
+
+// Bumped to remount the picker so a rejected recording isn't shown as set
+const keybindNonce = ref(0);
+
+function reject(message: string) {
+    Notify.create({ type: 'warning', message });
+    keybindNonce.value++;
+}
+
+function setKeybind(keybind?: any) {
+    if (!keybind) {
+        $1t.send('tagUpdate', { id: props.tag.id, clearKeybind: true });
+        return;
+    }
+    const hasModifier = !!(keybind.ctrl || keybind.alt || keybind.shift);
+    if (!hasModifier && RESERVED_KEYS.has(String(keybind.key))) {
+        reject('That key is used by FlowTag (J/K/T/D/space/digits...). Add a modifier or pick another.');
+        return;
+    }
+    const clash = store.tags.value.find((t) => t.id !== props.tag.id && t.keybind
+        && t.keybind.key === keybind.key
+        && !!t.keybind.ctrl === !!keybind.ctrl
+        && !!t.keybind.alt === !!keybind.alt
+        && !!t.keybind.shift === !!keybind.shift);
+    if (clash) {
+        reject(`That hotkey is already used by "${clash.name}".`);
+        return;
+    }
+    $1t.send('tagUpdate', { id: props.tag.id, keybind: JSON.parse(JSON.stringify(keybind)) });
 }
 
 /**

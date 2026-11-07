@@ -440,17 +440,15 @@
                     <!-- Page 1 -->
                     <div v-if='page == 0'>
                         <div class='text-subtitle2 text-grey-4 q-mt-md text-center' style='line-height: 24px'>
-                            Manually tag your local audio files quickly, based on <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Energy</span></q-badge> , 
-                            <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Mood</span></q-badge> , <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Genre</span></q-badge>
-                                & other characteristics you defined. <br> Key bind compatible for quick access. <span @click='$1t.url("https://youtu.be/kiPCRNBaVEM")' class='clickable doc-link text-caption text-uppercase'><span class="q-mr-xs text-subtitle1 margin-yt"><q-icon name='mdi-youtube'></q-icon></span>video tutorial</span><br>
+                            Tag your local audio files with freeform, color-coded tags and autocomplete (press T to type, Enter to add). <br> Per-tag hotkeys for quick access. Tags are written to files in the background; export to Rekordbox comments. <span @click='$1t.url("https://youtu.be/kiPCRNBaVEM")' class='clickable doc-link text-caption text-uppercase'><span class="q-mr-xs text-subtitle1 margin-yt"><q-icon name='mdi-youtube'></q-icon></span>video tutorial</span><br>
                         </div>
                         <div class='row' style='width: 93%; margin-left:7%'>
                         <div class='col-2 text-subtitle2 text-primary text-bold q-mt-lg'>How does it work?</div>
                         <div class='col-10 q-mt-lg text-subtitle2 text-grey-4' style='line-height: 24px'>
                             Set the path to a folder with tracks you like to quick tag - or drag & drop playlist.<br>
-                            Predefine <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Energy</span></q-badge> , <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Mood</span></q-badge> , <q-badge outline color='primary'><span class='text-uppercase text-grey-3'>Genre</span></q-badge> & other characteristics. <br>
-                            Decide in which tag you want them to write, so you are able to read them out in your favorite DJ software. <br>
-                            Key bind them for quick access. Skip through a track to determine the mentioned elements. <br>
+                            Press T to type a tag - autocomplete suggests existing ones, Enter adds it. <br>
+                            Assign a hotkey to any tag in tag management. Tags are saved to your files in the background. <br>
+                            Press D to save & jump to the next untagged track. Export to Rekordbox comments when done. <br>
                             Hit the <q-badge outline color='grey-8'><span class='text-uppercase text-grey-3'>keys</span></q-badge> on your keyboard. Or <q-icon name='mdi-cursor-default-outline'></q-icon> &<span class='text-grey-6 keybind-icon text-caption text-bold'>CLICK</span><br>   
                         </div>                        
                         </div>

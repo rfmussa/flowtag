@@ -1,6 +1,16 @@
+import { Notify } from 'quasar';
 import { get1t } from './onetagger';
 import { getTagStore } from './tagstore';
 import { Keybind } from './utils';
+
+/** Key codes the FlowTag view claims; per-tag hotkeys must avoid these */
+export const RESERVED_FLOWTAG_CODES = [
+    'Space', 'KeyJ', 'KeyK', 'KeyT', 'KeyD',
+    'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
+    'Digit0', 'Digit1', 'Digit2', 'Digit3',
+    'Numpad0', 'Numpad1', 'Numpad2', 'Numpad3',
+    'Escape', 'Tab',
+];
 
 /**
  * Keyboard map for the FlowTag (Quick Tag) view.
@@ -30,12 +40,19 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
             return true;
         case 'ArrowUp':
         case 'KeyJ':
-            store.selectOffset(-1);
+            // Shift extends the multi-selection while moving
+            store.selectOffset(-1, event.shiftKey);
             return true;
         case 'ArrowDown':
         case 'KeyK':
-            store.selectOffset(1);
+            store.selectOffset(1, event.shiftKey);
             return true;
+        case 'Escape':
+            if (store.selectedIds.value.length > 0) {
+                store.clearMultiSelect();
+                return true;
+            }
+            return false;
         case 'ArrowLeft':
             player.seek(Math.max(player.position - 10_000, 0));
             return true;
@@ -62,6 +79,13 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         case 'KeyT':
             store.focusInputSignal.value++;
             return true;
+    }
+
+    // Undo the last tag edit
+    if (event.code === 'KeyZ' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
+        const undone = store.undo();
+        if (undone) Notify.create({ message: `Undo: ${undone}`, timeout: 1800 });
+        return true;
     }
 
     const selected = store.selectedTrack();

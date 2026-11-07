@@ -47,7 +47,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush
+        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year
          FROM tracks ORDER BY path",
     )?;
     let tracks = stmt
@@ -61,6 +61,9 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
                 duration_ms: r.get(5)?,
                 missing: r.get::<_, i64>(6)? != 0,
                 needs_flush: r.get::<_, i64>(7)? != 0,
+                bpm: r.get(8)?,
+                key: r.get(9)?,
+                year: r.get(10)?,
                 tag_ids: vec![],
             })
         })?
@@ -121,17 +124,18 @@ pub fn upsert_tracks(db: &Db, folder_id: i64, tracks: &[ScannedTrack]) -> Result
         match existing {
             Some(id) => {
                 tx.execute(
-                    "UPDATE tracks SET format=?2, title=?3, artist=?4, duration_ms=?5, mtime=?6, size=?7, missing=0, folder_id=?8
+                    "UPDATE tracks SET format=?2, title=?3, artist=?4, duration_ms=?5, mtime=?6, size=?7, missing=0, folder_id=?8,
+                                       bpm=?9, key=?10, year=?11
                      WHERE id = ?1",
-                    params![id, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, folder_id],
+                    params![id, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, folder_id, t.bpm, t.key, t.year],
                 )?;
                 updated += 1;
             }
             None => {
                 tx.execute(
-                    "INSERT INTO tracks (folder_id, path, format, title, artist, duration_ms, mtime, size)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-                    params![folder_id, t.path, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size],
+                    "INSERT INTO tracks (folder_id, path, format, title, artist, duration_ms, mtime, size, bpm, key, year)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                    params![folder_id, t.path, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, t.bpm, t.key, t.year],
                 )?;
                 let id = tx.last_insert_rowid();
                 link_tag_names(&tx, id, &t.tag_names)?;
@@ -201,6 +205,20 @@ pub fn set_waveform(db: &Db, track_id: i64, bars: &[u8]) -> Result<(), Error> {
     Ok(())
 }
 
+/// Ids of present (non-missing) tracks that have no cached waveform yet
+pub fn tracks_without_waveform(db: &Db, limit: usize) -> Result<Vec<i64>, Error> {
+    let conn = db.conn();
+    let mut stmt = conn.prepare(
+        "SELECT t.id FROM tracks t WHERE t.missing = 0 \
+         AND NOT EXISTS (SELECT 1 FROM waveforms w WHERE w.track_id = t.id) \
+         ORDER BY t.id LIMIT ?1",
+    )?;
+    let ids = stmt
+        .query_map([limit as i64], |r| r.get(0))?
+        .collect::<Result<Vec<i64>, _>>()?;
+    Ok(ids)
+}
+
 /// Update stored duration (filled lazily on first playback)
 pub fn set_duration(db: &Db, track_id: i64, duration_ms: i64) -> Result<(), Error> {
     db.conn().execute(
@@ -231,10 +249,25 @@ mod tests {
             title: title.to_string(),
             artist: "Artist".to_string(),
             duration_ms: Some(1000),
+            bpm: Some(126),
+            key: Some("8A".to_string()),
+            year: Some(2020),
             mtime: 100,
             size: 200,
             tag_names: tags.iter().map(|s| s.to_string()).collect(),
         }
+    }
+
+    #[test]
+    fn dj_metadata_roundtrips_through_upsert() {
+        let (dir, db) = test_db();
+        let root = dir.path().to_string_lossy().to_string();
+        let f = add_folder(&db, &root).unwrap();
+        upsert_tracks(&db, f.id, &[scanned("/a.mp3", "A", &[])]).unwrap();
+        let t = &list_tracks(&db).unwrap()[0];
+        assert_eq!(t.bpm, Some(126));
+        assert_eq!(t.key.as_deref(), Some("8A"));
+        assert_eq!(t.year, Some(2020));
     }
 
     #[test]
@@ -338,5 +371,28 @@ mod tests {
         assert!(get_waveform(&db, id).unwrap().is_none());
         set_waveform(&db, id, &[1, 2, 3]).unwrap();
         assert_eq!(get_waveform(&db, id).unwrap().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn tracks_without_waveform_skips_cached_and_missing() {
+        let (dir, db) = test_db();
+        let root = dir.path().to_string_lossy().to_string();
+        let f = add_folder(&db, &root).unwrap();
+        upsert_tracks(&db, f.id, &[
+            scanned("/a.mp3", "A", &[]),
+            scanned("/b.mp3", "B", &[]),
+            scanned("/c.mp3", "C", &[]),
+        ]).unwrap();
+        let ids: Vec<i64> = list_tracks(&db).unwrap().iter().map(|t| t.id).collect();
+        assert_eq!(tracks_without_waveform(&db, 10).unwrap().len(), 3);
+        set_waveform(&db, ids[0], &[1]).unwrap();
+        mark_missing(&db, f.id, &["/a.mp3".to_string()]).unwrap();
+        // only /a.mp3 stays present, and it is cached: nothing pending
+        assert!(tracks_without_waveform(&db, 10).unwrap().is_empty());
+        upsert_tracks(&db, f.id, &[scanned("/d.mp3", "D", &[])]).unwrap();
+        let pending = tracks_without_waveform(&db, 10).unwrap();
+        assert_eq!(pending.len(), 1);
+        assert!(!ids.contains(&pending[0]));
+        assert_eq!(tracks_without_waveform(&db, 0).unwrap().len(), 0);
     }
 }

@@ -9,8 +9,8 @@
     <TrackRow
         :key='item.id'
         :track='item'
-        :selected='item.id === store.selectedId.value'
-        @click='select(item)'
+        :selected='store.isSelected(item.id)'
+        @click='(ev) => select(item, ev)'
     />
 </q-virtual-scroll>
 </template>
@@ -32,8 +32,11 @@ const visible = computed(() => {
     return store.visibleTracks();
 });
 
-function select(track: FlowTrack) {
-    store.selectedId.value = track.id;
+function select(track: FlowTrack, ev: MouseEvent) {
+    store.clickSelect(track, {
+        toggle: ev.metaKey || ev.ctrlKey,
+        range: ev.shiftKey,
+    });
 }
 
 // Keep the keyboard-selected row in view

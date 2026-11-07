@@ -15,9 +15,9 @@
                 :key='tag.id'
                 type='button'
                 class='pal-chip'
-                :class='{ active: activeIds.has(tag.id), disabled: !hasSelection }'
+                :class='{ active: activeIds.has(tag.id), disabled: !hasSelection && !filterIds.has(tag.id), filtering: filterIds.has(tag.id) }'
                 :style='{ backgroundColor: tag.color, color: chipTextColor(tag.color) }'
-                :title='hasSelection ? tag.name : "Select a track first"'
+                :title='`${tag.name} — click: toggle on track · ⌘click: filter list`'
                 @mousedown.prevent
                 @click='toggle(tag, $event)'
             >
@@ -42,6 +42,7 @@ interface Section { key: string; name: string; color: string; tags: FlowTag[] }
 const store = getTagStore();
 
 const hasSelection = computed(() => store.selectedId.value !== undefined);
+const filterIds = computed<Set<number>>(() => new Set(store.filterTagIds.value));
 
 // Tags on the selected track, for the highlighted state
 const activeIds = computed<Set<number>>(() => {
@@ -74,6 +75,11 @@ function keyLabel(tag: FlowTag): string {
 
 function toggle(tag: FlowTag, e: MouseEvent) {
     (e.currentTarget as HTMLElement | null)?.blur();
+    // Cmd/Ctrl+click filters the list by this tag instead of tagging
+    if (e.metaKey || e.ctrlKey) {
+        store.toggleTagFilter(tag.id);
+        return;
+    }
     if (store.selectedId.value === undefined) return;
     store.toggleTag(store.selectedId.value, tag);
 }
@@ -119,6 +125,12 @@ function toggle(tag: FlowTag, e: MouseEvent) {
         &:hover:not(.disabled) { filter: brightness(1.15); }
         &.active { border-color: #fff; box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.5); }
         &.disabled { opacity: 0.4; cursor: default; }
+        &.filtering {
+            border-style: dashed;
+            border-color: #fff;
+            box-shadow: 0 0 0 2px var(--q-primary);
+            opacity: 1;
+        }
     }
 }
 </style>

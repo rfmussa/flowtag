@@ -101,6 +101,10 @@ enum Action {
     #[serde(rename_all = "camelCase")]
     TrackRemoveTag { track_id: i64, tag_id: i64 },
     #[serde(rename_all = "camelCase")]
+    TracksAddTag { track_ids: Vec<i64>, name: String },
+    #[serde(rename_all = "camelCase")]
+    TracksRemoveTag { track_ids: Vec<i64>, tag_id: i64 },
+    #[serde(rename_all = "camelCase")]
     FlushHint { track_id: Option<i64> },
     FlushStatusGet,
     FlushRetry,
@@ -753,6 +757,8 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::GroupDelete { id } => tagflow::group_delete(context, id)?,
         Action::TrackAddTag { track_id, name } => tagflow::track_add_tag(context, track_id, &name)?,
         Action::TrackRemoveTag { track_id, tag_id } => tagflow::track_remove_tag(context, track_id, tag_id)?,
+        Action::TracksAddTag { track_ids, name } => tagflow::tracks_add_tag(context, &track_ids, &name)?,
+        Action::TracksRemoveTag { track_ids, tag_id } => tagflow::tracks_remove_tag(context, &track_ids, tag_id)?,
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,

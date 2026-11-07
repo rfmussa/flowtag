@@ -5,6 +5,38 @@
     <div class='row items-center q-px-md q-py-sm header-bar no-wrap'>
         <FolderManager />
         <ScanStatus class='q-ml-md' />
+        <q-select
+            v-model='store.sortBy.value'
+            :options='sortOptions'
+            dense options-dense borderless emit-value map-options
+            class='q-ml-md sort-select'
+            popup-content-class='bg-darker'
+        >
+            <template v-slot:prepend><q-icon name='mdi-sort' size='xs' /></template>
+        </q-select>
+        <q-btn
+            dense flat round size='sm'
+            :icon='store.sortDesc.value ? "mdi-arrow-down" : "mdi-arrow-up"'
+            @click='toggleSortDir'
+        >
+            <q-tooltip>{{ store.sortDesc.value ? 'Descending' : 'Ascending' }}</q-tooltip>
+        </q-btn>
+        <!-- Active tag filters (crate browsing) -->
+        <template v-if='store.filterTagIds.value.length > 0'>
+            <q-chip
+                v-for='tagId in store.filterTagIds.value'
+                :key='tagId'
+                dense removable square
+                class='q-ml-sm filter-chip'
+                :style='{ backgroundColor: store.tagById(tagId)?.color }'
+                @remove='store.toggleTagFilter(tagId)'
+            >
+                {{ store.tagById(tagId)?.name }}
+            </q-chip>
+            <q-btn dense flat round size='xs' icon='mdi-close-circle-outline' class='q-ml-xs' @click='store.clearTagFilters()'>
+                <q-tooltip>Clear tag filters</q-tooltip>
+            </q-btn>
+        </template>
         <q-space />
         <FlushIndicator class='q-mr-md' />
         <q-input
@@ -55,6 +87,10 @@
                 <div class='text-weight-bold ellipsis'>{{ selected.title }}</div>
                 <div class='text-caption text-grey-6 ellipsis'>{{ selected.artist }}</div>
             </div>
+            <q-badge v-if='multiCount > 1' color='primary' class='q-mr-md' outline>
+                {{ multiCount }} tracks
+                <q-tooltip>Tag edits apply to all selected tracks (Esc to clear)</q-tooltip>
+            </q-badge>
             <TagChips :tag-ids='selected.tagIds' :track-id='selected.id' removable class='q-mr-md chips' />
             <TagInput :track-id='selected.id' />
         </div>
@@ -90,9 +126,24 @@ const selected = computed(() => {
     store.tracks.value; // reactive dep
     return store.selectedTrack();
 });
+const multiCount = computed(() => store.allSelected().length);
 
 const managerOpen = ref(false);
 const paletteOpen = ref(readPaletteOpen());
+
+const sortOptions = [
+    { label: 'Path', value: 'path' },
+    { label: 'Title', value: 'title' },
+    { label: 'Artist', value: 'artist' },
+    { label: 'BPM', value: 'bpm' },
+    { label: 'Key', value: 'key' },
+    { label: 'Year', value: 'year' },
+];
+
+function toggleSortDir(e: Event) {
+    blurTarget(e);
+    store.sortDesc.value = !store.sortDesc.value;
+}
 
 function readPaletteOpen(): boolean {
     try {
@@ -164,6 +215,14 @@ onMounted(() => {
 }
 .filter-input {
     width: 260px;
+}
+.sort-select {
+    min-width: 110px;
+    font-size: 13px;
+}
+.filter-chip {
+    font-size: 11px;
+    color: white;
 }
 .list-row {
     min-height: 0;

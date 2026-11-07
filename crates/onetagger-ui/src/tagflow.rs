@@ -1,5 +1,6 @@
 //! FlowTag websocket handlers: thin glue between socket actions and `onetagger-db`.
 
+use std::sync::atomic::{AtomicI64, Ordering};
 use anyhow::Error;
 use serde_json::{json, Value};
 use onetagger_db::{flush, scan, tags, tracks, Db};
@@ -154,6 +155,29 @@ pub(crate) fn track_remove_tag(context: &SocketContext, track_id: i64, tag_id: i
     }))
 }
 
+/// Bulk tag add (multi-select): one transaction, one compact echo
+pub(crate) fn tracks_add_tag(context: &SocketContext, track_ids: &[i64], name: &str) -> Result<(), Error> {
+    let (tag, created) = tags::add_tag_to_tracks(&context.db, track_ids, name)?;
+    context.send(json!({
+        "action": "tracksTagsChanged",
+        "trackIds": track_ids,
+        "tagId": tag.id,
+        "op": "add",
+        "newTag": created.then_some(tag)
+    }))
+}
+
+/// Bulk tag remove (multi-select)
+pub(crate) fn tracks_remove_tag(context: &SocketContext, track_ids: &[i64], tag_id: i64) -> Result<(), Error> {
+    tags::remove_tag_from_tracks(&context.db, track_ids, tag_id)?;
+    context.send(json!({
+        "action": "tracksTagsChanged",
+        "trackIds": track_ids,
+        "tagId": tag_id,
+        "op": "remove"
+    }))
+}
+
 /// Expedite pending flushes (never dirties a clean track) and wake the worker
 pub(crate) fn flush_hint(context: &SocketContext, track_id: Option<i64>) -> Result<(), Error> {
     flush::expedite(&context.db, track_id)?;
@@ -206,46 +230,62 @@ fn waveform_message(track_id: i64, bars: &[u8]) -> Value {
 
 /// The most recently requested waveform; older in-flight generations cancel
 /// themselves so rapid track-skipping doesn't pile up whole-file decodes
-static LATEST_WAVEFORM_REQUEST: std::sync::atomic::AtomicI64 = std::sync::atomic::AtomicI64::new(0);
+static LATEST_WAVEFORM_REQUEST: AtomicI64 = AtomicI64::new(0);
+/// Unix seconds of the last on-demand waveform request (0 = never)
+static LAST_WAVEFORM_REQUEST_AT: AtomicI64 = AtomicI64::new(0);
+
+/// Unix seconds of the last user-driven waveform request; the background
+/// precompute worker backs off while this is recent
+pub(crate) fn last_waveform_request_at() -> i64 {
+    LAST_WAVEFORM_REQUEST_AT.load(Ordering::SeqCst)
+}
+
+/// Decode a track's waveform and cache it (unless its duration is unknown).
+/// With `interruptible`, a newer on-demand request cancels the decode and
+/// `Ok(None)` is returned.
+pub(crate) fn generate_and_cache(db: &Db, track_id: i64, interruptible: bool) -> Result<Option<Vec<u8>>, Error> {
+    let path = tracks::get_track_path(db, track_id)?;
+    let source = onetagger_player::AudioSources::from_path(&path)?;
+    let duration = source.duration();
+    let (rx, cancel) = source.generate_waveform(WAVEFORM_BARS as i16)?;
+    let mut bars: Vec<u8> = Vec::with_capacity(WAVEFORM_BARS);
+    for wave in rx {
+        // A newer request supersedes this one: stop decoding
+        if interruptible && LATEST_WAVEFORM_REQUEST.load(Ordering::SeqCst) != track_id {
+            cancel.send(true).ok();
+            return Ok(None);
+        }
+        bars.push((wave.clamp(0.0, 1.0) * WAVEFORM_SCALE) as u8);
+        // Unknown duration degrades to one bar per sample buffer: don't
+        // collect (or cache) garbage beyond the UI's bar count
+        if bars.len() >= WAVEFORM_BARS {
+            cancel.send(true).ok();
+            break;
+        }
+    }
+    bars.resize(WAVEFORM_BARS, 0);
+    // A broken duration produces a meaningless waveform; show it once
+    // but never cache it
+    if duration > 0 {
+        tracks::set_waveform(db, track_id, &bars)?;
+    }
+    Ok(Some(bars))
+}
 
 /// Waveform by track id: served from the DB cache, generated (and cached) otherwise
 pub(crate) fn waveform_get(context: &SocketContext, track_id: i64) -> Result<(), Error> {
-    use std::sync::atomic::Ordering;
-
     if let Some(bars) = tracks::get_waveform(&context.db, track_id)? {
         return context.send(waveform_message(track_id, &bars));
     }
     LATEST_WAVEFORM_REQUEST.store(track_id, Ordering::SeqCst);
+    LAST_WAVEFORM_REQUEST_AT.store(unix_now(), Ordering::SeqCst);
     let sender = context.sender.clone();
     let db = context.db.clone();
     tokio::task::spawn_blocking(move || {
         let result: Result<(), Error> = (|| {
-            let path = tracks::get_track_path(&db, track_id)?;
-            let source = onetagger_player::AudioSources::from_path(&path)?;
-            let duration = source.duration();
-            let (rx, cancel) = source.generate_waveform(WAVEFORM_BARS as i16)?;
-            let mut bars: Vec<u8> = Vec::with_capacity(WAVEFORM_BARS);
-            for wave in rx {
-                // A newer request supersedes this one: stop decoding
-                if LATEST_WAVEFORM_REQUEST.load(Ordering::SeqCst) != track_id {
-                    cancel.send(true).ok();
-                    return Ok(());
-                }
-                bars.push((wave.clamp(0.0, 1.0) * WAVEFORM_SCALE) as u8);
-                // Unknown duration degrades to one bar per sample buffer: don't
-                // collect (or cache) garbage beyond the UI's bar count
-                if bars.len() >= WAVEFORM_BARS {
-                    cancel.send(true).ok();
-                    break;
-                }
+            if let Some(bars) = generate_and_cache(&db, track_id, true)? {
+                sender.send(waveform_message(track_id, &bars))?;
             }
-            bars.resize(WAVEFORM_BARS, 0);
-            // A broken duration produces a meaningless waveform; show it once
-            // but never cache it
-            if duration > 0 {
-                tracks::set_waveform(&db, track_id, &bars)?;
-            }
-            sender.send(waveform_message(track_id, &bars))?;
             Ok(())
         })();
         if let Err(e) = result {
@@ -253,6 +293,14 @@ pub(crate) fn waveform_get(context: &SocketContext, track_id: i64) -> Result<(),
         }
     });
     Ok(())
+}
+
+/// Current unix time in seconds
+pub(crate) fn unix_now() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0)
 }
 
 pub(crate) fn flush_status_get(context: &SocketContext) -> Result<(), Error> {

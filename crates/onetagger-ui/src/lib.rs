@@ -30,6 +30,7 @@ pub mod sender;
 pub mod browser;
 pub mod tageditor;
 pub mod tagflow;
+pub mod precompute;
 
 static CLIENT_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../client/dist");
 
@@ -81,7 +82,9 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
         |path| socket::is_currently_playing(path),
     )?;
 
-    let state = WsState { context, db: Arc::new(db), events, flush_wake };
+    let db = Arc::new(db);
+    precompute::spawn_waveform_precompute(db.clone());
+    let state = WsState { context, db, events, flush_wake };
     Builder::new_multi_thread().enable_all().build()?.block_on(async move {
         // Register routes
         let app = Router::new()

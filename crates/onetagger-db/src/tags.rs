@@ -176,6 +176,65 @@ pub fn add_tag_to_track(db: &Db, track_id: i64, name: &str) -> Result<(Vec<i64>,
     Ok((track_tag_ids(&conn, track_id)?, created.then_some(tag)))
 }
 
+/// Add a tag (by name, created if new) to MANY tracks in one transaction.
+/// Returns (tag, created). Tracks that already carry it are untouched.
+pub fn add_tag_to_tracks(db: &Db, track_ids: &[i64], name: &str) -> Result<(DbTag, bool), Error> {
+    let name = validate_tag_name(name)?;
+    let mut conn = db.conn();
+    let tx = conn.transaction()?;
+    let (tag_id, created) = {
+        // get_or_create against the tx (same connection-level logic)
+        match tx.query_row("SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE", [&name], |r| r.get::<_, i64>(0)).optional()? {
+            Some(id) => (id, false),
+            None => {
+                tx.execute("INSERT INTO tags (name, color) VALUES (?1, ?2)", params![name, DEFAULT_TAG_COLOR])?;
+                (tx.last_insert_rowid(), true)
+            }
+        }
+    };
+    let now = now();
+    for &track_id in track_ids {
+        let pos: i64 = tx.query_row(
+            "SELECT COALESCE(MAX(position) + 1, 0) FROM track_tags WHERE track_id = ?1",
+            [track_id],
+            |r| r.get(0),
+        )?;
+        let n = tx.execute(
+            "INSERT OR IGNORE INTO track_tags (track_id, tag_id, position) VALUES (?1, ?2, ?3)",
+            params![track_id, tag_id, pos],
+        )?;
+        if n > 0 {
+            tx.execute(
+                "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
+                params![track_id, now],
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok((get_tag_inner(&conn, tag_id)?, created))
+}
+
+/// Remove a tag from MANY tracks in one transaction
+pub fn remove_tag_from_tracks(db: &Db, track_ids: &[i64], tag_id: i64) -> Result<(), Error> {
+    let mut conn = db.conn();
+    let tx = conn.transaction()?;
+    let now = now();
+    for &track_id in track_ids {
+        let n = tx.execute(
+            "DELETE FROM track_tags WHERE track_id = ?1 AND tag_id = ?2",
+            params![track_id, tag_id],
+        )?;
+        if n > 0 {
+            tx.execute(
+                "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
+                params![track_id, now],
+            )?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 /// Remove a tag from a track. Returns the track's remaining tag ids.
 pub fn remove_tag_from_track(db: &Db, track_id: i64, tag_id: i64) -> Result<Vec<i64>, Error> {
     let conn = db.conn();
@@ -274,6 +333,28 @@ mod tests {
         // Remove
         let remaining = remove_tag_from_track(&db, track, ids[0]).unwrap();
         assert_eq!(remaining.len(), 1);
+    }
+
+    #[test]
+    fn bulk_add_and_remove() {
+        let (_d, db) = test_db();
+        let t1 = insert_track(&db, "/test-root/a.mp3");
+        let t2 = insert_track(&db, "/test-root/b.mp3");
+        let t3 = insert_track(&db, "/test-root/c.mp3");
+        // t2 already has the tag: bulk add skips it but tags the others
+        add_tag_to_track(&db, t2, "bulk").unwrap();
+        let before_v2: i64 = db.conn().query_row("SELECT tag_version FROM tracks WHERE id = ?1", [t2], |r| r.get(0)).unwrap();
+        let (tag, created) = add_tag_to_tracks(&db, &[t1, t2, t3], "BULK").unwrap();
+        assert!(!created, "case-insensitive match must reuse the tag");
+        assert_eq!(tag.count, 3);
+        // No version bump for the no-op track
+        let after_v2: i64 = db.conn().query_row("SELECT tag_version FROM tracks WHERE id = ?1", [t2], |r| r.get(0)).unwrap();
+        assert_eq!(before_v2, after_v2);
+        // Bulk remove
+        remove_tag_from_tracks(&db, &[t1, t2], tag.id).unwrap();
+        assert_eq!(get_tag(&db, tag.id).unwrap().count, 1);
+        let dirty: i64 = db.conn().query_row("SELECT COUNT(*) FROM tracks WHERE needs_flush = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(dirty, 3);
     }
 
     #[test]

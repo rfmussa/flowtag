@@ -5,8 +5,7 @@
 
     <!-- Post tagging actions -->
     <div v-if='$1t.taggerStatus.value.done && $1t.taggerStatus.value.data' class='row justify-center q-my-md'>
-        <q-btn color='primary' class='q-mx-md text-black' @click='goQT(false)'>Open failed in QuickTag</q-btn>
-        <q-btn color='primary' class='q-mx-md text-black' @click='goQT(true)'>Open successful in QuickTag</q-btn>
+        <q-btn color='primary' class='q-mx-md text-black' @click='$router.push("/quicktag")'>Open Quick Tag</q-btn>
     </div>
 
     <!-- Info -->
@@ -221,13 +220,6 @@ function toggleFilter(name: string) {
 function stop() {
     stopping.value = true;
     $1t.stopTagging();
-}
-
-// Open QT with result files
-function goQT(successful: boolean) {
-    if (successful) $1t.settings.value.path = $1t.taggerStatus.value.data.successFile;
-    if (!successful) $1t.settings.value.path = $1t.taggerStatus.value.data.failedFile;
-    $router.push('/quicktag');
 }
 
 const statuses = computed(() => {

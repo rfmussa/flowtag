@@ -62,6 +62,9 @@ fn parse_file(path: &Path, mtime: i64, size: i64) -> ScannedTrack {
         title: stem_title(path),
         artist: String::new(),
         duration_ms: None,
+        bpm: None,
+        key: None,
+        year: None,
         mtime,
         size,
         tag_names: vec![],
@@ -78,6 +81,17 @@ fn parse_file(path: &Path, mtime: i64, size: i64) -> ScannedTrack {
             if let Some(artists) = tag.get_field(Field::Artist) {
                 track.artist = artists.join(", ");
             }
+            track.bpm = tag
+                .get_field(Field::BPM)
+                .and_then(|v| v.into_iter().next())
+                .and_then(|v| v.trim().parse::<f64>().ok())
+                .map(|v| v.round() as i64);
+            track.key = tag
+                .get_field(Field::Key)
+                .and_then(|v| v.into_iter().next())
+                .map(|k| k.trim().to_string())
+                .filter(|k| !k.is_empty());
+            track.year = tag.get_date().map(|d| d.year as i64);
             if let Some(raw) = tag.get_raw(FILE_TAG_FIELD) {
                 track.tag_names = split_file_tags(&raw);
             }
