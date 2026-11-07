@@ -44,10 +44,16 @@ const open = ref(false);
 
 interface Suggestion { id?: number; name: string; color: string; count?: number }
 
-// Pool matches, plus a "create" row when the text matches nothing exactly
+// Pool matches minus tags the track already carries, plus a "create" row
+// when the text matches nothing exactly
 const suggestions = computed<Suggestion[]>(() => {
     const q = text.value.trim();
-    const matches: Suggestion[] = store.suggest(q, 8);
+    const track = store.selectedTrack();
+    const applied = track && track.id === props.trackId ? new Set(track.tagIds) : new Set<number>();
+    const matches: Suggestion[] = store
+        .suggest(q, 8 + applied.size)
+        .filter((t) => !applied.has(t.id))
+        .slice(0, 8);
     if (q && !store.tagByName(q)) {
         matches.push({ name: q, color: '#555555' });
     }

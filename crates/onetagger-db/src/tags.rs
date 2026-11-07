@@ -6,8 +6,41 @@ use crate::models::{DbGroup, DbTag};
 use crate::validate::{validate_color, validate_tag_name};
 use crate::{now, Db};
 
-/// Default color for newly created tags
+/// Legacy default color (the old OneTagger teal). New tags no longer get it;
+/// migration v4 recolors tags that still wear it.
 pub const DEFAULT_TAG_COLOR: &str = "#00d2bf";
+
+/// Curated palette for auto-assigned tag colors: 12 distinct hues tuned for a
+/// dark UI (mid-lightness, readable as 7px dots and chip fills). New tags take
+/// the least-used color so the pool stays visually spread.
+pub const TAG_COLOR_PALETTE: &[&str] = &[
+    "#e5484d", // red
+    "#f76b15", // orange
+    "#ffb224", // amber
+    "#92c94e", // lime
+    "#30a46c", // green
+    "#0091ff", // blue
+    "#3e63dd", // indigo
+    "#6e56cf", // violet
+    "#8e4ec6", // purple
+    "#d6409f", // magenta
+    "#e93d82", // pink
+    "#ad7f58", // bronze
+];
+
+/// Pick the least-used palette color (ties broken by palette order), so
+/// auto-assigned colors spread evenly across the pool.
+fn next_tag_color(conn: &Connection) -> Result<&'static str, Error> {
+    let mut stmt = conn.prepare("SELECT color, COUNT(*) FROM tags GROUP BY color")?;
+    let counts: std::collections::HashMap<String, i64> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let color = TAG_COLOR_PALETTE
+        .iter()
+        .min_by_key(|c| counts.get(**c).copied().unwrap_or(0))
+        .expect("palette is non-empty");
+    Ok(color)
+}
 
 fn row_to_tag(row: &rusqlite::Row) -> rusqlite::Result<DbTag> {
     Ok(DbTag {
@@ -57,7 +90,10 @@ pub(crate) fn get_or_create_tag_conn(conn: &Connection, name: &str, color: Optio
     if let Some(id) = find_tag_by_name(conn, &name)? {
         return Ok((id, false));
     }
-    let color = color.unwrap_or(DEFAULT_TAG_COLOR);
+    let color = match color {
+        Some(c) => c,
+        None => next_tag_color(conn)?,
+    };
     validate_color(color)?;
     conn.execute("INSERT INTO tags (name, color) VALUES (?1, ?2)", params![name, color])?;
     Ok((conn.last_insert_rowid(), true))
@@ -182,16 +218,7 @@ pub fn add_tag_to_tracks(db: &Db, track_ids: &[i64], name: &str) -> Result<(DbTa
     let name = validate_tag_name(name)?;
     let mut conn = db.conn();
     let tx = conn.transaction()?;
-    let (tag_id, created) = {
-        // get_or_create against the tx (same connection-level logic)
-        match tx.query_row("SELECT id FROM tags WHERE name = ?1 COLLATE NOCASE", [&name], |r| r.get::<_, i64>(0)).optional()? {
-            Some(id) => (id, false),
-            None => {
-                tx.execute("INSERT INTO tags (name, color) VALUES (?1, ?2)", params![name, DEFAULT_TAG_COLOR])?;
-                (tx.last_insert_rowid(), true)
-            }
-        }
-    };
+    let (tag_id, created) = get_or_create_tag_conn(&tx, &name, None)?;
     let now = now();
     for &track_id in track_ids {
         let pos: i64 = tx.query_row(
@@ -422,6 +449,48 @@ mod tests {
         // Deleting the group ungroups the tag
         delete_group(&db, g.id).unwrap();
         assert_eq!(get_tag(&db, tag.id).unwrap().group_id, None);
+    }
+
+    #[test]
+    fn auto_colors_are_distinct_and_from_palette() {
+        let (_d, db) = test_db();
+        let names = ["dark", "rolling", "peak", "warm", "deep"];
+        let mut colors = Vec::new();
+        for name in names {
+            let (tag, created) = get_or_create_tag(&db, name, None).unwrap();
+            assert!(created);
+            assert!(TAG_COLOR_PALETTE.contains(&tag.color.as_str()), "{} not in palette", tag.color);
+            assert_ne!(tag.color, DEFAULT_TAG_COLOR, "new tags must not default to teal");
+            colors.push(tag.color);
+        }
+        let unique: std::collections::HashSet<&String> = colors.iter().collect();
+        assert_eq!(unique.len(), names.len(), "first {} tags must all differ: {colors:?}", names.len());
+    }
+
+    #[test]
+    fn auto_color_picks_least_used() {
+        let (_d, db) = test_db();
+        // Use up the whole palette once
+        for i in 0..TAG_COLOR_PALETTE.len() {
+            get_or_create_tag(&db, &format!("tag{i}"), None).unwrap();
+        }
+        // The 13th wraps around to the first palette color
+        let (tag, _) = get_or_create_tag(&db, "wrap", None).unwrap();
+        assert_eq!(tag.color, TAG_COLOR_PALETTE[0]);
+        // An explicitly colored tag doesn't skew the balance for custom colors
+        get_or_create_tag(&db, "custom", Some("#123456")).unwrap();
+        let (tag2, _) = get_or_create_tag(&db, "wrap2", None).unwrap();
+        assert_eq!(tag2.color, TAG_COLOR_PALETTE[1]);
+    }
+
+    #[test]
+    fn bulk_create_uses_palette() {
+        let (_d, db) = test_db();
+        let t = insert_track(&db, "/test-root/a.mp3");
+        let (tag, created) = add_tag_to_tracks(&db, &[t], "bulkfresh").unwrap();
+        assert!(created);
+        assert!(TAG_COLOR_PALETTE.contains(&tag.color.as_str()));
+        assert_ne!(tag.color, DEFAULT_TAG_COLOR);
     }
 
     #[test]

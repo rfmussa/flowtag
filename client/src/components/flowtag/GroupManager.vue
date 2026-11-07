@@ -1,6 +1,6 @@
 <template>
 <div class='group-manager'>
-    <div class='text-uppercase text-primary text-subtitle2 q-px-sm q-mb-xs'>Groups</div>
+    <div class='ft-label q-px-sm q-mb-xs'>Groups</div>
 
     <div v-if='ordered.length === 0' class='text-grey-6 text-caption q-px-sm q-py-xs'>No groups yet</div>
 
@@ -20,7 +20,7 @@
                     :style='{ backgroundColor: group.color }'
                     @click='blur'
                 >
-                    <q-popup-proxy class='bg-darker'>
+                    <q-popup-proxy class='flowtag-theme'>
                         <q-color
                             :model-value='group.color'
                             no-header-tabs
@@ -55,7 +55,7 @@
             :style='{ backgroundColor: newColor }'
             @click='blur'
         >
-            <q-popup-proxy class='bg-darker'>
+            <q-popup-proxy class='flowtag-theme'>
                 <q-color v-model='newColor' no-header-tabs />
             </q-popup-proxy>
         </q-btn>
@@ -131,6 +131,7 @@ function confirmDelete(group: FlowGroup) {
         title: 'Delete group',
         message: `Delete "${group.name}"? Its ${n} tag(s) will become ungrouped.`,
         cancel: true,
+        class: 'flowtag-theme',
         ok: { label: 'Delete', color: 'red', flat: true },
         persistent: true,
     }).onOk(() => $1t.send('groupDelete', { id: group.id }));

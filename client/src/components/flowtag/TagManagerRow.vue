@@ -8,7 +8,7 @@
         :style='{ backgroundColor: tag.color }'
         @click='blur'
     >
-        <q-popup-proxy class='bg-darker'>
+        <q-popup-proxy class='flowtag-theme'>
             <q-color
                 :model-value='tag.color'
                 no-header-tabs
@@ -41,7 +41,7 @@
         emit-value map-options
         dense outlined options-dense
         class='group-select q-mr-sm'
-        popup-content-class='bg-darker'
+        popup-content-class='flowtag-theme'
         @update:model-value='setGroup'
     />
 
@@ -148,6 +148,7 @@ function commitName() {
             title: 'Merge tags',
             message: `Merge "${props.tag.name}" into "${other.name}"? ${props.tag.count} track(s) affected.`,
             cancel: true,
+            class: 'flowtag-theme',
             ok: { label: 'Merge', color: 'primary', flat: true },
             persistent: true,
         }).onOk(() => {
@@ -165,6 +166,7 @@ function confirmDelete() {
         title: 'Delete tag',
         message: `Delete "${props.tag.name}"? It will be removed from ${props.tag.count} track(s).`,
         cancel: true,
+        class: 'flowtag-theme',
         ok: { label: 'Delete', color: 'red', flat: true },
         persistent: true,
     }).onOk(() => $1t.send('tagDelete', { id: props.tag.id }));

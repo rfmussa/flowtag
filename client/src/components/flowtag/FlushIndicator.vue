@@ -1,7 +1,7 @@
 <template>
 <div class='row items-center no-wrap'>
     <!-- Pending writes -->
-    <span v-if='pending > 0' class='text-caption text-orange q-mr-sm' title='Tag changes not yet written to files'>
+    <span v-if='pending > 0' class='text-caption q-mr-sm' style='color: var(--ft-warn)' title='Tag changes not yet written to files'>
         <q-icon name='mdi-sync' /> {{ pending }} pending
     </span>
     <!-- Write errors -->
@@ -12,7 +12,7 @@
         icon='mdi-alert-circle-outline'
         :label='`${store.flush.value.errors.length} failed`'
     >
-        <q-menu anchor='bottom right' self='top right'>
+        <q-menu anchor='bottom right' self='top right' class='flowtag-theme'>
             <div class='q-pa-md' style='max-width: 420px'>
                 <div class='text-subtitle2 q-mb-sm'>Files that could not be written</div>
                 <div v-for='err in store.flush.value.errors.slice(0, 10)' :key='err.trackId' class='text-caption q-mb-xs'>

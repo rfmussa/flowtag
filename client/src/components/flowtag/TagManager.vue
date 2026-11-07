@@ -1,6 +1,6 @@
 <template>
 <q-dialog v-model='open' @show='listen' @hide='unlisten'>
-    <q-card class='tag-manager column no-wrap'>
+    <q-card class='tag-manager column no-wrap flowtag-theme'>
         <q-card-section class='row items-center q-pb-none'>
             <div class='text-h6'>Manage tags</div>
             <q-space />

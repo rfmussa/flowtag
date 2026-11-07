@@ -155,6 +155,16 @@
     }
 }
 
+// Quasar overlays (dialogs, menus, select popups) teleport to <body>, outside
+// the themed route subtree; they re-enter the theme by carrying the class
+// themselves. Give them the elevated surface.
+.q-card.flowtag-theme,
+.q-menu.flowtag-theme {
+    background: var(--ft-overlay) !important;
+    border: 1px solid var(--ft-line-strong);
+    color: var(--ft-text);
+}
+
 // The player footer joins the theme on the FlowTag route
 .q-footer.flowtag-theme {
     background: var(--ft-panel) !important;

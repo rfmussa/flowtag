@@ -191,6 +191,7 @@ function confirmExport(e: Event) {
         message: 'Append your tags as #hashtags to every tagged file\'s comment field (searchable in Rekordbox). Existing comment text is kept; re-exporting updates the hashtag block. Continue?',
         cancel: true,
         dark: true,
+        class: 'flowtag-theme',
     }).onOk(() => {
         $1t.send('rekordboxExport', { mode: 'comment' });
         Notify.create({ message: 'Export started…', timeout: 1500 });

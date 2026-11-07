@@ -1,7 +1,7 @@
 <template>
 <div class='row items-center no-wrap'>
     <q-btn dense flat no-caps icon='mdi-folder' label='Folders' class='q-px-sm'>
-        <q-menu class='bg-darker' style='min-width: 360px'>
+        <q-menu class='flowtag-theme' style='min-width: 360px'>
             <q-list dense separator>
                 <q-item v-if='store.folders.value.length === 0'>
                     <q-item-section class='text-grey-6 text-caption'>No folders added</q-item-section>
@@ -51,6 +51,7 @@ function remove(id: number) {
             + 'including tags not yet written to their files. Audio files are not touched.',
         cancel: true,
         dark: true,
+        class: 'flowtag-theme',
         ok: { label: 'Remove', color: 'negative' },
     }).onOk(() => $1t.send('tagFolderRemove', { id }));
 }
