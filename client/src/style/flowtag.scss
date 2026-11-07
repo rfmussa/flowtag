@@ -35,9 +35,9 @@
     color: var(--ft-text);
     letter-spacing: 0.005em;
 
-    // The app globally forces `* { font-family: Dosis !important }`; FlowTag
-    // opts out into the system UI face (and keeps the teal brand color out of
-    // its chrome — Quasar controls inside the theme go neutral)
+    // Belt-and-braces: the app's base font is already the system stack, but
+    // this keeps Quasar component font rules from leaking in (.wavefont is
+    // the one deliberate exception)
     &, & *:not(.wavefont) {
         font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif !important;
     }

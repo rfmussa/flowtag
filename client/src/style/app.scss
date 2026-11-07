@@ -2,42 +2,6 @@
 @import 'flowtag.scss';
 
 @font-face {
-    font-family: Dosis;
-    src: url('./fonts/Dosis-Light.ttf');
-    font-weight: 300;
-}
-
-@font-face {
-    font-family: Dosis;
-    src: url('./fonts/Dosis-Regular.ttf');
-    font-weight: 400;
-}
-
-@font-face {
-    font-family: Dosis;
-    src: url('./fonts/Dosis-Medium.ttf');
-    font-weight: 500;
-}
-
-@font-face {
-    font-family: Dosis;
-    src: url('./fonts/Dosis-SemiBold.ttf');
-    font-weight: 600;
-}
-
-@font-face {
-    font-family: Dosis;
-    src: url('./fonts/Dosis-Bold.ttf');
-    font-weight: 700;
-}
-
-@font-face {
-    font-family: Dosis;
-    src: url('./fonts/Dosis-ExtraBold.ttf');
-    font-weight: 800;
-}
-
-@font-face {
     font-family: wavefont;
     src: url('./fonts/wavefont.woff2') format('woff2');
 }
@@ -53,7 +17,8 @@
 }
 
 * {
-    font-family: Dosis !important;
+    // System UI stack app-wide (FlowTag's register); .wavefont wins by specificity
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     user-select: none;
 }
 
