@@ -440,7 +440,8 @@ export class TagStore {
                     const has = t.tagIds.includes(json.tagId);
                     if (json.op === 'add' && !has) return { ...t, tagIds: [...t.tagIds, json.tagId], needsFlush: true };
                     if (json.op === 'remove' && has) return { ...t, tagIds: t.tagIds.filter((i) => i !== json.tagId), needsFlush: true };
-                    return { ...t, needsFlush: true };
+                    // No-op for this track: the server didn't dirty it either
+                    return t;
                 });
                 this.refreshCounts();
                 return true;

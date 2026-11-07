@@ -28,9 +28,13 @@ class Player {
         this.generateDefaultWaveform();
         setInterval(() => {
             if (this.position > this.duration) {
-                // Auto play next track
-                if ($1t.settings.value.autoPlayNext && router.currentRoute.value.path.startsWith('/quicktag')) {
-                    getTagStore().selectOffset(1);
+                // Auto play next track — but never while the user holds a
+                // multi-selection: advancing would silently collapse it
+                const store = getTagStore();
+                if ($1t.settings.value.autoPlayNext
+                    && router.currentRoute.value.path.startsWith('/quicktag')
+                    && store.selectedIds.value.length === 0) {
+                    store.selectOffset(1);
                 } else {
                     this.pause();
                 }

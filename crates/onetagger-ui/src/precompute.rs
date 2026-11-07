@@ -46,6 +46,12 @@ fn run(db: &Db) {
             thread::sleep(BACKOFF);
             continue;
         }
+        // Never read files while the comment export is rewriting them: a decode
+        // of a half-written file fails and would blacklist the track
+        if onetagger_db::export::EXPORT_ACTIVE.load(std::sync::atomic::Ordering::SeqCst) {
+            thread::sleep(BACKOFF);
+            continue;
+        }
         let id = match next_pending(db, &failed) {
             Ok(Some(id)) => id,
             Ok(None) => {

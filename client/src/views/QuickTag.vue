@@ -28,7 +28,7 @@
                 :key='tagId'
                 dense removable square
                 class='q-ml-sm filter-chip'
-                :style='{ backgroundColor: store.tagById(tagId)?.color }'
+                :style='{ backgroundColor: store.tagById(tagId)?.color, color: chipTextColor(store.tagById(tagId)?.color ?? "") }'
                 @remove='store.toggleTagFilter(tagId)'
             >
                 {{ store.tagById(tagId)?.name }}
@@ -112,7 +112,7 @@ import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
-import TagChips from '../components/flowtag/TagChips.vue';
+import TagChips, { chipTextColor } from '../components/flowtag/TagChips.vue';
 import TagInput from '../components/flowtag/TagInput.vue';
 import TagPalette from '../components/flowtag/TagPalette.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
@@ -222,7 +222,6 @@ onMounted(() => {
 }
 .filter-chip {
     font-size: 11px;
-    color: white;
 }
 .list-row {
     min-height: 0;
