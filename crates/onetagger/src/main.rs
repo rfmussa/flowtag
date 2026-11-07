@@ -116,7 +116,7 @@ pub fn start_webview() -> Result<(), Error> {
     let event_loop = EventLoopBuilder::with_user_event().build();
     let proxy = event_loop.create_proxy();
     let window = WindowBuilder::new()
-        .with_title("One Tagger")
+        .with_title("FlowTag")
         .with_min_inner_size(Size::Logical(LogicalSize::new(1150.0, 550.0)))
         .with_inner_size(Size::Logical(LogicalSize::new(1280.0, 720.0)))
         .with_resizable(true)

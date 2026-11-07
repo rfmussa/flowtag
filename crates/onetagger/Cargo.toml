@@ -36,15 +36,15 @@ native-dialog = "0.9.0"
 
 
 [package.metadata.bundle]
-name = "OneTagger"
-identifier = "com.marekkon5.onetagger"
+name = "FlowTag"
+identifier = "com.rteez.flowtag"
 icon = ["../../assets/32x32.png", "../../assets/128x128.png", "../../assets/128x128@2x.png", 
     "../../assets/icon.icns", "../../assets/icon.ico"]
 version = "1.7.0"
 resources = []
 copyright = "Copyright (c) Marekkon5 2022. All rights reserved."
 category = "Music"
-short_description = "Tool to tag your audio library."
+short_description = "Keyboard-first tagger for your DJ library."
 long_description = """
-Tool to tag your audio library.
+FlowTag: keyboard-first chip tagging for a DJ library, built on OneTagger.
 """
