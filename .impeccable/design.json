@@ -1,0 +1,131 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-07T00:00:00Z",
+  "title": "Design System: FlowTag",
+  "extensions": {
+    "colorMeta": {
+      "ink-bg": { "role": "neutral", "displayName": "Ink Background", "canonical": "#111112", "tonalRamp": ["#0b0b0c", "#111112", "#19191b", "#242427", "#3a3a3e", "#5c5c62", "#8e8e95", "#c9c9cd"] },
+      "ink-panel": { "role": "neutral", "displayName": "Ink Panel", "canonical": "#151517", "tonalRamp": ["#0d0d0e", "#151517", "#1d1d20", "#28282c", "#3e3e44", "#606067", "#929299", "#cbcbcf"] },
+      "ink-raised": { "role": "neutral", "displayName": "Ink Raised", "canonical": "#1c1c1f", "tonalRamp": ["#101012", "#1c1c1f", "#242428", "#2f2f34", "#45454b", "#67676e", "#98989f", "#cfcfd3"] },
+      "ink-overlay": { "role": "neutral", "displayName": "Ink Overlay", "canonical": "#212124", "tonalRamp": ["#131315", "#212124", "#2a2a2e", "#35353a", "#4b4b51", "#6d6d74", "#9d9da4", "#d2d2d6"] },
+      "hairline": { "role": "neutral", "displayName": "Hairline", "canonical": "rgba(255, 255, 255, 0.07)", "tonalRamp": ["rgba(255,255,255,0.04)", "rgba(255,255,255,0.07)", "rgba(255,255,255,0.14)", "rgba(255,255,255,0.22)", "rgba(255,255,255,0.4)"] },
+      "hairline-strong": { "role": "neutral", "displayName": "Hairline Strong", "canonical": "rgba(255, 255, 255, 0.14)", "tonalRamp": ["rgba(255,255,255,0.07)", "rgba(255,255,255,0.14)", "rgba(255,255,255,0.22)", "rgba(255,255,255,0.4)"] },
+      "text-primary": { "role": "neutral", "displayName": "Text Primary", "canonical": "#ededef", "tonalRamp": ["#717179", "#a6a6ad", "#c9c9cd", "#ededef", "#ffffff"] },
+      "text-secondary": { "role": "neutral", "displayName": "Text Secondary", "canonical": "#a6a6ad" },
+      "text-tertiary": { "role": "neutral", "displayName": "Text Tertiary", "canonical": "#717179" },
+      "wash-hover": { "role": "neutral", "displayName": "Hover Wash", "canonical": "rgba(255, 255, 255, 0.04)" },
+      "wash-active": { "role": "neutral", "displayName": "Active Wash", "canonical": "rgba(255, 255, 255, 0.07)" },
+      "focus-ring": { "role": "neutral", "displayName": "Focus Ring", "canonical": "rgba(255, 255, 255, 0.4)" },
+      "warn": { "role": "semantic", "displayName": "Pending Amber", "canonical": "#d29922", "tonalRamp": ["#3d2d0a", "#6b4f11", "#9c7318", "#d29922", "#e0b14f", "#ecc87e", "#f5dfb0", "#fcf3dd"] },
+      "danger": { "role": "semantic", "displayName": "Muted Red", "canonical": "#e5534b", "tonalRamp": ["#471511", "#7a241d", "#b0382f", "#e5534b", "#ec7a72", "#f2a09a", "#f8c6c2", "#fce8e7"] }
+    },
+    "typographyMeta": {
+      "headline": { "displayName": "Headline", "purpose": "Empty-state titles; the largest text in the system (15px/600)." },
+      "title": { "displayName": "Title", "purpose": "Selected-track title in the tag panel; track-row titles at 500." },
+      "body": { "displayName": "Body", "purpose": "Buttons, fields, chips, suggestions, hints; 12.5px/500 default." },
+      "label": { "displayName": "Label", "purpose": "Uppercase section labels (.ft-label, palette headers); tertiary color." },
+      "mono": { "displayName": "Mono", "purpose": "Musical keys, timecodes, keycaps; always tabular numerals." }
+    },
+    "shadows": [
+      { "name": "popover", "value": "0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3)", "purpose": "The only drop shadow: floating panels (.ft-pop, autocomplete). Always with ink-overlay background and hairline-strong border." },
+      { "name": "anchor-ring", "value": "inset 0 0 0 1px rgba(255, 255, 255, 0.14)", "purpose": "Inset hairline ring marking the anchor row and filtering palette rows; elevation without drop shadow." },
+      { "name": "filter-halo", "value": "0 0 0 2px #111112, 0 0 0 3px #717179", "purpose": "Neutral double-ring around a palette tag dot while it filters the list." }
+    ],
+    "motion": [
+      { "name": "interaction", "value": "80ms ease-out", "purpose": "Background, color, and border-color transitions on buttons, fields, and rows." },
+      { "name": "progress", "value": "300ms ease-out", "purpose": "Width transition of the session progress line; passive indicators only." }
+    ]
+  },
+  "components": [
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Default FlowTag action button; transparent until hovered.",
+      "html": "<button class=\"ds-ft-btn\">Manage</button>",
+      "css": ".ds-ft-btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; border: none; background: transparent; color: #a6a6ad; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; font-size: 12.5px; font-weight: 500; letter-spacing: 0.005em; cursor: pointer; transition: background 80ms ease-out, color 80ms ease-out; } .ds-ft-btn:hover { background: rgba(255,255,255,0.04); color: #ededef; } .ds-ft-btn:active { background: rgba(255,255,255,0.07); } .ds-ft-btn:focus-visible { outline: 2px solid rgba(255,255,255,0.4); outline-offset: 1px; }"
+    },
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Raised neutral button for the leading action; still monochrome.",
+      "html": "<button class=\"ds-ft-btn-primary\">Export</button>",
+      "css": ".ds-ft-btn-primary { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border-radius: 6px; background: #1c1c1f; border: 1px solid rgba(255,255,255,0.14); color: #ededef; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; font-size: 12.5px; font-weight: 500; cursor: pointer; transition: background 80ms ease-out; } .ds-ft-btn-primary:hover { background: #212124; } .ds-ft-btn-primary:focus-visible { outline: 2px solid rgba(255,255,255,0.4); outline-offset: 1px; }"
+    },
+    {
+      "name": "Field",
+      "kind": "input",
+      "refersTo": "field",
+      "description": "Hairline field; focus brightens the border, no colored glow. Trailing keycap shows the shortcut.",
+      "html": "<label class=\"ds-ft-field\"><input type=\"text\" placeholder=\"Filter tracks or tags\" /><span class=\"ds-ft-kbd\">F</span></label>",
+      "css": ".ds-ft-field { display: flex; align-items: center; gap: 8px; height: 28px; width: 230px; padding: 0 10px; border-radius: 6px; background: #151517; border: 1px solid rgba(255,255,255,0.07); transition: border-color 80ms ease-out; } .ds-ft-field:hover { border-color: rgba(255,255,255,0.14); } .ds-ft-field:focus-within { border-color: rgba(255,255,255,0.4); } .ds-ft-field input { flex: 1; min-width: 0; background: none; border: none; outline: none; color: #ededef; font-size: 12.5px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; caret-color: #ededef; } .ds-ft-field input::placeholder { color: #717179; } .ds-ft-kbd { font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 10px; line-height: 1; color: #717179; background: #1c1c1f; border: 1px solid rgba(255,255,255,0.07); border-bottom-width: 2px; border-radius: 4px; padding: 3px 5px; }"
+    },
+    {
+      "name": "Tag Chip",
+      "kind": "chip",
+      "refersTo": "chip",
+      "description": "Dot + neutral label pill; the dot carries the user's tag color, the chrome stays neutral.",
+      "html": "<span class=\"ds-ft-chip\"><span class=\"ds-ft-chip-dot\"></span><span class=\"ds-ft-chip-name\">peak-time</span><button class=\"ds-ft-chip-x\" aria-label=\"Remove peak-time\">×</button></span>",
+      "css": ".ds-ft-chip { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 8px; border-radius: 11px; border: 1px solid rgba(255,255,255,0.07); background: #151517; max-width: 150px; } .ds-ft-chip:hover { border-color: rgba(255,255,255,0.14); } .ds-ft-chip:hover .ds-ft-chip-name { color: #ededef; } .ds-ft-chip-dot { width: 7px; height: 7px; border-radius: 50%; background: #fe3fea; flex-shrink: 0; } .ds-ft-chip-name { font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; font-size: 11.5px; font-weight: 500; color: #a6a6ad; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-ft-chip-x { border: none; background: none; padding: 0 0 0 1px; margin-right: -3px; font-size: 13px; line-height: 1; color: #717179; cursor: pointer; border-radius: 50%; width: 14px; height: 14px; display: inline-flex; align-items: center; justify-content: center; } .ds-ft-chip-x:hover { color: #ededef; background: rgba(255,255,255,0.07); }"
+    },
+    {
+      "name": "Track Row (anchor state)",
+      "kind": "custom",
+      "refersTo": "track-row-anchor",
+      "description": "40px single-line row; the anchor is a raised surface with an inset hairline ring, data numerals tabular, key colored by Camelot hue.",
+      "html": "<div class=\"ds-ft-row\"><span class=\"ds-ft-row-title\">Strobe</span><span class=\"ds-ft-row-artist\">deadmau5</span><span class=\"ds-ft-row-spacer\"></span><span class=\"ds-ft-row-pending\" title=\"Not yet written to file\"></span><span class=\"ds-ft-row-meta\">2009</span><span class=\"ds-ft-row-meta ds-ft-row-bpm\">128</span><span class=\"ds-ft-row-key\">8A</span></div>",
+      "css": ".ds-ft-row { display: flex; align-items: center; gap: 10px; height: 40px; box-sizing: border-box; padding: 0 16px 0 14px; overflow: hidden; background: #1c1c1f; box-shadow: inset 0 0 0 1px rgba(255,255,255,0.14); border-radius: 6px; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; } .ds-ft-row-title { font-size: 13px; font-weight: 500; color: #ededef; white-space: nowrap; } .ds-ft-row-artist { font-size: 12.5px; color: #717179; white-space: nowrap; } .ds-ft-row-spacer { flex: 1; } .ds-ft-row-pending { width: 5px; height: 5px; border-radius: 50%; background: #d29922; flex-shrink: 0; } .ds-ft-row-meta { width: 34px; text-align: right; font-size: 11.5px; color: #717179; font-variant-numeric: tabular-nums; flex-shrink: 0; } .ds-ft-row-bpm { color: #a6a6ad; } .ds-ft-row-key { width: 30px; text-align: right; font-family: 'SF Mono', ui-monospace, Menlo, monospace; font-size: 11.5px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fe3fea; flex-shrink: 0; }"
+    },
+    {
+      "name": "Segmented Control",
+      "kind": "nav",
+      "refersTo": "button-ghost",
+      "description": "Scope switch in the header bar; the active segment sits on the raised ink step.",
+      "html": "<div class=\"ds-ft-seg\" role=\"group\"><button class=\"ds-ft-seg-btn ds-on\">All</button><button class=\"ds-ft-seg-btn\">Untagged</button></div>",
+      "css": ".ds-ft-seg { display: inline-flex; background: #151517; border: 1px solid rgba(255,255,255,0.07); border-radius: 6px; padding: 2px; } .ds-ft-seg-btn { border: none; background: transparent; color: #717179; font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; font-size: 12px; font-weight: 500; padding: 3px 10px; border-radius: 4px; cursor: pointer; } .ds-ft-seg-btn:hover { color: #a6a6ad; } .ds-ft-seg-btn.ds-on { background: #1c1c1f; color: #ededef; } .ds-ft-seg-btn:focus-visible { outline: 2px solid rgba(255,255,255,0.4); outline-offset: 1px; }"
+    },
+    {
+      "name": "Popover / Suggestions",
+      "kind": "card",
+      "refersTo": "popover",
+      "description": "Floating panel: the system's highest surface and its only drop shadow; 28px rows highlighted by the active wash.",
+      "html": "<div class=\"ds-ft-pop\"><div class=\"ds-ft-sug ds-hl\"><span class=\"ds-ft-sug-dot\"></span><span class=\"ds-ft-sug-name\">melodic</span><span class=\"ds-ft-sug-count\">42</span></div><div class=\"ds-ft-sug\"><span class=\"ds-ft-sug-dot ds-new\"></span><span class=\"ds-ft-sug-name\">Create “melancholy”</span></div></div>",
+      "css": ".ds-ft-pop { min-width: 260px; background: #212124; border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; padding: 4px; box-shadow: 0 8px 24px rgba(0,0,0,0.45), 0 2px 6px rgba(0,0,0,0.3); font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif; } .ds-ft-sug { display: flex; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-radius: 5px; font-size: 12.5px; color: #a6a6ad; cursor: pointer; } .ds-ft-sug.ds-hl { background: rgba(255,255,255,0.07); color: #ededef; } .ds-ft-sug-dot { width: 8px; height: 8px; border-radius: 50%; background: #00d58f; flex-shrink: 0; } .ds-ft-sug-dot.ds-new { background: #555555; } .ds-ft-sug-name { flex: 1; min-width: 0; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; } .ds-ft-sug-count { font-size: 10.5px; font-variant-numeric: tabular-nums; color: #717179; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "Linear-Crisp",
+    "overview": "FlowTag's visual world is a pure-neutral dark register: ink surfaces with no blue cast, hairline white-alpha borders, a tight small type ramp, and almost no chrome color. The interface is an instrument panel for a single power user working through thousands of tracks — density, legibility, and keyboard speed outrank expressiveness. The chrome stays monochrome so that the only color on screen is the user's own data: tag dots and Camelot key hues carry all the hue; the frame around them is grayscale. Depth is conveyed by stepping surface lightness and hairline rings, not by color or heavy shadow. Real drop shadows exist only on floating layers. Interaction feedback is a white-alpha wash and a brightened border, never a colored glow. The system governs the FlowTag view and the player footer on that route only; legacy views keep the upstream look.",
+    "keyCharacteristics": [
+      "Pure-neutral dark surfaces, no blue or teal cast anywhere in the chrome",
+      "Color appears only through user data (tag colors, musical key colors)",
+      "Hairline white-alpha borders; surface lightness steps carry structure",
+      "Small, tight system-font type ramp (10.5–15px); tabular numerals for all data",
+      "Fast, quiet transitions (80ms ease-out); keyboard hints as first-class UI"
+    ],
+    "rules": [
+      { "name": "The Data-Only Color Rule", "body": "The chrome is monochrome neutral. The only hue on screen comes from the user's data: tag colors as dots, Camelot key colors as text. Never introduce an accent color into buttons, borders, focus states, or backgrounds.", "section": "colors" },
+      { "name": "The Two-Semantic Rule", "body": "Exactly two semantic colors exist: warn for pending writes and danger for destructive actions. No success green, no info blue.", "section": "colors" },
+      { "name": "The Tabular Numerals Rule", "body": "Every data numeral — counts, BPM, year, tag counts, timecodes — is set tabular (.ft-num or .ft-mono) so columns never shimmy as values change.", "section": "typography" },
+      { "name": "The System Face Rule", "body": "Inside .flowtag-theme, everything except .wavefont uses the system UI stack. Dosis never appears inside the theme; the system stack never leaks outside it.", "section": "typography" },
+      { "name": "The Float-Only Shadow Rule", "body": "Shadows mark things that float above the page (menus, autocomplete). In-flow elements express elevation with surface lightness and hairline rings, never with drop shadows.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do keep all chrome monochrome; the only color sources are tag dots and Camelot key text (The Data-Only Color Rule).",
+      "Do set every data numeral tabular via .ft-num or .ft-mono.",
+      "Do express emphasis by raising the surface one ink step and adding a hairline-strong ring (anchor row, primary button, filtering palette row).",
+      "Do use 80ms ease-out for interaction transitions and reserve longer motion (300ms) for passive indicators like the progress line.",
+      "Do keep keycap hints (.ft-kbd) visible in hints and fields — keyboard-first is a product constraint.",
+      "Do scope every new FlowTag style under .flowtag-theme and use the --ft-* tokens rather than literal values."
+    ],
+    "donts": [
+      "Don't introduce accent-colored buttons, borders, glows, or focus rings; focus brightens a neutral border, nothing more.",
+      "Don't let Quasar's teal or the Dosis font leak into the theme (--q-primary is pinned to text-primary; the font opt-out is deliberate).",
+      "Don't add drop shadows to in-flow elements; shadows belong to floating panels only (The Float-Only Shadow Rule).",
+      "Don't fill chips with the tag's color; the dot carries the hue, the label stays neutral.",
+      "Don't add semantic colors beyond warn and danger (The Two-Semantic Rule).",
+      "Don't restyle the legacy views (AutoTagger, Tag Editor, Renamer) with this system; its scope ends at .flowtag-theme."
+    ]
+  }
+}

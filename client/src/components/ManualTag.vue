@@ -74,7 +74,7 @@
                             </span>
                             <span v-if='match.track.key'>
                                 <q-badge outline color='grey-9' class='q-mx-xs'><span class='text-uppercase text-grey-6'>Key</span></q-badge>
-                                <span class='text-caption monospace text-weight-medium' :style='keyColor(match.track.key)'>{{ match.track.key }}</span>
+                                <span class='text-caption monospace text-weight-medium' :style='keyColorStyle(match.track.key)'>{{ match.track.key }}</span>
                             </span>
                             <br>
                             <span v-if='match.track.release_date'>
@@ -172,7 +172,7 @@ import { useQuasar } from 'quasar';
 import AutotaggerPlatforms from './AutotaggerPlatforms.vue';
 import AutotaggerTags from './AutotaggerTags.vue';
 import AutotaggerPlatformSpecific from './AutotaggerPlatformSpecific.vue';
-import { keyColor } from '../scripts/musickey';
+import { keyColorStyle } from '../scripts/musickey';
 import { PLACEHOLDER_IMG } from '../scripts/utils';
 
 const $q = useQuasar();

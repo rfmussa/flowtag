@@ -92,20 +92,25 @@ const OPENKEY_KEYS: Record<string, string> = {
     "4d":   "11B"
 }
 
-// Get color for musical key
-function keyColor(key?: string) {
+// Get color (hex value) for a musical key, or undefined when unknown
+function keyColor(key?: string): string | undefined {
     if (!key) return;
-    key = key.trim().toUpperCase();
-    // Camelot or OpenKey
-    let color = KEY_COLORS[CAMELOT_KEYS[key.toUpperCase()]] || KEY_COLORS[OPENKEY_KEYS[key.toLowerCase()]];
-    // Normal
+    const raw = key.trim();
+    // Camelot or OpenKey notation mapped to a wheel position
+    let color = KEY_COLORS[CAMELOT_KEYS[raw.toUpperCase()]] || KEY_COLORS[OPENKEY_KEYS[raw.toLowerCase()]];
+    // Wheel position given directly ("8A", zero-padded or not)
     if (!color) {
-        if (key.length < 3) key = `0${key}`;
-        color = KEY_COLORS[key.toUpperCase()];
+        let padded = raw.toUpperCase();
+        if (padded.length < 3) padded = `0${padded}`;
+        color = KEY_COLORS[padded];
     }
-    if (color) {
-        return `color: ${color};`;
-    }
+    return color;
 }
 
-export { CAMELOT_KEYS, KEY_COLORS, OPENKEY_KEYS, keyColor };
+/** keyColor as a full CSS declaration, for :style string bindings */
+function keyColorStyle(key?: string): string | undefined {
+    const color = keyColor(key);
+    return color ? `color: ${color};` : undefined;
+}
+
+export { CAMELOT_KEYS, KEY_COLORS, OPENKEY_KEYS, keyColor, keyColorStyle };
