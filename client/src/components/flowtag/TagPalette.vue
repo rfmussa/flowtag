@@ -34,8 +34,7 @@
 import { computed } from 'vue';
 import { FlowTag, getTagStore } from '../../scripts/tagstore';
 
-// Matches --ft-text-3 (kept in step with flowtag.scss)
-const UNGROUPED_COLOR = '#888890';
+const UNGROUPED_COLOR = 'var(--ft-text-3)';
 
 interface Section { key: string; name: string; color: string; tags: FlowTag[] }
 

@@ -193,6 +193,29 @@ export class TagStore {
         this.filterTagIds.value = [];
     }
 
+    /** track id -> lowercased searchable text (title/artist/path/tag names),
+     *  rebuilt lazily when the tracks or the tag pool are replaced, so a
+     *  filter keystroke costs one `includes` per track instead of repeated
+     *  lowercasing and tag lookups over the whole library */
+    private searchCache: Map<number, string> = new Map();
+    private searchCacheTracks: FlowTrack[] = [];
+    private searchCacheTags: FlowTag[] = [];
+
+    private haystack(t: FlowTrack): string {
+        if (this.searchCacheTracks !== this.tracks.value || this.searchCacheTags !== this.tags.value) {
+            const next = new Map<number, string>();
+            for (const track of this.tracks.value) {
+                const tagNames = track.tagIds.map((id) => this.tagById(id)?.name ?? '').join('\n');
+                // Newline separators keep a query from matching across fields
+                next.set(track.id, `${track.title}\n${track.artist}\n${track.path}\n${tagNames}`.toLowerCase());
+            }
+            this.searchCache = next;
+            this.searchCacheTracks = this.tracks.value;
+            this.searchCacheTags = this.tags.value;
+        }
+        return this.searchCache.get(t.id) ?? '';
+    }
+
     /** The list as currently shown: filter + untagged toggle + sort applied */
     visibleTracks(): FlowTrack[] {
         const f = this.filter.value.trim().toLowerCase();
@@ -200,12 +223,7 @@ export class TagStore {
         const filtered = this.tracks.value.filter((t) => {
             if (this.untaggedOnly.value && t.tagIds.length > 0) return false;
             if (tagFilters.length > 0 && !tagFilters.every((id) => t.tagIds.includes(id))) return false;
-            if (!f) return true;
-            if (t.title.toLowerCase().includes(f)) return true;
-            if (t.artist.toLowerCase().includes(f)) return true;
-            if (t.path.toLowerCase().includes(f)) return true;
-            // Match tag names too
-            return t.tagIds.some((id) => this.tagById(id)?.name.toLowerCase().includes(f));
+            return !f || this.haystack(t).includes(f);
         });
         return this.sortTracks(filtered);
     }

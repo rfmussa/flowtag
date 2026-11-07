@@ -42,6 +42,7 @@ const $1t = get1t();
 /// Save current profile as new profile
 function saveAs() {
     Dialog.create({
+        class: 'flowtag-theme',
         title: 'Save profile as',
         message: 'Name of new profile:',
         prompt: {
@@ -59,6 +60,7 @@ function saveAs() {
 /// Create new profile
 function newProfile() {
     Dialog.create({
+        class: 'flowtag-theme',
         title: 'Create new profile',
         message: 'Name of new profile:',
         prompt: {

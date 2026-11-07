@@ -81,7 +81,7 @@ class OneTagger {
 
             // Dev tools
             if (e.key == 'F3') {
-                Dialog.create({ component: DevToolsVue });
+                Dialog.create({ component: DevToolsVue, class: 'flowtag-theme' });
                 e.preventDefault();
                 e.stopPropagation();
                 return true;
@@ -109,9 +109,8 @@ class OneTagger {
         Dialog.create({
             title: 'Error',
             message: `${msg}`,
-            ok: {
-                color: 'primary'
-            }
+            class: 'flowtag-theme',
+            ok: { flat: true }
         });
 
         console.error(msg);
@@ -279,6 +278,7 @@ class OneTagger {
             case 'repoManifest':
                 Dialog.create({
                     component: PlatformsRepoVue,
+                    class: 'flowtag-theme',
                     componentProps: {
                         manifest: json.manifest
                     }
@@ -289,13 +289,12 @@ class OneTagger {
             case 'installPlatform':
                 let isOk = json.status == 'ok';
                 Dialog.create({
-                    title: isOk ? 'Platform Installed' : 'Failed to install platform',
-                    message: isOk ? 'Platform was installed succesfully, press OK to continue' : json.error,
+                    title: isOk ? 'Platform installed' : 'Failed to install platform',
+                    message: isOk ? 'Platform was installed successfully, press OK to continue' : json.error,
                     persistent: true,
                     cancel: false,
-                    ok: {
-                        color: 'primary'
-                    }
+                    class: 'flowtag-theme',
+                    ok: { flat: true }
                 })
                 .onOk(() => {
                     window.location.reload();
@@ -364,6 +363,7 @@ class OneTagger {
                 if (this.lock.value.locked && !this.taggerStatus.value.done) {
                     Dialog.create({
                         component: ExitDialog,
+                        class: 'flowtag-theme',
                         persistent: true,
                         ok: false,
                         cancel: false,
@@ -470,9 +470,8 @@ class OneTagger {
         this.send('loadPlatforms');
         this.loadingPlatformsDialog = Dialog.create({
             title: 'Loading platforms...',
-            progress: {
-                color: 'primary'
-            },
+            class: 'flowtag-theme',
+            progress: {},
             persistent: true,
             ok: false,
             cancel: false,

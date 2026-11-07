@@ -12,10 +12,17 @@
     // Lines
     --ft-line: rgba(255, 255, 255, 0.07);
     --ft-line-strong: rgba(255, 255, 255, 0.14);
+    --ft-line-faint: rgba(255, 255, 255, 0.04);
+    --ft-ring: rgba(255, 255, 255, 0.25);
+    // Fills
+    --ft-stripe: rgba(255, 255, 255, 0.02);
     // Text (neutral ramp)
     --ft-text: #ededef;
     --ft-text-2: #a6a6ad;
     --ft-text-3: #888890;
+    --ft-text-bright: #ffffff;
+    // Elevation (floating panels only; on-surface separation is hairlines)
+    --ft-shadow-pop: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
     // Interaction
     --ft-hover: rgba(255, 255, 255, 0.04);
     --ft-active: rgba(255, 255, 255, 0.07);
@@ -159,7 +166,7 @@
         background: var(--ft-overlay);
         border: 1px solid var(--ft-line-strong);
         border-radius: 8px;
-        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+        box-shadow: var(--ft-shadow-pop);
     }
 }
 

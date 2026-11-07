@@ -57,7 +57,7 @@ const suggestions = computed<Suggestion[]>(() => {
         .filter((t) => !applied.has(t.id))
         .slice(0, 8);
     if (q && !store.tagByName(q)) {
-        matches.push({ name: q, color: '#555555' });
+        matches.push({ name: q, color: 'var(--ft-text-3)' });
     }
     return matches;
 });
@@ -158,7 +158,7 @@ function onBlur() {
     overflow: hidden;
     z-index: 100;
     padding: 4px;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 2px 6px rgba(0, 0, 0, 0.3);
+    box-shadow: var(--ft-shadow-pop);
 }
 .suggestion {
     height: 28px;

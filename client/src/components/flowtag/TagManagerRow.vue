@@ -176,13 +176,13 @@ function confirmDelete() {
 
 <style lang='scss'>
 .tag-row {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    border-bottom: 1px solid var(--ft-line-faint);
 
     .swatch {
         width: 22px;
         height: 22px;
         min-height: 22px;
-        border: 1px solid rgba(255, 255, 255, 0.25);
+        border: 1px solid var(--ft-ring);
     }
     .name-input { min-width: 80px; }
     .count { min-width: 24px; justify-content: center; }

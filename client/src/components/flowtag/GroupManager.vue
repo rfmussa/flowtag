@@ -147,12 +147,12 @@ function add() {
 
 <style lang='scss'>
 .group-manager {
-    .group-row { border-bottom: 1px solid rgba(255, 255, 255, 0.05); }
+    .group-row { border-bottom: 1px solid var(--ft-line-faint); }
     .swatch {
         width: 22px;
         height: 22px;
         min-height: 22px;
-        border: 1px solid rgba(255, 255, 255, 0.25);
+        border: 1px solid var(--ft-ring);
     }
     .drag-handle { cursor: grab; opacity: 0.6; }
 }

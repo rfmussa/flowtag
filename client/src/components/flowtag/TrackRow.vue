@@ -58,7 +58,7 @@ const addedDate = computed(() => {
     padding: 0 16px 0 14px;
     overflow: hidden;
     cursor: default;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    border-bottom: 1px solid var(--ft-line-faint);
     // Fixed-size rows: fence layout/paint so scrolling never invalidates neighbors
     contain: layout paint style;
 
@@ -135,14 +135,14 @@ const addedDate = computed(() => {
 // Zebra stripe: just enough lift to separate neighbors at a glance
 // (hover/selected/anchor all out-rank it)
 .flowtag-row-alt {
-    background: rgba(255, 255, 255, 0.02);
+    background: var(--ft-stripe);
 }
 
 // Range-selected rows: a quiet fill
 .flowtag-row-selected {
     background: var(--ft-active);
     &:hover { background: var(--ft-active); }
-    .row-title { color: #ffffff; }
+    .row-title { color: var(--ft-text-bright); }
 }
 
 // The anchor (active) row: raised surface, hairline ring, no colored rail
