@@ -43,7 +43,8 @@ const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>();
     overflow: hidden;
     cursor: default;
     border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-    box-shadow: inset 2px 0 0 transparent;
+    // Fixed-size rows: fence layout/paint so scrolling never invalidates neighbors
+    contain: layout paint style;
 
     &:hover { background: var(--ft-hover); }
 
