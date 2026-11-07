@@ -127,6 +127,14 @@ pub fn start_webview() -> Result<(), Error> {
     let mut context = WebContext::new(Some(Settings::get_folder()?.join("webview")));
     let p = proxy.clone();
 
+    // OS media keys + Now Playing: the client's player state arrives over the
+    // websocket and is relayed to this (main) thread as a user event
+    let mut media_controls = setup_media_controls();
+    let media_proxy = proxy.clone();
+    onetagger_ui::media::register_media_sink(move |now_playing| {
+        media_proxy.send_event(CustomWindowEvent::Media(now_playing)).ok();
+    });
+
     // Register menu for MacOS shortcuts to work
     #[cfg(target_os = "macos")]
     let _menu = {
@@ -262,6 +270,25 @@ pub fn start_webview() -> Result<(), Error> {
             Event::UserEvent(CustomWindowEvent::DevTools) => {
                 webview.open_devtools();
             },
+            // Mirror the client player into the OS Now Playing panel
+            Event::UserEvent(CustomWindowEvent::Media(np)) => {
+                if let Some(controls) = media_controls.as_mut() {
+                    let cover = format!("http://127.0.0.1:{PORT}/thumb?path={}", urlencoding::encode(&np.path));
+                    controls.set_metadata(souvlaki::MediaMetadata {
+                        title: Some(&np.title),
+                        artist: Some(&np.artist),
+                        album: None,
+                        duration: Some(std::time::Duration::from_millis(np.duration_ms)),
+                        cover_url: Some(&cover),
+                    }).ok();
+                    let progress = Some(souvlaki::MediaPosition(std::time::Duration::from_millis(np.position_ms)));
+                    let playback = match np.playing {
+                        true => souvlaki::MediaPlayback::Playing { progress },
+                        false => souvlaki::MediaPlayback::Paused { progress },
+                    };
+                    controls.set_playback(playback).ok();
+                }
+            },
             // Exit from UI
             Event::UserEvent(CustomWindowEvent::Exit) => {
                 debug!("Exitting webview loop...");
@@ -277,5 +304,50 @@ pub fn start_webview() -> Result<(), Error> {
 enum CustomWindowEvent {
     DropFolder(PathBuf),
     DevTools,
-    Exit
+    Exit,
+    /// Client player state for the OS Now Playing panel
+    Media(onetagger_ui::media::NowPlaying),
+}
+
+/// OS media controls (macOS Now Playing / MPRIS). Created on the main thread
+/// beside the event loop; None when unavailable (Windows would need an hwnd).
+fn setup_media_controls() -> Option<souvlaki::MediaControls> {
+    #[cfg(target_os = "windows")]
+    { return None; }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let config = souvlaki::PlatformConfig {
+            display_name: "FlowTag",
+            dbus_name: "flowtag",
+            hwnd: None,
+        };
+        let mut controls = match souvlaki::MediaControls::new(config) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("Media controls unavailable: {e:?}");
+                return None;
+            }
+        };
+        if let Err(e) = controls.attach(|event| handle_media_event(event)) {
+            warn!("Failed attaching media control events: {e:?}");
+            return None;
+        }
+        Some(controls)
+    }
+}
+
+/// Map OS media commands onto FlowTag client actions (broadcast to all clients)
+fn handle_media_event(event: souvlaki::MediaControlEvent) {
+    use souvlaki::MediaControlEvent::*;
+    match event {
+        Play => onetagger_ui::media::media_key("play", None),
+        Pause | Stop => onetagger_ui::media::media_key("pause", None),
+        Toggle => onetagger_ui::media::media_key("playPause", None),
+        Next => onetagger_ui::media::media_key("next", None),
+        Previous => onetagger_ui::media::media_key("prev", None),
+        SetPosition(souvlaki::MediaPosition(pos)) => {
+            onetagger_ui::media::media_key("seek", Some(pos.as_millis() as u64))
+        }
+        _ => {}
+    }
 }

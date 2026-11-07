@@ -113,6 +113,11 @@ enum Action {
     TrackMetaGet { track_id: i64 },
     #[serde(rename_all = "camelCase")]
     TrackMetaSet { track_id: i64, meta: onetagger_db::meta::TrackMeta },
+    /// Client player state for the OS Now Playing panel (fields inline)
+    NowPlaying {
+        #[serde(flatten)]
+        now_playing: crate::media::NowPlaying,
+    },
 }
 
 
@@ -766,6 +771,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
         Action::TrackMetaGet { track_id } => tagflow::track_meta_get(context, track_id)?,
         Action::TrackMetaSet { track_id, meta } => tagflow::track_meta_set(context, track_id, &meta)?,
+        Action::NowPlaying { now_playing } => crate::media::push_now_playing(now_playing),
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,
         Action::RekordboxExport { mode } => tagflow::rekordbox_export(context, &mode)?,

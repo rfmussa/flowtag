@@ -43,6 +43,7 @@
 import { useQuasar } from 'quasar';
 import { onMounted, onUnmounted, ref } from "vue";
 import { get1t } from "./scripts/onetagger.js";
+import { initMediaSync } from './scripts/mediasync';
 
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';
@@ -78,6 +79,7 @@ function onResize() {
 onMounted(() => {
     $q.dark.set(true);
     setWaveformWidth();
+    initMediaSync();
     window.addEventListener("resize", onResize);
     window.addEventListener('flowtag-open-settings', openSettings);
 });

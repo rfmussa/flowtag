@@ -25,6 +25,7 @@ use tokio::runtime::Builder;
 use tokio::net::TcpListener;
 use onetagger_shared::{PORT, WEBSERVER_CALLBACKS, Settings};
 
+pub mod media;
 pub mod socket;
 pub mod sender;
 pub mod browser;
@@ -67,6 +68,8 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
     // Background flusher: writes DB tag changes into the audio files.
     // Events go to every connection; the currently playing file is skipped.
     let (events, _) = tokio::sync::broadcast::channel::<String>(256);
+    // OS media keys (play/pause/next from the GUI shell) push into the same channel
+    media::set_media_broadcast(events.clone());
     let events_tx = events.clone();
     let flush_wake = onetagger_db::flush::FlushWorker::spawn(
         db_path,

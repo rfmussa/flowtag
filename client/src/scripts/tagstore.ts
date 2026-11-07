@@ -508,6 +508,21 @@ export class TagStore {
                 }
                 return true;
             }
+            // OS media keys (play/pause/next from Control Center, AirPods, F8...)
+            case 'mediaKey': {
+                const player = get1t().player.value;
+                switch (json.key) {
+                    case 'playPause': player.playing ? player.pause() : player.play(); break;
+                    case 'play': if (!player.playing) player.play(); break;
+                    case 'pause': if (player.playing) player.pause(); break;
+                    case 'next': this.selectOffset(1, false); break;
+                    case 'prev': this.selectOffset(-1, false); break;
+                    case 'seek':
+                        if (typeof json.positionMs === 'number') player.seek(json.positionMs);
+                        break;
+                }
+                return true;
+            }
             case 'trackFlushed':
                 if (json.ok) {
                     this.tracks.value = this.tracks.value.map((t) =>
