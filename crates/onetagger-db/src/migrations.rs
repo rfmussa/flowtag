@@ -105,6 +105,22 @@ const MIGRATIONS: &[Migration] = &[
     Migration::Code(recolor_legacy_teal_tags),
     // v5: tracks remember when they entered the library
     Migration::Code(add_added_at),
+    // v6: playlists — manual (explicit membership) and smart (saved filter)
+    Migration::Sql("
+        CREATE TABLE playlists (
+            id INTEGER PRIMARY KEY,
+            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+            position INTEGER NOT NULL DEFAULT 0,
+            filter TEXT
+        );
+        CREATE TABLE playlist_tracks (
+            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+            track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+            position INTEGER NOT NULL DEFAULT 0,
+            PRIMARY KEY (playlist_id, track_id)
+        );
+        CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
+    "),
 ];
 
 /// Apply pending migrations. Idempotent: already-applied migrations are skipped

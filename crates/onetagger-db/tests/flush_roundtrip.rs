@@ -136,7 +136,7 @@ fn comment_export_preserves_text_and_is_idempotent() {
     let track = &tracks::list_tracks(&db).unwrap()[0];
     tags::add_tag_to_track(&db, track.id, "Deep House").unwrap();
 
-    let res = onetagger_db::export::export_comments(&db, &|_| false, |_, _| {}).unwrap();
+    let res = onetagger_db::export::export_comments(&db, None, &|_| false, |_, _| {}).unwrap();
     assert_eq!((res.written, res.failed), (1, 0));
 
     // Comment preserved + hashtag appended
@@ -145,7 +145,7 @@ fn comment_export_preserves_text_and_is_idempotent() {
     assert_eq!(comment, "my old note #DeepHouse");
 
     // Second export: nothing to write
-    let res = onetagger_db::export::export_comments(&db, &|_| false, |_, _| {}).unwrap();
+    let res = onetagger_db::export::export_comments(&db, None, &|_| false, |_, _| {}).unwrap();
     assert_eq!((res.written, res.unchanged), (0, 1));
 
     // Export doesn't make the next scan re-parse our own write
@@ -155,7 +155,7 @@ fn comment_export_preserves_text_and_is_idempotent() {
     // Removing the last tag and re-exporting strips the stale hashtag block
     let pool = tags::list_tags(&db).unwrap();
     tags::remove_tag_from_track(&db, track.id, pool[0].id).unwrap();
-    let res = onetagger_db::export::export_comments(&db, &|_| false, |_, _| {}).unwrap();
+    let res = onetagger_db::export::export_comments(&db, None, &|_| false, |_, _| {}).unwrap();
     assert_eq!((res.written, res.failed), (1, 0));
     let tag_wrap = onetagger_tag::Tag::load_file(&track.path, false).unwrap();
     let comment = tag_wrap.tag().get_raw("COMM").unwrap()[0].clone();
@@ -228,4 +228,37 @@ fn expedite_makes_dirty_tracks_due() {
 /// Current unix seconds (the crate's internal now() is private)
 fn onetagger_db_now() -> i64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64
+}
+
+#[test]
+fn export_scoped_to_subset() {
+    if !ffmpeg_available() {
+        eprintln!("SKIP: ffmpeg not available");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    assert!(gen_audio(&music, "a.mp3", &["-codec:a", "libmp3lame", "-b:a", "64k"]));
+    assert!(gen_audio(&music, "b.mp3", &["-codec:a", "libmp3lame", "-b:a", "64k"]));
+
+    let db = Db::open(dir.path().join("t.db")).unwrap();
+    tracks::add_folder(&db, &music.to_string_lossy()).unwrap();
+    scan::scan(&db, false, |_, _| {}).unwrap();
+    let all = tracks::list_tracks(&db).unwrap();
+    for t in &all {
+        tags::add_tag_to_track(&db, t.id, "Scoped").unwrap();
+    }
+    let first = all.iter().find(|t| t.path.ends_with("a.mp3")).unwrap();
+
+    // Scoped export touches only the chosen track
+    let only: std::collections::HashSet<i64> = [first.id].into_iter().collect();
+    let res = onetagger_db::export::export_comments(&db, Some(&only), &|_| false, |_, _| {}).unwrap();
+    assert_eq!((res.written, res.failed), (1, 0));
+
+    let tagged = onetagger_tag::Tag::load_file(std::path::Path::new(&first.path), false).unwrap();
+    assert!(tagged.tag().get_raw("COMM").map(|c| c[0].contains("#Scoped")).unwrap_or(false));
+    let other = all.iter().find(|t| t.path.ends_with("b.mp3")).unwrap();
+    let untouched = onetagger_tag::Tag::load_file(std::path::Path::new(&other.path), false).unwrap();
+    assert!(untouched.tag().get_raw("COMM").map(|c| !c[0].contains("#Scoped")).unwrap_or(true));
 }

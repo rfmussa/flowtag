@@ -58,8 +58,9 @@
     <!-- Session progress: one quiet line -->
     <div class='progress-line' aria-hidden='true'><div class='progress-fill' :style='{ width: progressPct + "%" }'></div></div>
 
-    <!-- Track list + palette -->
+    <!-- Playlists + track list + palette -->
     <div class='col row no-wrap list-row'>
+        <PlaylistSidebar v-if='sidebarOpen' />
         <div class='col list-area'>
             <div v-if='store.folders.value.length === 0 && store.loaded.value' class='column items-center justify-center full-height empty-state'>
                 <q-icon name='mdi-music-box-multiple-outline' size='44px' class='empty-icon' />
@@ -90,6 +91,14 @@
             </span>
             <TagChips :tag-ids='selected.tagIds' :track-id='selected.id' removable class='panel-chips' />
             <TagInput :track-id='selected.id' />
+            <button
+                v-if='activeManualPlaylist'
+                type='button' class='ft-btn icon-only'
+                :title='"Remove from " + activeManualPlaylist.name'
+                @click='removeFromPlaylist'
+            >
+                <q-icon name='mdi-playlist-minus' size='16px' />
+            </button>
         </template>
         <div v-else class='panel-hint'>
             <span class='ft-kbd'>J</span><span class='ft-kbd'>K</span> select
@@ -102,10 +111,13 @@
             <span class='hint-sep'></span>
             <span class='ft-kbd'>M</span> lookup
             <span class='hint-sep'></span>
+            <span class='ft-kbd'>B</span> playlists
+            <span class='hint-sep'></span>
             <span class='ft-kbd'>Space</span> play
         </div>
     </div>
 
+    <ExportDialog v-model='exportOpen' />
     <TagManager v-model='managerOpen' />
     <TrackInspector />
     <ManualTag :path='manualTagPath' @exit='onManualTagExit' />
@@ -122,6 +134,8 @@ import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
+import PlaylistSidebar from '../components/flowtag/PlaylistSidebar.vue';
+import ExportDialog from '../components/flowtag/ExportDialog.vue';
 import TagChips from '../components/flowtag/TagChips.vue';
 import TagInput from '../components/flowtag/TagInput.vue';
 import TagPalette from '../components/flowtag/TagPalette.vue';
@@ -151,6 +165,10 @@ let filterTimer: any;
 watch(filterInput, (v) => {
     clearTimeout(filterTimer);
     filterTimer = setTimeout(() => { store.filter.value = v ?? ''; }, 60);
+});
+// The store can set the filter too (selecting a smart playlist): mirror back
+watch(store.filter, (v) => {
+    if (v !== filterInput.value) filterInput.value = v;
 });
 
 // F focuses the filter (from the global keyboard map)
@@ -202,17 +220,34 @@ function openManager(e: Event) {
 
 function confirmExport(e: Event) {
     blurTarget(e);
-    Dialog.create({
-        title: 'Export to comments',
-        message: 'Append your tags as #hashtags to every tagged file\'s comment field (searchable in Rekordbox). Existing comment text is kept; re-exporting updates the hashtag block. Continue?',
-        cancel: true,
-        dark: true,
-        class: 'flowtag-theme',
-    }).onOk(() => {
-        diag('exportComments');
-        $1t.send('rekordboxExport', { mode: 'comment' });
-        Notify.create({ message: 'Export started…', timeout: 1500 });
-    });
+    exportOpen.value = true;
+}
+const exportOpen = ref(false);
+
+// Playlists sidebar: persisted like the palette, toggled by the B action
+const SIDEBAR_KEY = 'flowtag-sidebar';
+const sidebarOpen = ref(readSidebarOpen());
+function readSidebarOpen(): boolean {
+    try { return localStorage.getItem(SIDEBAR_KEY) === 'true'; } catch { return false; }
+}
+watch(store.sidebarSignal, () => {
+    sidebarOpen.value = !sidebarOpen.value;
+    try { localStorage.setItem(SIDEBAR_KEY, String(sidebarOpen.value)); } catch { /* in-memory only */ }
+});
+
+// Remove the selection from the active (manual) playlist
+const activeManualPlaylist = computed(() => {
+    const pl = store.activePlaylist();
+    return pl && !pl.filter ? pl : undefined;
+});
+function removeFromPlaylist(e: Event) {
+    blurTarget(e);
+    const pl = activeManualPlaylist.value;
+    if (!pl) return;
+    const trackIds = store.allSelected();
+    if (trackIds.length === 0) return;
+    $1t.send('playlistRemoveTracks', { id: pl.id, trackIds });
+    diag('playlistRemoveTracks', { id: pl.id, tracks: trackIds.length });
 }
 
 // Settings dialog lives app-level (App.vue); ask it to open

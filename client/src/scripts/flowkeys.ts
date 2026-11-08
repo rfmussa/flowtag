@@ -14,6 +14,7 @@ export const FLOWTAG_ACTION_DEFAULTS: Record<FlowTagAction, string> = {
     done: 'KeyD',
     edit: 'KeyE',
     lookup: 'KeyM',
+    sidebar: 'KeyB',
 };
 
 /** Labels for the settings page */
@@ -25,6 +26,7 @@ export const FLOWTAG_ACTION_LABELS: Record<FlowTagAction, string> = {
     done: 'Done & next untagged',
     edit: 'Edit metadata',
     lookup: 'Online lookup',
+    sidebar: 'Toggle playlists sidebar',
 };
 
 /** Key codes FlowTag always claims, regardless of configuration */
@@ -183,6 +185,10 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     }
     if (actionMatches(event, 'focusFilter')) {
         store.focusFilterSignal.value++;
+        return true;
+    }
+    if (actionMatches(event, 'sidebar')) {
+        store.sidebarSignal.value++;
         return true;
     }
 

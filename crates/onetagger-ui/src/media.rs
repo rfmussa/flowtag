@@ -24,6 +24,26 @@ pub struct NowPlaying {
 
 static MEDIA_SINK: OnceLock<Box<dyn Fn(NowPlaying) + Send + Sync>> = OnceLock::new();
 static MEDIA_BROADCAST: OnceLock<tokio::sync::broadcast::Sender<String>> = OnceLock::new();
+/// Last reported player state + when it arrived, so late-joining windows
+/// (the miniplayer) can be brought up to date instead of showing nothing
+static LAST_NOW_PLAYING: std::sync::Mutex<Option<(NowPlaying, std::time::Instant)>> = std::sync::Mutex::new(None);
+
+pub(crate) fn remember_now_playing(np: &NowPlaying) {
+    *LAST_NOW_PLAYING.lock().unwrap() = Some((np.clone(), std::time::Instant::now()));
+}
+
+/// The current player state with the position advanced by wall-clock time
+/// while playing (the snapshot may be minutes old)
+pub(crate) fn snapshot_now_playing() -> Option<NowPlaying> {
+    let guard = LAST_NOW_PLAYING.lock().unwrap();
+    guard.as_ref().map(|(np, at)| {
+        let mut np = np.clone();
+        if np.playing {
+            np.position_ms = (np.position_ms + at.elapsed().as_millis() as u64).min(np.duration_ms);
+        }
+        np
+    })
+}
 
 /// Register the shell's Now Playing sink. Call before `start_all`; only the
 /// first registration wins.

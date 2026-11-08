@@ -4,6 +4,8 @@
     :class='{"flowtag-row-alt": alt, "flowtag-row-selected": selected, "flowtag-row-anchor": anchor}'
     @click='emit("click", $event)'
     @dblclick='emit("play")'
+    draggable='true'
+    @dragstart='onDragStart'
 >
     <q-icon v-if='playing' name='mdi-volume-high' size='12px' class='row-playing' />
     <span class='row-title' :title='track.title'>{{ track.title }}</span>
@@ -25,7 +27,7 @@
 <script lang='ts' setup>
 import { computed } from 'vue';
 import TagChips from './TagChips.vue';
-import { FlowTrack } from '../../scripts/tagstore';
+import { FlowTrack, getTagStore } from '../../scripts/tagstore';
 import { keyColor } from '../../scripts/musickey';
 import { get1t } from '../../scripts/onetagger';
 
@@ -41,6 +43,15 @@ const props = defineProps<{
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void; (e: 'play'): void }>();
 
 const cols = computed(() => get1t().settings.value.flowtag.columns);
+
+/** Drag carries the whole multi-selection when this row is part of it */
+function onDragStart(e: DragEvent) {
+    const store = getTagStore();
+    const inSelection = store.isSelected(props.track.id);
+    const ids = inSelection ? store.allSelected() : [props.track.id];
+    e.dataTransfer?.setData('application/x-flowtag-tracks', JSON.stringify(ids));
+    if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
+}
 
 /** added_at as a compact ISO date */
 const addedDate = computed(() => {

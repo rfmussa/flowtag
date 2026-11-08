@@ -2,7 +2,7 @@ import { AutotaggerConfig, AutotaggerProfile } from "./autotagger";
 import { Keybind } from "./utils";
 
 /** Remappable FlowTag actions (letter keys; Space/arrows/digits/Esc/⌘Z stay fixed) */
-const FLOWTAG_ACTIONS = ['prev', 'next', 'focusTag', 'focusFilter', 'done', 'edit', 'lookup'] as const;
+const FLOWTAG_ACTIONS = ['prev', 'next', 'focusTag', 'focusFilter', 'done', 'edit', 'lookup', 'sidebar'] as const;
 type FlowTagAction = typeof FLOWTAG_ACTIONS[number];
 
 /** Optional track-list columns (title/artist/chips are always on) */

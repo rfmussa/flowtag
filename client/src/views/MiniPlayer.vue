@@ -10,13 +10,13 @@
         </div>
         <div class='mini-transport' @mousedown.stop>
             <button type='button' class='ft-btn icon-only' aria-label='Previous' @click='remote("prev")'>
-                <q-icon name='mdi-skip-previous' size='17px' />
+                <q-icon name='mdi-skip-previous' size='18px' />
             </button>
             <button type='button' class='ft-btn icon-only' aria-label='Play/pause' @click='remote("playPause")'>
-                <q-icon :name='np?.playing ? "mdi-pause" : "mdi-play"' size='19px' />
+                <q-icon :name='np?.playing ? "mdi-pause" : "mdi-play"' size='20px' />
             </button>
             <button type='button' class='ft-btn icon-only' aria-label='Next' @click='remote("next")'>
-                <q-icon name='mdi-skip-next' size='17px' />
+                <q-icon name='mdi-skip-next' size='18px' />
             </button>
         </div>
         <button type='button' class='ft-btn icon-only mini-close' aria-label='Close miniplayer' @mousedown.stop @click='closeMini'>
@@ -152,6 +152,7 @@ onUnmounted(() => {
 
 <style lang='scss' scoped>
 .mini {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -166,7 +167,8 @@ onUnmounted(() => {
     display: flex;
     align-items: center;
     gap: 10px;
-    padding: 10px 10px 8px 10px;
+    // Right padding clears the corner-pinned close button
+    padding: 10px 36px 8px 10px;
     cursor: default;
 }
 .mini-art {
@@ -205,11 +207,16 @@ onUnmounted(() => {
     align-items: center;
     gap: 2px;
     flex-shrink: 0;
+    .ft-btn { height: 28px; width: 28px; justify-content: center; padding: 0; }
 }
 .mini-close {
-    flex-shrink: 0;
-    align-self: flex-start;
-    margin: -4px -4px 0 0;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    height: 22px;
+    width: 22px;
+    justify-content: center;
+    padding: 0;
 }
 .mini-progress {
     height: 2px;

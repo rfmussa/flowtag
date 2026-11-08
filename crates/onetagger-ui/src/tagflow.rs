@@ -225,14 +225,15 @@ pub(crate) fn flush_retry(context: &SocketContext) -> Result<(), Error> {
 /// Export tags into Rekordbox-visible fields on a blocking task.
 /// Only "comment" (trailing hashtag block) is implemented; "grouping" and
 /// "rekordboxXml" are reserved future modes.
-pub(crate) fn rekordbox_export(context: &SocketContext, mode: &str) -> Result<(), Error> {
+pub(crate) fn rekordbox_export(context: &SocketContext, mode: &str, track_ids: Option<Vec<i64>>) -> Result<(), Error> {
     if mode != "comment" {
         return Err(anyhow::anyhow!("Unsupported export mode: {mode}"));
     }
     let sender = context.sender.clone();
     let db = context.db.clone();
+    let only: Option<std::collections::HashSet<i64>> = track_ids.map(|ids| ids.into_iter().collect());
     tokio::task::spawn_blocking(move || {
-        let result = onetagger_db::export::export_comments(&db, &crate::socket::is_currently_playing, |done, total| {
+        let result = onetagger_db::export::export_comments(&db, only.as_ref(), &crate::socket::is_currently_playing, |done, total| {
             sender.send(json!({ "action": "rekordboxExportProgress", "done": done, "total": total })).ok();
         });
         match result {
@@ -339,4 +340,56 @@ pub(crate) fn flush_status_get(context: &SocketContext) -> Result<(), Error> {
         .map(|(track_id, error)| json!({ "trackId": track_id, "error": error }))
         .collect();
     context.send(json!({ "action": "flushStatus", "pending": pending, "errors": errors }))
+}
+
+// ---- Playlists ----
+
+/// The `playlists` message (list + counts), broadcast after every mutation
+fn playlists_message(db: &Db) -> Result<serde_json::Value, Error> {
+    Ok(json!({ "action": "playlists", "playlists": onetagger_db::playlists::list(db)? }))
+}
+
+pub(crate) fn playlist_list(context: &SocketContext) -> Result<(), Error> {
+    context.send(playlists_message(&context.db)?)
+}
+
+pub(crate) fn playlist_create(context: &SocketContext, name: &str, filter: Option<&str>) -> Result<(), Error> {
+    let id = onetagger_db::playlists::create(&context.db, name, filter)?;
+    // The creator learns the id (to select it); every window refreshes
+    context.send(json!({ "action": "playlistCreated", "id": id }))?;
+    context.broadcast(playlists_message(&context.db)?)
+}
+
+pub(crate) fn playlist_rename(context: &SocketContext, id: i64, name: &str) -> Result<(), Error> {
+    onetagger_db::playlists::rename(&context.db, id, name)?;
+    context.broadcast(playlists_message(&context.db)?)
+}
+
+pub(crate) fn playlist_delete(context: &SocketContext, id: i64) -> Result<(), Error> {
+    onetagger_db::playlists::delete(&context.db, id)?;
+    context.broadcast(playlists_message(&context.db)?)
+}
+
+fn playlist_tracks_message(db: &Db, id: i64) -> Result<serde_json::Value, Error> {
+    Ok(json!({
+        "action": "playlistTracks",
+        "id": id,
+        "trackIds": onetagger_db::playlists::track_ids(db, id)?,
+    }))
+}
+
+pub(crate) fn playlist_add_tracks(context: &SocketContext, id: i64, track_ids: &[i64]) -> Result<(), Error> {
+    onetagger_db::playlists::add_tracks(&context.db, id, track_ids)?;
+    context.broadcast(playlist_tracks_message(&context.db, id)?)?;
+    context.broadcast(playlists_message(&context.db)?)
+}
+
+pub(crate) fn playlist_remove_tracks(context: &SocketContext, id: i64, track_ids: &[i64]) -> Result<(), Error> {
+    onetagger_db::playlists::remove_tracks(&context.db, id, track_ids)?;
+    context.broadcast(playlist_tracks_message(&context.db, id)?)?;
+    context.broadcast(playlists_message(&context.db)?)
+}
+
+pub(crate) fn playlist_tracks_load(context: &SocketContext, id: i64) -> Result<(), Error> {
+    context.send(playlist_tracks_message(&context.db, id)?)
 }

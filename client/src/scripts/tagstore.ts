@@ -24,6 +24,32 @@ export interface FlowTrack {
 
 export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year' | 'added';
 
+/** A playlist: manual (explicit members) or smart (saved filter) */
+export interface FlowPlaylist {
+    id: number;
+    name: string;
+    position: number;
+    filter?: string | null;
+    /** Manual membership count (0 for smart; the client evaluates those) */
+    count: number;
+}
+
+/** The saved-filter shape a smart playlist stores */
+export interface SavedFilter {
+    text?: string;
+    tagIds?: number[];
+    untaggedOnly?: boolean;
+}
+
+export function parseSavedFilter(raw: string): SavedFilter {
+    try {
+        const parsed = JSON.parse(raw);
+        return (parsed && typeof parsed === 'object') ? parsed : {};
+    } catch {
+        return {};
+    }
+}
+
 export interface FlowTag {
     id: number;
     name: string;
@@ -98,6 +124,14 @@ export class TagStore {
     manualTagSignal: Ref<number> = ref(0);
     /** Latest trackMeta reply (inspector fills its form from this) */
     inspectorMeta: Ref<{ trackId: number; meta: TrackMeta } | undefined> = ref(undefined);
+    playlists: Ref<FlowPlaylist[]> = ref([]);
+    /** undefined = whole library */
+    activePlaylistId: Ref<number | undefined> = ref(undefined);
+    /** Manual membership cache: playlist id -> track ids */
+    playlistMembers: Ref<Map<number, number[]>> = ref(new Map());
+    /** Bumped by the keyboard layer to toggle the playlists sidebar */
+    sidebarSignal: Ref<number> = ref(0);
+
     /** Player state mirrored from whichever window is driving playback
      *  (nowPlayingChanged broadcast); `at` = wall clock of the snapshot */
     nowPlaying: Ref<{ playing: boolean; title: string; artist: string; positionMs: number; durationMs: number; path: string; at: number } | undefined> = ref(undefined);
@@ -119,6 +153,7 @@ export class TagStore {
         $1t.send('tagFolderList');
         $1t.send('tagPoolLoad');
         $1t.send('tagTracksLoad');
+        $1t.send('playlistList');
     }
 
     /** id -> tag map, rebuilt lazily when the pool changes (hot path at 20k tracks) */
@@ -217,16 +252,62 @@ export class TagStore {
         return this.searchCache.get(t.id) ?? '';
     }
 
-    /** The list as currently shown: filter + untagged toggle + sort applied */
+    /** One filter predicate for live controls and saved (smart) filters alike */
+    private passes(t: FlowTrack, text: string, tagFilters: number[], untaggedOnly: boolean): boolean {
+        if (untaggedOnly && t.tagIds.length > 0) return false;
+        if (tagFilters.length > 0 && !tagFilters.every((id) => t.tagIds.includes(id))) return false;
+        return !text || this.haystack(t).includes(text);
+    }
+
+    /** The list as currently shown: playlist scope + filter + untagged + sort */
     visibleTracks(): FlowTrack[] {
         const f = this.filter.value.trim().toLowerCase();
         const tagFilters = this.filterTagIds.value;
+        const active = this.activePlaylist();
+        const members = active && !active.filter
+            ? new Set(this.playlistMembers.value.get(active.id) ?? [])
+            : undefined;
         const filtered = this.tracks.value.filter((t) => {
-            if (this.untaggedOnly.value && t.tagIds.length > 0) return false;
-            if (tagFilters.length > 0 && !tagFilters.every((id) => t.tagIds.includes(id))) return false;
-            return !f || this.haystack(t).includes(f);
+            if (members && !members.has(t.id)) return false;
+            return this.passes(t, f, tagFilters, this.untaggedOnly.value);
         });
         return this.sortTracks(filtered);
+    }
+
+    activePlaylist(): FlowPlaylist | undefined {
+        const id = this.activePlaylistId.value;
+        return id === undefined ? undefined : this.playlists.value.find((p) => p.id === id);
+    }
+
+    /** Switch the view scope. Selecting a smart playlist loads its saved
+     *  filter into the live controls (a saved search, visibly). */
+    selectPlaylist(id?: number) {
+        this.activePlaylistId.value = id;
+        const pl = id === undefined ? undefined : this.playlists.value.find((p) => p.id === id);
+        if (!pl) {
+            if (id !== undefined) this.activePlaylistId.value = undefined;
+            return;
+        }
+        if (pl.filter) {
+            const f = parseSavedFilter(pl.filter);
+            this.filter.value = f.text ?? '';
+            this.filterTagIds.value = f.tagIds ?? [];
+            this.untaggedOnly.value = !!f.untaggedOnly;
+        } else if (!this.playlistMembers.value.has(pl.id)) {
+            get1t().send('playlistTracksLoad', { id: pl.id });
+        }
+        diag('playlistSelect', { id, smart: !!pl.filter });
+    }
+
+    /** Every track a playlist resolves to right now (manual members, or the
+     *  smart filter evaluated against the library) */
+    playlistTrackIds(pl: FlowPlaylist): number[] {
+        if (!pl.filter) return this.playlistMembers.value.get(pl.id) ?? [];
+        const f = parseSavedFilter(pl.filter);
+        const text = (f.text ?? '').trim().toLowerCase();
+        return this.tracks.value
+            .filter((t) => this.passes(t, text, f.tagIds ?? [], !!f.untaggedOnly))
+            .map((t) => t.id);
     }
 
     private sortTracks(tracks: FlowTrack[]): FlowTrack[] {
@@ -538,6 +619,25 @@ export class TagStore {
                 }
                 return true;
             }
+            case 'playlists': {
+                this.playlists.value = json.playlists ?? [];
+                // The active playlist may have been deleted in another window
+                if (this.activePlaylistId.value !== undefined
+                    && !this.playlists.value.some((p) => p.id === this.activePlaylistId.value)) {
+                    this.activePlaylistId.value = undefined;
+                }
+                return true;
+            }
+            case 'playlistTracks': {
+                const next = new Map(this.playlistMembers.value);
+                next.set(json.id, json.trackIds ?? []);
+                this.playlistMembers.value = next;
+                return true;
+            }
+            case 'playlistCreated':
+                // Only the creator receives this: jump into the new playlist
+                diag('playlistCreated', { id: json.id });
+                return true;
             case 'nowPlayingChanged':
                 this.nowPlaying.value = {
                     playing: !!json.playing,

@@ -108,7 +108,17 @@ enum Action {
     FlushHint { track_id: Option<i64> },
     FlushStatusGet,
     FlushRetry,
-    RekordboxExport { mode: String },
+    #[serde(rename_all = "camelCase")]
+    RekordboxExport { mode: String, #[serde(default)] track_ids: Option<Vec<i64>> },
+    PlaylistList,
+    PlaylistCreate { name: String, filter: Option<String> },
+    PlaylistRename { id: i64, name: String },
+    PlaylistDelete { id: i64 },
+    #[serde(rename_all = "camelCase")]
+    PlaylistAddTracks { id: i64, track_ids: Vec<i64> },
+    #[serde(rename_all = "camelCase")]
+    PlaylistRemoveTracks { id: i64, track_ids: Vec<i64> },
+    PlaylistTracksLoad { id: i64 },
     #[serde(rename_all = "camelCase")]
     TrackMetaGet { track_id: i64 },
     #[serde(rename_all = "camelCase")]
@@ -279,6 +289,19 @@ pub(crate) async fn handle_ws_connection(
     });
 
     let mut context = SocketContext::new(context, sender, db, flush_wake, events);
+
+    // Bring a late-joining window (miniplayer) up to date with the player
+    if let Some(np) = crate::media::snapshot_now_playing() {
+        context.send(json!({
+            "action": "nowPlayingChanged",
+            "playing": np.playing,
+            "title": np.title,
+            "artist": np.artist,
+            "positionMs": np.position_ms,
+            "durationMs": np.duration_ms,
+            "path": np.path,
+        })).ok();
+    }
 
     while let Some(message) = stream.next().await {
         match message {
@@ -789,6 +812,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::TrackMetaSet { track_id, meta } => tagflow::track_meta_set(context, track_id, &meta)?,
         Action::NowPlaying { now_playing } => {
             // Secondary windows (miniplayer) mirror this; the shell feeds the OS
+            crate::media::remember_now_playing(&now_playing);
             context.broadcast(json!({
                 "action": "nowPlayingChanged",
                 "playing": now_playing.playing,
@@ -818,7 +842,14 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         },
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,
-        Action::RekordboxExport { mode } => tagflow::rekordbox_export(context, &mode)?,
+        Action::RekordboxExport { mode, track_ids } => tagflow::rekordbox_export(context, &mode, track_ids)?,
+        Action::PlaylistList => tagflow::playlist_list(context)?,
+        Action::PlaylistCreate { name, filter } => tagflow::playlist_create(context, &name, filter.as_deref())?,
+        Action::PlaylistRename { id, name } => tagflow::playlist_rename(context, id, &name)?,
+        Action::PlaylistDelete { id } => tagflow::playlist_delete(context, id)?,
+        Action::PlaylistAddTracks { id, track_ids } => tagflow::playlist_add_tracks(context, id, &track_ids)?,
+        Action::PlaylistRemoveTracks { id, track_ids } => tagflow::playlist_remove_tracks(context, id, &track_ids)?,
+        Action::PlaylistTracksLoad { id } => tagflow::playlist_tracks_load(context, id)?,
     }
    
     Ok(())

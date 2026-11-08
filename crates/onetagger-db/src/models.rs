@@ -53,6 +53,19 @@ pub struct DbGroup {
     pub position: i64,
 }
 
+/// A playlist: manual (filter None, membership in playlist_tracks) or
+/// smart (filter = opaque JSON the client evaluates)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DbPlaylist {
+    pub id: i64,
+    pub name: String,
+    pub position: i64,
+    pub filter: Option<String>,
+    /// Manual membership count (always 0 for smart playlists)
+    pub count: i64,
+}
+
 /// Data needed to insert/update a track row during scan
 #[derive(Debug, Clone)]
 pub struct ScannedTrack {

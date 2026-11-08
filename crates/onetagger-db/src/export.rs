@@ -43,6 +43,7 @@ pub(crate) fn comment_frame() -> FrameName {
 /// flush worker pauses (EXPORT_ACTIVE).
 pub fn export_comments(
     db: &Db,
+    only: Option<&std::collections::HashSet<i64>>,
     skip: &dyn Fn(&str) -> bool,
     progress: impl Fn(usize, usize),
 ) -> Result<ExportResult, Error> {
@@ -71,6 +72,12 @@ pub fn export_comments(
                 Ok((id, path, names, mtime, size))
             })
             .collect::<Result<Vec<_>, Error>>()?
+    };
+
+    // Scoped export (a playlist or a tag): touch only the chosen tracks
+    let jobs: Vec<_> = match only {
+        Some(ids) => jobs.into_iter().filter(|(id, ..)| ids.contains(id)).collect(),
+        None => jobs,
     };
 
     let total = jobs.len();
