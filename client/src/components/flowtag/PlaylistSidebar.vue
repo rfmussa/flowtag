@@ -12,8 +12,19 @@
     </div>
 
     <!-- One scope per source folder -->
-    <template v-if='store.folders.value.length > 1'>
-        <div class='pl-head'><span class='ft-label'>Sources</span></div>
+    <template v-if='store.folders.value.length > 0'>
+        <div class='pl-head pl-head-toggle' @click='toggleSection("sources")'>
+            <span class='ft-label head-label'>
+                <q-icon :name='sourcesOpen ? "mdi-chevron-down" : "mdi-chevron-right"' size='13px' />
+                Sources
+            </span>
+            <span class='pl-head-actions' @click.stop>
+                <button type='button' class='ft-btn icon-only' title='Add source folder' @click='addSource'>
+                    <q-icon name='mdi-plus' size='15px' />
+                </button>
+            </span>
+        </div>
+        <template v-if='sourcesOpen'>
         <div
             v-for='f in store.folders.value'
             :key='"src" + f.id'
@@ -36,11 +47,15 @@
             <span v-else class='pl-name' @dblclick.stop='startRename("source", f.id)'>{{ f.name }}</span>
             <span class='pl-count ft-num'>{{ sourceCount(f.id).toLocaleString() }}</span>
         </div>
+        </template>
     </template>
 
-    <div class='pl-head'>
-        <span class='ft-label'>Playlists</span>
-        <span class='pl-head-actions'>
+    <div class='pl-head pl-head-toggle' @click='toggleSection("playlists")'>
+        <span class='ft-label head-label'>
+            <q-icon :name='playlistsOpen ? "mdi-chevron-down" : "mdi-chevron-right"' size='13px' />
+            Playlists
+        </span>
+        <span class='pl-head-actions' @click.stop>
             <button
                 v-if='filtersActive'
                 type='button' class='ft-btn icon-only'
@@ -55,7 +70,7 @@
         </span>
     </div>
 
-    <div class='pl-list'>
+    <div v-if='playlistsOpen' class='pl-list'>
         <div
             v-for='pl in store.playlists.value'
             :key='pl.id'
@@ -115,6 +130,24 @@ const rulesFor = ref<FlowPlaylist | undefined>(undefined);
 const editing = ref<{ kind: 'playlist' | 'source'; id: number } | undefined>(undefined);
 
 const vFocus = { mounted: (el: HTMLInputElement) => { el.focus(); el.select(); } };
+
+// Collapsible sections, remembered per machine
+function readSection(key: string): boolean {
+    try { return localStorage.getItem('flowtag-sec-' + key) !== 'false'; } catch { return true; }
+}
+const sourcesOpen = ref(readSection('sources'));
+const playlistsOpen = ref(readSection('playlists'));
+function toggleSection(key: 'sources' | 'playlists') {
+    const target = key === 'sources' ? sourcesOpen : playlistsOpen;
+    target.value = !target.value;
+    try { localStorage.setItem('flowtag-sec-' + key, String(target.value)); } catch { /* in-memory only */ }
+}
+
+// Same flow as the header's Folders menu: native picker -> tagFolderAdd
+function addSource() {
+    diag('sourceAdd');
+    $1t.send('browse', { context: 'tagFolderAdd' });
+}
 
 function startRename(kind: 'playlist' | 'source', id: number) {
     editing.value = { kind, id };
@@ -252,6 +285,11 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
     justify-content: space-between;
     padding: 12px 8px 4px;
     .pl-head-actions { display: inline-flex; gap: 2px; }
+    .head-label { display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; }
+}
+.pl-head-toggle {
+    cursor: default;
+    &:hover .ft-label { color: var(--ft-text-2); }
 }
 .pl-list {
     overflow-y: auto;
