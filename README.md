@@ -1,86 +1,93 @@
-<p align='center'>
-    <img alt='Logo' src='https://raw.githubusercontent.com/Marekkon5/onetagger/master/assets/onetagger-logo-github.png'>
-</p>
-<h1 align='center'>The ultimate cross-platform tagger for DJs</h1>
-
-<h3 align='center'><b>
-<a href='https://onetagger.github.io/'>Website</a> | <a href='https://github.com/Marekkon5/onetagger/releases/'>Latest Release</a>
-</b></h3>
-<br>
-
-<p align='center'>
-    <img alt='Version Badge' src='https://img.shields.io/github/v/release/marekkon5/onetagger?label=Latest%20Release'>
-    <img alt='Supported OS' src='https://img.shields.io/badge/OS-Windows%2C%20Mac%20OS%2C%20Linux-orange'>
-    <img alt='Build Status' src='https://img.shields.io/github/actions/workflow/status/marekkon5/onetagger/build.yml?branch=master'>
+<p align="center">
+  <img src="assets/flowtag-icon.svg" width="112" alt="FlowTag icon" />
 </p>
 
-<h3 align='center'><b></b></h3>
-<hr>
+<h1 align="center">FlowTag</h1>
 
-Cross-platform music tagger.
-It can fetch metadata from Beatport, Traxsource, Juno Download, Discogs, Musicbrainz and Spotify.
-It is also able to fetch Spotify's Audio Features based on ISRC & exact match. 
-There is a manual tag editor and quick tag editor which lets you use keyboard shortcuts. Written in Rust, Vue.js and Quasar.
+<p align="center"><b>Keyboard-first tagging for a DJ library.</b><br/>
+Play a track, type a tag, hit <code>D</code>, next. 20,000 tracks without touching the mouse.</p>
 
-MP3, AIFF, FLAC, M4A (AAC, ALAC) supported.
+<p align="center">
+  <img src="docs/screenshot.jpg" width="820" alt="FlowTag main window: track list with tag chips, colored Camelot keys, and the tag palette" />
+</p>
 
-*For more info and tutorials check out our [website](https://onetagger.github.io/).*
+---
 
-https://user-images.githubusercontent.com/15169286/193469224-cbf3af71-f6d7-4ecd-bdbf-5a1dca2d99c8.mp4
+FlowTag is a personal fork of [OneTagger](https://github.com/Marekkon5/onetagger), rebuilt
+around one job: keeping a working DJ collection organized, consistently tagged, and ready
+for the booth. The original Quick Tag view (fixed moods, 1–5 energy, preset genres) is
+replaced by a freeform, database-backed chip tagger — and that tagger *is* the app.
 
+## How it works
 
-## Installing
+- **SQLite is the source of truth.** Every tag edit lands in a local library database
+  instantly (optimistic UI, server echoes). A background **flusher** then writes tags
+  into the audio files themselves — a custom `TAGS` field (ID3 `TXXX`, Vorbis comment,
+  MP4 freeform) — a few seconds after you stop editing, skipping whatever is playing.
+  Kill the app mid-session; the queue resumes on relaunch.
+- **One flat tag pool** with per-tag colors (auto-assigned from a 12-hue palette,
+  least-used first), optional colored groups, per-tag hotkeys, autocomplete that
+  suggests your most-used tags, and merge-on-rename.
+- **The library view** is a virtualized list that stays smooth at 20k tracks: zebra
+  rows, dense tag chips, colored Camelot keys, BPM/year/path/date-added columns
+  (configurable in Settings), text + tag filtering, sorting, multi-select bulk tagging,
+  and undo.
+- **Rekordbox export** appends your tags as `#hashtags` to each file's comment field —
+  searchable in Rekordbox, idempotent on re-export, existing comment text preserved.
 
-You can download latest binaries from [releases](https://github.com/Marekkon5/onetagger/releases)
+## Keyboard
 
+Everything is reachable without the mouse. The letter keys are remappable in Settings.
 
-## Credits
-Bas Curtiz - UI, Idea, Help  
-SongRec (Shazam support) - https://github.com/marin-m/SongRec
+| Key | Action |
+| --- | --- |
+| `J` / `K` (or `↑` `↓`) | Previous / next track — `Shift` extends the selection |
+| `Space` | Play the selected track / pause (selection alone never starts audio) |
+| `T` | Focus the tag input — type, `Enter` adds, new names create tags |
+| `D` | **Done**: flush to file, jump to next untagged, autoplay |
+| `E` | Edit file metadata in place (title, artist, BPM, key, year, comment) |
+| `M` | Online lookup for this track (Beatport, Discogs, MusicBrainz, …) |
+| `F` | Focus the filter |
+| `←` `→` · `1` `2` `3` `0` | Seek −10s / +30s · jump to 25 / 50 / 75% / start |
+| `⌘Z` | Undo the last tag edit |
+| *per-tag hotkeys* | Toggle a tag on the selected track (set in Manage tags) |
 
-## Support
-You can support this project by donating on [PayPal](https://paypal.me/marekkon5) or [Patreon](https://www.patreon.com/onetagger)
+## The extras
 
-## Compilling
+- **Miniplayer** — a frameless always-on-top window (the picture-in-picture button)
+  showing the playing track with transport *and* its tag chips: tag from anywhere.
+- **OS media keys & Now Playing** — play/pause/next from the keyboard, AirPods, or
+  Control Center, with artwork, via [souvlaki](https://github.com/Sinono3/souvlaki).
+- **Track inspector** — `E` edits the file's standard tags directly, with the row and
+  database kept in sync and self-writes invisible to the scanner.
+- **Fast player** — single round-trip start, real seeking, waveforms cached in the DB.
 
-### Linux & Mac
-Install dependencies: [rustup](https://rustup.rs), [node](https://nodejs.org/en/download/package-manager/), [pnpm](https://pnpm.io/installation)
+## Build
 
-**Install remaining dependencies**
-```
-sudo apt install -y lld autogen libasound2-dev pkg-config make libssl-dev gcc g++ curl wget git libwebkit2gtk-4.1-dev
-```
+Requires Rust (stable), Node 18+, and pnpm.
 
-**Compile UI**
-```
-cd client
-pnpm i
-pnpm run build
-cd ..
-```
-
-**Compile**
-```
+```bash
+cd client && pnpm i && pnpm run build && cd ..
 cargo build --release
-```
-Output will be in: `target/release/onetagger`
-
-
-### Windows
-You need to install dependencies: [rustup](https://rustup.rs), [nodejs](https://nodejs.org/en/download/), [Visual Studio 2019 Build Tools](https://aka.ms/vs/16/release/vs_buildtools.exe), [pnpm](https://pnpm.io/installation)
-
-**Compile UI:**
-```
-cd client
-pnpm i
-pnpm run build
-cd ..
+cargo bundle --release   # macOS: target/release/bundle/osx/FlowTag.app
 ```
 
-**Compile OneTagger:**
-```
-cargo build --release
-```
+`cargo install cargo-bundle` once beforehand for the `.app` bundling. Running the
+binary with `--server` starts the backend headless on `http://127.0.0.1:36913`.
 
-Output will be inside `target\release` folder.
+## Architecture
 
+| Crate / dir | Role |
+| --- | --- |
+| `crates/onetagger-db` | Library database: schema & migrations, scan pipeline, tag CRUD, flusher, comment export, track metadata I/O |
+| `crates/onetagger-ui` | Axum server + websocket API, embedded client, media-key bridge |
+| `crates/onetagger` | Desktop shell: tao/wry webview, miniplayer window, souvlaki media controls |
+| `crates/onetagger-tag` ... | Upstream tag read/write, player, lookup platforms (unchanged) |
+| `client/` | Vue 3 + Quasar UI — the FlowTag surface in `src/components/flowtag/`, design system in `src/style/flowtag.scss` |
+
+## Credits & license
+
+Built on [OneTagger](https://github.com/Marekkon5/onetagger) by Marekkon5 — the tag
+I/O, audio player, and lookup platform integrations are its work. Licensed under
+[GPL-3.0](LICENSE), same as upstream. This is a personal tool, tuned to exactly one
+workflow; issues and PRs are not expected, but the code is honest.
