@@ -39,8 +39,9 @@ native-dialog = "0.9.0"
 [package.metadata.bundle]
 name = "FlowTag"
 identifier = "com.rteez.flowtag"
-icon = ["../../assets/32x32.png", "../../assets/128x128.png", "../../assets/128x128@2x.png", 
-    "../../assets/icon.icns", "../../assets/icon.ico"]
+# cargo-bundle resolves these from the directory it runs in (the workspace root)
+icon = ["assets/32x32.png", "assets/128x128.png", "assets/128x128@2x.png",
+    "assets/icon.icns", "assets/icon.ico"]
 version = "1.7.0"
 resources = []
 copyright = "Copyright (c) Marekkon5 2022. All rights reserved."
