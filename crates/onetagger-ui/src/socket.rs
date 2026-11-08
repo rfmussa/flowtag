@@ -54,7 +54,10 @@ enum Action {
     InstallPlatform { id: String, version: String, is_native: bool },
 
     Waveform { path: PathBuf },
-    PlayerStart { path: PathBuf, autoplay: bool },
+    #[serde(rename_all = "camelCase")]
+    PlayerStart { path: PathBuf, autoplay: bool, #[serde(default)] auto_gain: bool },
+    AnalysisRun { #[serde(default)] limit: Option<usize> },
+    AnalysisStatus,
     #[serde(rename_all = "camelCase")]
     WaveformGet { track_id: i64 },
     PlayerLoad { path: PathBuf },
@@ -190,6 +193,10 @@ pub(crate) struct SocketContext {
     pub(crate) db: Arc<onetagger_db::Db>,
     pub(crate) flush_wake: std::sync::mpsc::Sender<()>,
     pub(crate) events: tokio::sync::broadcast::Sender<String>,
+    /// Auto-gain (experimental analysis): linear factor applied on top of the
+    /// user's volume, set per started track from its LUFS
+    player_gain: f32,
+    player_volume: f32,
 }
 
 impl SocketContext {
@@ -208,6 +215,8 @@ impl SocketContext {
             db,
             flush_wake,
             events,
+            player_gain: 1.0,
+            player_volume: 1.0,
         }
     }
 
@@ -534,18 +543,33 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             });
         },
         // Load + optionally start playback in one round trip (FlowTag)
-        Action::PlayerStart { path, autoplay } => {
+        Action::PlayerStart { path, autoplay, auto_gain } => {
             set_currently_playing(&path);
+            // Auto-gain (experimental): match tracks to -14 LUFS when analyzed
+            let gain_db = match auto_gain {
+                true => onetagger_db::analysis::lufs_for_path(&context.db, &path.to_string_lossy())?
+                    .map(|lufs| (-14.0 - lufs).clamp(-12.0, 12.0))
+                    .unwrap_or(0.0),
+                false => 0.0,
+            };
+            context.player_gain = 10f32.powf(gain_db as f32 / 20.0);
             // Decoder open touches the file: keep it off the async threads
             let source = tokio::task::spawn_blocking(move || AudioSources::from_path(&path)).await??;
             context.send(json!({
                 "action": "playerStarted",
-                "duration": source.duration() as u64
+                "duration": source.duration() as u64,
+                "gainDb": gain_db,
             })).ok();
             context.player.load_file(source);
+            context.player.volume(context.player_volume * context.player_gain);
             if autoplay {
                 context.player.play();
             }
+        },
+        Action::AnalysisRun { limit } => crate::analysis::analysis_run(context.sender.clone(), context.db.clone(), limit),
+        Action::AnalysisStatus => {
+            let (analyzed, total) = onetagger_db::analysis::counts(&context.db)?;
+            context.send(json!({ "action": "analysisStatus", "analyzed": analyzed, "total": total }))?;
         },
         // Cached waveform by track id (FlowTag)
         Action::WaveformGet { track_id } => tagflow::waveform_get(context, track_id)?,
@@ -577,7 +601,10 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 "playing": context.player.seek(pos)
             })).ok();
         },
-        Action::PlayerVolume { volume } => context.player.volume(volume),
+        Action::PlayerVolume { volume } => {
+            context.player_volume = volume;
+            context.player.volume(volume * context.player_gain);
+        },
         Action::PlayerStop => {
             context.player.stop();
             // Release the flush-worker guard: the file handle is dropped with the sink

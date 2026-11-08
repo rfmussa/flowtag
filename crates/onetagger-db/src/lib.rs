@@ -11,6 +11,7 @@ pub mod validate;
 pub mod tags;
 pub mod tracks;
 pub mod flush;
+pub mod analysis;
 pub mod meta;
 pub mod playlists;
 pub mod scan;

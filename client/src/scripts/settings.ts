@@ -20,6 +20,9 @@ class FlowTagSettings {
     /** Custom keybind per action; a missing entry means the built-in default key */
     keybinds: Partial<Record<FlowTagAction, Keybind>> = {};
     columns: FlowTagColumns = { ...DEFAULT_COLUMNS };
+    /** Experimental audition analysis: loudness auto-gain, intro/drop/outro
+     *  markers, shift+Space plays from the drop. Default off. */
+    analysisEnabled: boolean = false;
 
     static fromJson(data: any): FlowTagSettings {
         const s = new FlowTagSettings();
@@ -31,6 +34,7 @@ class FlowTagSettings {
             if (kb && typeof kb.key === 'string' && kb.key) keybinds[action] = Keybind.fromJson(kb);
         }
         s.keybinds = keybinds;
+        if (typeof safe.analysisEnabled === 'boolean') s.analysisEnabled = safe.analysisEnabled;
         const cols = (safe.columns && typeof safe.columns === 'object') ? safe.columns : {};
         const columns = { ...DEFAULT_COLUMNS };
         for (const key of Object.keys(DEFAULT_COLUMNS) as (keyof FlowTagColumns)[]) {

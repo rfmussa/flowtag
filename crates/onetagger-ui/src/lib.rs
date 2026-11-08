@@ -25,6 +25,7 @@ use tokio::runtime::Builder;
 use tokio::net::TcpListener;
 use onetagger_shared::{PORT, WEBSERVER_CALLBACKS, Settings};
 
+pub mod analysis;
 pub mod media;
 pub mod socket;
 pub mod sender;

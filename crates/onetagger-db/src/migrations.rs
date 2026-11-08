@@ -121,6 +121,16 @@ const MIGRATIONS: &[Migration] = &[
         );
         CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
     "),
+    // v7: audition analysis (experimental flag): loudness + section markers
+    Migration::Sql("
+        CREATE TABLE analysis (
+            track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+            lufs REAL,
+            intro_ms INTEGER,
+            drop_ms INTEGER,
+            outro_ms INTEGER
+        );
+    "),
 ];
 
 /// Apply pending migrations. Idempotent: already-applied migrations are skipped

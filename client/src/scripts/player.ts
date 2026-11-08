@@ -13,6 +13,10 @@ class Player {
     duration: number = 1;
     volume: number = 0.5;
     wasPlaying: boolean = false;
+    /** Track id of the FlowTag-started file (markers match against it) */
+    trackId?: number;
+    /** Auto-gain applied by the server for this track (dB, 0 when off) */
+    gainDb: number = 0;
     title?: string;
     artists: string[] = [];
     audio: HTMLAudioElement = new Audio();
@@ -207,8 +211,10 @@ class Player {
         this.position = 0;
         this.playing = autoplay;
         this.wasPlaying = false;
+        this.trackId = trackId;
+        this.gainDb = 0;
         this.generateDefaultWaveform();
-        $1t.send('playerStart', { path, autoplay });
+        $1t.send('playerStart', { path, autoplay, autoGain: $1t.settings.value.flowtag.analysisEnabled });
         $1t.send('waveformGet', { trackId });
     }
 

@@ -305,6 +305,17 @@ pub(crate) fn generate_and_cache(db: &Db, track_id: i64, interruptible: bool) ->
 
 /// Waveform by track id: served from the DB cache, generated (and cached) otherwise
 pub(crate) fn waveform_get(context: &SocketContext, track_id: i64) -> Result<(), Error> {
+    // Section markers ride along for the player overlays (experimental)
+    if let Some(a) = onetagger_db::analysis::get(&context.db, track_id)? {
+        context.send(json!({
+            "action": "trackAnalysis",
+            "trackId": track_id,
+            "lufs": a.lufs,
+            "introMs": a.intro_ms,
+            "dropMs": a.drop_ms,
+            "outroMs": a.outro_ms,
+        }))?;
+    }
     if let Some(bars) = tracks::get_waveform(&context.db, track_id)? {
         return context.send(waveform_message(track_id, &bars));
     }

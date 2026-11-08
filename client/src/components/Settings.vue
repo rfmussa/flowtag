@@ -70,6 +70,24 @@
                 <q-toggle dense size='sm' v-model='$1t.settings.value.showAutoTaggerProfiles' @update:model-value='save' />
             </div>
 
+            <!-- Experimental -->
+            <div class='ft-label section'>Experimental</div>
+            <div class='row-item'>
+                <span class='row-label'>Audition analysis <span class='sub'>auto-gain, intro/drop markers, shift+space plays the drop</span></span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.flowtag.analysisEnabled' @update:model-value='save' />
+            </div>
+            <div v-if='$1t.settings.value.flowtag.analysisEnabled' class='row-item'>
+                <span class='row-label'>
+                    <template v-if='store.analysisRun.value.running'>
+                        Analyzing… {{ store.analysisRun.value.done.toLocaleString() }} / {{ store.analysisRun.value.total.toLocaleString() }}
+                    </template>
+                    <template v-else>Analyze unprocessed tracks <span class='sub'>loudness needs one full decode per track</span></template>
+                </span>
+                <button type='button' class='ft-btn ft-btn-primary' :disabled='store.analysisRun.value.running' @click='runAnalysis'>
+                    {{ store.analysisRun.value.running ? 'Running…' : 'Analyze library' }}
+                </button>
+            </div>
+
             <!-- Advanced -->
             <div class='ft-label section'>Advanced</div>
             <div class='row-item'>
@@ -218,6 +236,12 @@ async function copyDebugReport() {
 function save() {
     diag('settingsChanged');
     $1t.saveSettings(false);
+}
+
+function runAnalysis() {
+    diag('analysisRun');
+    store.analysisRun.value = { running: true, done: 0, total: 0 };
+    $1t.send('analysisRun');
 }
 
 // Save on close

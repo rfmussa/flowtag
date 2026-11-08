@@ -112,8 +112,21 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     switch (event.code) {
         case 'Space': {
             // Selection is pure; Space is the explicit "play this" — it starts
-            // the selected row when that isn't the loaded track
+            // the selected row when that isn't the loaded track.
+            // Shift+Space (analysis on): play from the drop marker.
             const sel = store.selectedTrack();
+            const fromDrop = event.shiftKey && $1t.settings.value.flowtag.analysisEnabled;
+            if (fromDrop && sel && !sel.missing) {
+                const a = store.trackAnalysis.value;
+                if (player.path === sel.path && a?.trackId === sel.id && a.dropMs) {
+                    player.seek(a.dropMs);
+                    player.play();
+                } else {
+                    store.pendingDropSeek = true;
+                    player.startTrack(sel.path, sel.id, sel.title, sel.artist, true);
+                }
+                return true;
+            }
             if (sel && !sel.missing && player.path !== sel.path) {
                 player.startTrack(sel.path, sel.id, sel.title, sel.artist, true);
             } else if (player.playing) {

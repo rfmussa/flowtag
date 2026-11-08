@@ -36,6 +36,7 @@ onetagger-autotag = { path = "../onetagger-autotag" }
 onetagger-renamer = { path = "../onetagger-renamer" }
 onetagger-playlist = { path = "../onetagger-playlist" }
 onetagger-platforms = { path = "../onetagger-platforms" }
+ebur128 = "0.1.11"
 
 # Windows specific 
 [target.'cfg(windows)'.dependencies]

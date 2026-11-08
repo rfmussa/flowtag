@@ -142,6 +142,12 @@ export class TagStore {
     playlistMembers: Ref<Map<number, number[]>> = ref(new Map());
     /** Bumped by the keyboard layer to toggle the playlists sidebar */
     sidebarSignal: Ref<number> = ref(0);
+    /** Section markers of the started track (experimental analysis) */
+    trackAnalysis: Ref<{ trackId: number; lufs?: number; introMs?: number; dropMs?: number; outroMs?: number } | undefined> = ref(undefined);
+    /** Analysis run progress (Settings drives it) */
+    analysisRun: Ref<{ running: boolean; done: number; total: number }> = ref({ running: false, done: 0, total: 0 });
+    /** Set by shift+Space on a not-yet-started track: seek once markers arrive */
+    pendingDropSeek = false;
 
     /** Player state mirrored from whichever window is driving playback
      *  (nowPlayingChanged broadcast); `at` = wall clock of the snapshot */
@@ -640,6 +646,34 @@ export class TagStore {
                 const player = get1t().player.value;
                 player.duration = json.duration || 1;
                 player.position = 0;
+                player.gainDb = json.gainDb ?? 0;
+                return true;
+            }
+            case 'trackAnalysis': {
+                this.trackAnalysis.value = {
+                    trackId: json.trackId,
+                    lufs: json.lufs ?? undefined,
+                    introMs: json.introMs ?? undefined,
+                    dropMs: json.dropMs ?? undefined,
+                    outroMs: json.outroMs ?? undefined,
+                };
+                if (this.pendingDropSeek) {
+                    this.pendingDropSeek = false;
+                    const player = get1t().player.value;
+                    if (json.dropMs && player.trackId === json.trackId) {
+                        player.seek(json.dropMs);
+                        player.play();
+                    }
+                }
+                return true;
+            }
+            case 'analysisProgress':
+                this.analysisRun.value = { running: true, done: json.done ?? 0, total: json.total ?? 0 };
+                return true;
+            case 'analysisDone': {
+                this.analysisRun.value = { running: false, done: 0, total: 0 };
+                diag('analysisDone', { analyzed: json.analyzed, failed: json.failed });
+                Notify.create({ message: `Analysis done: ${json.analyzed} track(s)` + (json.failed ? `, ${json.failed} failed` : ''), timeout: 2500 });
                 return true;
             }
             case 'trackWaveform': {

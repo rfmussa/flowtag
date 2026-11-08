@@ -88,6 +88,11 @@
         </div>
 
         <div class='row col-2 justify-end items-center'>
+            <span
+                v-if='$1t.settings.value.flowtag.analysisEnabled && $1t.player.value.gainDb'
+                class='gain-badge ft-num'
+                title='Auto-gain: matched to -14 LUFS'
+            >{{ $1t.player.value.gainDb > 0 ? '+' : '' }}{{ $1t.player.value.gainDb.toFixed(1) }} dB</span>
             <!-- Volume -->
             <div class="q-pt-sm" style="width: 88px">
                 <q-slider
@@ -161,6 +166,11 @@ const art = computed(() => `${httpUrl()}/thumb?path=${encodeURIComponent($1t.pla
 </script>
 
 <style lang='scss' scoped>
+.gain-badge {
+    font-size: 10.5px;
+    color: var(--ft-text-3);
+    margin-right: 10px;
+}
 .compact-row {
     position: relative;
     display: flex;
