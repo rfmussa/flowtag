@@ -117,6 +117,7 @@ import { computed, onMounted, ref, watch } from 'vue';
 import { Dialog, Notify } from 'quasar';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../scripts/tagstore';
+import { diag } from '../scripts/diag';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
@@ -208,6 +209,7 @@ function confirmExport(e: Event) {
         dark: true,
         class: 'flowtag-theme',
     }).onOk(() => {
+        diag('exportComments');
         $1t.send('rekordboxExport', { mode: 'comment' });
         Notify.create({ message: 'Export started…', timeout: 1500 });
     });
@@ -237,9 +239,11 @@ watch(store.manualTagSignal, () => {
     const track = store.selectedTrack();
     if (!track || track.missing) return;
     $1t.player.value.stop();
+    diag('lookupOpen', { trackId: track.id });
     manualTagPath.value = track.path;
 });
 function onManualTagExit() {
+    diag('lookupClosed');
     manualTagPath.value = undefined;
     // Pick up whatever the lookup wrote (mtime diff -> only that file re-parses)
     $1t.send('tagLibraryScan', { full: false });

@@ -4,10 +4,16 @@
 
         <div class='settings-head'>
             <span class='ft-title'>Settings</span>
-            <button type='button' class='ft-btn' @click='$1t.send("openSettingsFolder")'>
-                <q-icon name='mdi-folder-outline' size='14px' />
-                Data folder
-            </button>
+            <span class='head-actions'>
+                <button type='button' class='ft-btn' title='Copy log + settings for debugging' @click='copyDebugReport'>
+                    <q-icon name='mdi-clipboard-text-outline' size='14px' />
+                    Debug report
+                </button>
+                <button type='button' class='ft-btn' @click='$1t.send("openSettingsFolder")'>
+                    <q-icon name='mdi-folder-outline' size='14px' />
+                    Data folder
+                </button>
+            </span>
         </div>
 
         <div class='settings-body'>
@@ -96,6 +102,7 @@ import { getTagStore } from '../scripts/tagstore';
 import { FLOWTAG_ACTIONS, FlowTagAction } from '../scripts/settings';
 import { FLOWTAG_ACTION_DEFAULTS, FLOWTAG_ACTION_LABELS, FIXED_FLOWTAG_CODES } from '../scripts/flowkeys';
 import { Keybind as KeybindClass } from '../scripts/utils';
+import { diag } from '../scripts/diag';
 import Keybind from './Keybind.vue';
 
 const props = defineProps({
@@ -169,10 +176,47 @@ function setBind(action: FlowTagAction, kb?: any) {
         return;
     }
     $1t.settings.value.flowtag.keybinds = { ...current, [action]: KeybindClass.fromJson(kb) };
+    diag('keybindSet', { action, key: kb.key, ctrl: !!kb.ctrl, alt: !!kb.alt, shift: !!kb.shift });
     save();
 }
 
+/** One paste that lets an assistant debug a session: versions, redacted
+ *  settings, and the tail of the interleaved app + client log. */
+async function copyDebugReport() {
+    $1t.send('getLog');
+    const log: string = await new Promise((resolve) => {
+        const stop = watch(() => $1t.info.value.log, (v) => { stop(); resolve(v ?? ''); });
+        setTimeout(() => { stop(); resolve($1t.info.value.log ?? ''); }, 3000);
+    });
+    const tail = (log || '(log unavailable)').split('\n').slice(-400).join('\n');
+    const settings = JSON.parse(JSON.stringify($1t.settings.value));
+    settings.audioFeatures = '[redacted]';
+    delete settings.autoTaggerConfig;
+    delete settings.autoTaggerProfiles;
+    const report = [
+        '# FlowTag debug report',
+        `generated: ${new Date().toISOString()}`,
+        `version: ${$1t.info.value.version} (${$1t.info.value.commit})  os: ${$1t.info.value.os}`,
+        '',
+        '## settings',
+        JSON.stringify(settings, null, 1),
+        '',
+        '## log (last 400 lines)',
+        tail,
+    ].join('\n');
+    diag('debugReportCopied', { bytes: report.length });
+    try {
+        await navigator.clipboard.writeText(report);
+        Notify.create({ message: 'Debug report copied to clipboard', timeout: 1500 });
+    } catch {
+        // eslint-disable-next-line no-console
+        console.log(report);
+        Notify.create({ type: 'warning', message: 'Clipboard unavailable — report printed to the devtools console' });
+    }
+}
+
 function save() {
+    diag('settingsChanged');
     $1t.saveSettings(false);
 }
 
@@ -200,6 +244,7 @@ watch(props, () => {
     align-items: center;
     justify-content: space-between;
     margin-bottom: 4px;
+    .head-actions { display: inline-flex; gap: 6px; }
 }
 .settings-body {
     overflow-y: auto;

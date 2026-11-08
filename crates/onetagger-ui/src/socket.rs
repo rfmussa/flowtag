@@ -121,6 +121,9 @@ enum Action {
     /// Transport command from a secondary window (miniplayer): broadcast to
     /// every client as a mediaKey message, same path as OS media keys
     RemoteCommand { key: String },
+    /// Client diagnostics: structured breadcrumbs and JS errors land in the
+    /// app log so one file tells the whole story
+    ClientLog { level: String, message: String },
 }
 
 
@@ -796,6 +799,14 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 "path": now_playing.path,
             }))?;
             crate::media::push_now_playing(now_playing);
+        },
+        Action::ClientLog { level, message } => {
+            let message: String = message.chars().take(4096).collect();
+            match level.as_str() {
+                "error" => error!(target: "client", "{message}"),
+                "warn" => warn!(target: "client", "{message}"),
+                _ => info!(target: "client", "{message}"),
+            }
         },
         Action::RemoteCommand { key } => {
             match key.as_str() {

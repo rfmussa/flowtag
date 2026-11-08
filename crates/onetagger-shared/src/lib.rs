@@ -39,6 +39,15 @@ lazy_static::lazy_static! {
 
 /// Setup onetagger logging and panic hooks
 pub fn setup() {
+    // Rotate the log when it outgrows 8MB (keep one previous generation),
+    // so the diagnostics stay small enough to read and hand over whole
+    if let Ok(folder) = Settings::get_folder() {
+        let log_path = folder.join("onetagger.log");
+        if std::fs::metadata(&log_path).map(|m| m.len() > 8 * 1024 * 1024).unwrap_or(false) {
+            std::fs::rename(&log_path, folder.join("onetagger.log.old")).ok();
+        }
+    }
+
     // Fern logger setup
     let colors = ColoredLevelConfig::new()
         .trace(Color::White)
@@ -60,7 +69,10 @@ pub fn setup() {
         .level_for("onetagger_cli", level)
         .level_for("onetagger_tagger", level)
         .level_for("onetagger_ui", level)
+        .level_for("onetagger_db", level)
         .level_for("onetagger", level)
+        // FlowTag client diagnostics forwarded over the websocket
+        .level_for("client", level)
         // Custom platforms
         .level_for("onetagger_custom_platform", level)
         // Songrec fork log

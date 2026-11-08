@@ -188,6 +188,7 @@ class OneTagger {
             case 'error':
                 // Unlock, callback
                 this.lock.value.locked = false;
+                import('./diag').then((d) => d.diagError('serverError', { message: String(json.message).slice(0, 400) }));
                 this.onError(json.message);
                 break;
             case 'startTagging':

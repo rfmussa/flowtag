@@ -60,6 +60,7 @@ import { computed, nextTick, ref, watch } from 'vue';
 import { Notify } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTrack, getTagStore, TrackMeta } from '../../scripts/tagstore';
+import { diag } from '../../scripts/diag';
 
 const $1t = get1t();
 const store = getTagStore();
@@ -110,6 +111,7 @@ function parseIntOrNull(s: string): number | null {
 function save() {
     const t = track.value;
     if (!t || saving.value || loading.value) return;
+    diag('metaSave', { trackId: t.id });
     saving.value = true;
     // Release the file before the write: the selected track is usually the one
     // loaded in the player

@@ -45,6 +45,7 @@ import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
+import { initDiag } from './scripts/diag';
 
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';
@@ -82,6 +83,7 @@ function onResize() {
 // Setup
 onMounted(() => {
     $q.dark.set(true);
+    initDiag();
     setWaveformWidth();
     if (!isMini.value) initMediaSync();
     window.addEventListener("resize", onResize);

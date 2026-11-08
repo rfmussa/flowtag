@@ -1,4 +1,5 @@
 import { get1t, OneTagger } from "./onetagger";
+import { diag } from "./diag";
 import { httpUrl, wsUrl } from "./utils";
 import router from "./router";
 import { getTagStore } from "./tagstore";
@@ -188,6 +189,7 @@ class Player {
     // FlowTag path: one round-trip start + DB-cached waveform by track id
     startTrack(path: string, trackId: number, title: string, artist: string, autoplay: boolean) {
         const $1t = get1t();
+        diag('playStart', { trackId, autoplay, file: path.split('/').pop() });
 
         // Server-mode / external player setups use the legacy load path, which
         // knows how to drive the <audio> element or external app

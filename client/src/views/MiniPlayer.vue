@@ -44,6 +44,7 @@
 <script lang='ts' setup>
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { get1t } from '../scripts/onetagger';
+import { diag } from '../scripts/diag';
 import { getTagStore } from '../scripts/tagstore';
 import { Keybind, httpUrl, PLACEHOLDER_IMG } from '../scripts/utils';
 import { FLOWTAG_ACTION_DEFAULTS } from '../scripts/flowkeys';
@@ -86,6 +87,7 @@ function fmt(ms: number): string {
 
 /** Transport goes through the server broadcast; the main window executes */
 function remote(key: string) {
+    diag('miniRemote', { key });
     $1t.send('remoteCommand', { key });
 }
 
@@ -137,6 +139,7 @@ function onKey(e: KeyboardEvent) {
 }
 
 onMounted(() => {
+    diag('miniOpen');
     if (!store.loaded.value) store.load();
     window.addEventListener('keydown', onKey);
     timer = window.setInterval(() => { clock.value = Date.now(); }, 500);

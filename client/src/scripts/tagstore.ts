@@ -1,6 +1,7 @@
 import { ref, Ref } from 'vue';
 import { Notify } from 'quasar';
 import { get1t } from './onetagger';
+import { diag, diagError } from './diag';
 
 // Types mirroring onetagger-db models (serde camelCase)
 
@@ -273,6 +274,7 @@ export class TagStore {
     undo(): string | undefined {
         const entry = this.undoStack.pop();
         if (!entry) return undefined;
+        diag('undo', { op: entry.op, name: entry.tagName, tracks: entry.trackIds.length });
         if (entry.op === 'add') {
             const tag = this.tagByName(entry.tagName);
             if (tag) this.performRemove(entry.trackIds.filter((id) =>
@@ -295,6 +297,7 @@ export class TagStore {
             ? targets.filter((id) => !this.tracks.value.find((t) => t.id === id)?.tagIds.includes(known.id))
             : targets;
         if (known && effective.length === 0) return; // no-op everywhere
+        diag('tagAdd', { tracks: targets.length, name: trimmed });
         this.performAdd(targets, trimmed);
         this.recordUndo({ op: 'add', trackIds: effective, tagName: trimmed });
     }
@@ -305,6 +308,7 @@ export class TagStore {
             this.tracks.value.find((t) => t.id === id)?.tagIds.includes(tagId));
         if (targets.length === 0) return;
         const tagName = this.tagById(tagId)?.name;
+        diag('tagRemove', { tracks: targets.length, name: tagName });
         this.performRemove(targets, tagId);
         if (tagName) this.recordUndo({ op: 'remove', trackIds: targets, tagName });
     }
@@ -450,6 +454,7 @@ export class TagStore {
             case 'tagTracks':
                 this.tracks.value = json.tracks ?? [];
                 this.loaded.value = true;
+                diag('libraryLoaded', { tracks: this.tracks.value.length });
                 return true;
             case 'tagPool':
                 this.tags.value = json.tags ?? [];
@@ -460,6 +465,7 @@ export class TagStore {
                 return true;
             case 'tagScanDone':
                 this.scan.value = { running: false, done: 0, total: 0, result: json.result };
+                diag('scanDone', json.result ?? {});
                 return true;
             case 'tagCreated':
             case 'tagUpdated':
@@ -548,6 +554,7 @@ export class TagStore {
                 // Only the main window drives the (single, server-side) player;
                 // the miniplayer mirrors state and must not double-execute
                 if (window.location.hash.startsWith('#/mini')) return true;
+                diag('mediaKey', { key: json.key });
                 const player = get1t().player.value;
                 switch (json.key) {
                     case 'playPause': player.playing ? player.pause() : player.play(); break;
@@ -567,6 +574,7 @@ export class TagStore {
                     this.tracks.value = this.tracks.value.map((t) =>
                         t.id === json.trackId ? { ...t, needsFlush: false } : t);
                 } else if (json.error) {
+                    diagError('flushError', { trackId: json.trackId, error: String(json.error).slice(0, 300) });
                     // Surface write failures immediately (not only after a reload)
                     const others = this.flush.value.errors.filter((e) => e.trackId !== json.trackId);
                     this.flush.value = {

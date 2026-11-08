@@ -2,6 +2,7 @@ import { Notify } from 'quasar';
 import { get1t } from './onetagger';
 import { getTagStore } from './tagstore';
 import { Keybind } from './utils';
+import { diag } from './diag';
 import { FlowTagAction } from './settings';
 
 /** Default key (KeyboardEvent.code) per remappable action */
@@ -191,6 +192,7 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     // Done: hint an immediate flush and move on to the next untagged track,
     // which starts playing (spec: done = save + advance + autoplay)
     if (actionMatches(event, 'done')) {
+        diag('done', { trackId: selected.id, tags: selected.tagIds.length });
         $1t.send('flushHint', { trackId: selected.id });
         player.wasPlaying = true;
         store.selectNextUntagged();
