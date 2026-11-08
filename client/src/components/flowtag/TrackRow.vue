@@ -3,6 +3,7 @@
     class='flowtag-row'
     :class='{"flowtag-row-alt": alt, "flowtag-row-selected": selected, "flowtag-row-anchor": anchor}'
     @click='emit("click", $event)'
+    @dblclick='emit("play")'
 >
     <q-icon v-if='playing' name='mdi-volume-high' size='12px' class='row-playing' />
     <span class='row-title' :title='track.title'>{{ track.title }}</span>
@@ -37,7 +38,7 @@ const props = defineProps<{
     /** This row's file is the one currently loaded in the player */
     playing?: boolean;
 }>();
-const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void }>();
+const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void; (e: 'play'): void }>();
 
 const cols = computed(() => get1t().settings.value.flowtag.columns);
 

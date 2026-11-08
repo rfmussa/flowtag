@@ -72,6 +72,9 @@ class Settings {
     showAutoTaggerProfiles: boolean = false;
     volume: number = 0.05;
     continuePlayback: boolean = false;
+    /** Selecting a row starts/switches playback (audition cruise). Off:
+     *  selection is pure; Space, double-click, D and media keys play. */
+    playOnSelect: boolean = false;
     clientSidePlayer: boolean = false;
     nonNativeBrowser: boolean = false;
     playOnSeek: boolean = false;

@@ -553,8 +553,9 @@ export class TagStore {
                     case 'playPause': player.playing ? player.pause() : player.play(); break;
                     case 'play': if (!player.playing) player.play(); break;
                     case 'pause': if (player.playing) player.pause(); break;
-                    case 'next': this.selectOffset(1, false); break;
-                    case 'prev': this.selectOffset(-1, false); break;
+                    // Media next/prev means "play the neighbor", not just select it
+                    case 'next': player.wasPlaying = true; this.selectOffset(1, false); break;
+                    case 'prev': player.wasPlaying = true; this.selectOffset(-1, false); break;
                     case 'seek':
                         if (typeof json.positionMs === 'number') player.seek(json.positionMs);
                         break;

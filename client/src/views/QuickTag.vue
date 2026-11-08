@@ -70,7 +70,7 @@
             <div v-else-if='!store.loaded.value' class='column items-center justify-center full-height'>
                 <q-spinner size='28px' color='grey-6' />
             </div>
-            <TrackList v-else />
+            <TrackList v-else @play='playTrack' />
         </div>
         <div v-if='paletteOpen' class='palette-col'>
             <TagPalette />
@@ -116,7 +116,7 @@
 import { computed, onMounted, ref, watch } from 'vue';
 import { Dialog, Notify } from 'quasar';
 import { get1t } from '../scripts/onetagger';
-import { getTagStore } from '../scripts/tagstore';
+import { getTagStore, FlowTrack } from '../scripts/tagstore';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
@@ -255,19 +255,28 @@ function togglePalette(e: Event) {
     }
 }
 
-// Selecting a track loads it into the player (playback from 0);
-// playback continues across switches when it was already running
+// Selection is pure by default: browsing never starts or switches playback.
+// The player follows selection only when asked explicitly (wasPlaying, set by
+// D / media next/prev) or when the play-on-select setting is on.
 watch(store.selectedId, (id, previousId) => {
     const track = store.selectedTrack();
     if (id === undefined || !track || track.missing) return;
     const player = $1t.player.value;
-    const autoplay = player.playing || player.wasPlaying;
-    player.startTrack(track.path, track.id, track.title, track.artist, autoplay);
+    const explicit = player.wasPlaying;
+    if (explicit || $1t.settings.value.playOnSelect) {
+        const autoplay = player.playing || player.wasPlaying;
+        player.startTrack(track.path, track.id, track.title, track.artist, autoplay);
+    }
     // Expedite only the track just left (not every pending write at once)
     if (previousId !== undefined) {
         $1t.send('flushHint', { trackId: previousId });
     }
 });
+
+// Double-click always plays that row
+function playTrack(track: FlowTrack) {
+    $1t.player.value.startTrack(track.path, track.id, track.title, track.artist, true);
+}
 
 onMounted(() => {
     if (!store.loaded.value) store.load();

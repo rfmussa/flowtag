@@ -107,10 +107,19 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
 
     // Fixed transport keys work with or without a selection
     switch (event.code) {
-        case 'Space':
-            if (player.playing) player.pause();
-            else player.play();
+        case 'Space': {
+            // Selection is pure; Space is the explicit "play this" — it starts
+            // the selected row when that isn't the loaded track
+            const sel = store.selectedTrack();
+            if (sel && !sel.missing && player.path !== sel.path) {
+                player.startTrack(sel.path, sel.id, sel.title, sel.artist, true);
+            } else if (player.playing) {
+                player.pause();
+            } else {
+                player.play();
+            }
             return true;
+        }
         case 'ArrowUp':
             // Shift extends the multi-selection while moving
             store.selectOffset(-1, event.shiftKey);

@@ -17,6 +17,7 @@
         :alt='index % 2 === 1'
         :playing='item.path === playerPath'
         @click='(ev) => select(item, ev)'
+        @play='emit("play", item)'
     />
 </q-virtual-scroll>
 </template>
@@ -31,6 +32,7 @@ import TrackRow from './TrackRow.vue';
 const $1t = get1t();
 const store = getTagStore();
 const scroller = ref<QVirtualScroll>();
+const emit = defineEmits<{ (e: 'play', track: FlowTrack): void }>();
 
 // The actively playing file (may differ from the anchor with continue-playback)
 const playerPath = computed(() => $1t.player.value.path);

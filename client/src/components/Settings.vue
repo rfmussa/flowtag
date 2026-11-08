@@ -14,6 +14,10 @@
             <!-- Playback -->
             <div class='ft-label section'>Playback</div>
             <div class='row-item'>
+                <span class='row-label'>Start playback when selecting a row <span class='sub'>off: Space, double-click and D play</span></span>
+                <q-toggle dense size='sm' v-model='$1t.settings.value.playOnSelect' @update:model-value='save' />
+            </div>
+            <div class='row-item'>
                 <span class='row-label'>Keep playing when switching tracks</span>
                 <q-toggle dense size='sm' v-model='$1t.settings.value.continuePlayback' @update:model-value='save' />
             </div>
