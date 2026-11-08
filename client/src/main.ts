@@ -19,8 +19,21 @@ window.onWebviewEvent = (e) => {
 }
 
 
-createApp(App)
-    .use(router)
+const app = createApp(App);
+
+// Vue swallows component errors before window.onerror sees them:
+// route them into the flight recorder too
+app.config.errorHandler = (err, _instance, info) => {
+    import('./scripts/diag').then((d) => d.diagError('vueError', {
+        message: String(err).slice(0, 400),
+        info,
+        stack: (err as Error | undefined)?.stack?.slice(0, 1500),
+    }));
+    // eslint-disable-next-line no-console
+    console.error(err);
+};
+
+app.use(router)
     .use(Quasar, {
         plugins: {
             Dialog, Notify
