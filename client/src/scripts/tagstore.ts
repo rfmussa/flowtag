@@ -8,6 +8,7 @@ import { diag, diagError } from './diag';
 export interface FlowTrack {
     id: number;
     path: string;
+    folderId: number;
     format: string;
     title: string;
     artist: string;
@@ -80,6 +81,8 @@ export interface FlowGroup {
 export interface FlowFolder {
     id: number;
     path: string;
+    /** Display name (defaults to the path's basename; renameable) */
+    name: string;
 }
 
 export interface ScanState {
@@ -138,6 +141,8 @@ export class TagStore {
     playlists: Ref<FlowPlaylist[]> = ref([]);
     /** undefined = whole library */
     activePlaylistId: Ref<number | undefined> = ref(undefined);
+    /** Source-folder scope (mutually exclusive with a playlist scope) */
+    activeSourceId: Ref<number | undefined> = ref(undefined);
     /** Manual membership cache: playlist id -> track ids */
     playlistMembers: Ref<Map<number, number[]>> = ref(new Map());
     /** Bumped by the keyboard layer to toggle the playlists sidebar */
@@ -311,7 +316,9 @@ export class TagStore {
             : undefined;
         const saved = active?.filter ? parseSavedFilter(active.filter) : undefined;
         const now = Date.now();
+        const sourceId = this.activeSourceId.value;
         const filtered = this.tracks.value.filter((t) => {
+            if (sourceId !== undefined && t.folderId !== sourceId) return false;
             if (members && !members.has(t.id)) return false;
             if (saved && !this.passesSaved(t, saved, now)) return false;
             return this.passes(t, f, tagFilters, this.untaggedOnly.value);
@@ -326,8 +333,16 @@ export class TagStore {
 
     /** Switch the view scope. Selecting a smart playlist loads its saved
      *  filter into the live controls (a saved search, visibly). */
+    /** Scope the view to one source folder (or back to the whole collection) */
+    selectSource(id?: number) {
+        this.activeSourceId.value = id;
+        this.activePlaylistId.value = undefined;
+        if (id !== undefined) diag('sourceSelect', { id });
+    }
+
     selectPlaylist(id?: number) {
         this.activePlaylistId.value = id;
+        this.activeSourceId.value = undefined;
         const pl = id === undefined ? undefined : this.playlists.value.find((p) => p.id === id);
         if (!pl) {
             if (id !== undefined) this.activePlaylistId.value = undefined;

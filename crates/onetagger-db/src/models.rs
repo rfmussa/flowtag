@@ -7,6 +7,8 @@ use serde_json::Value;
 pub struct DbFolder {
     pub id: i64,
     pub path: String,
+    /// Display name; the path's basename when never renamed
+    pub name: String,
 }
 
 /// A track row as sent to the client (tag ids resolved)
@@ -15,6 +17,7 @@ pub struct DbFolder {
 pub struct DbTrack {
     pub id: i64,
     pub path: String,
+    pub folder_id: i64,
     pub format: String,
     pub title: String,
     pub artist: String,

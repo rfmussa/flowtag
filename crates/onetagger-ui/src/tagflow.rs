@@ -26,6 +26,15 @@ fn send_folders(context: &SocketContext) -> Result<(), Error> {
     }))
 }
 
+/// Rename a source folder's display name; every window refreshes
+pub(crate) fn folder_rename(context: &SocketContext, id: i64, name: &str) -> Result<(), Error> {
+    tracks::rename_folder(&context.db, id, name)?;
+    context.broadcast(json!({
+        "action": "tagFolders",
+        "folders": tracks::list_folders(&context.db)?
+    }))
+}
+
 /// Build the `tagPool` message (tags + groups)
 fn pool_message(db: &Db) -> Result<Value, Error> {
     Ok(json!({

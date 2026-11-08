@@ -1,15 +1,42 @@
 <template>
 <div class='pl-sidebar'>
-    <!-- Library (everything) -->
+    <!-- Collection (everything) -->
     <div
         class='pl-row'
-        :class='{ active: store.activePlaylistId.value === undefined }'
+        :class='{ active: store.activePlaylistId.value === undefined && store.activeSourceId.value === undefined }'
         @click='select(undefined)'
     >
         <q-icon name='mdi-music-box-multiple-outline' size='14px' class='pl-icon' />
-        <span class='pl-name'>Library</span>
+        <span class='pl-name'>Collection</span>
         <span class='pl-count ft-num'>{{ store.tracks.value.length.toLocaleString() }}</span>
     </div>
+
+    <!-- One scope per source folder -->
+    <template v-if='store.folders.value.length > 1'>
+        <div class='pl-head'><span class='ft-label'>Sources</span></div>
+        <div
+            v-for='f in store.folders.value'
+            :key='"src" + f.id'
+            class='pl-row'
+            :class='{ active: store.activeSourceId.value === f.id }'
+            :title='f.path'
+            @click='store.selectSource(f.id)'
+        >
+            <q-icon name='mdi-folder-music-outline' size='14px' class='pl-icon' />
+            <template v-if='editing?.kind === "source" && editing.id === f.id'>
+                <input
+                    class='pl-rename' :value='f.name' spellcheck='false'
+                    @keydown.enter='commitRename(($event.target as HTMLInputElement).value)'
+                    @keydown.escape='editing = undefined'
+                    @blur='commitRename(($event.target as HTMLInputElement).value)'
+                    @click.stop
+                    v-focus
+                />
+            </template>
+            <span v-else class='pl-name' @dblclick.stop='startRename("source", f.id)'>{{ f.name }}</span>
+            <span class='pl-count ft-num'>{{ sourceCount(f.id).toLocaleString() }}</span>
+        </div>
+    </template>
 
     <div class='pl-head'>
         <span class='ft-label'>Playlists</span>
@@ -35,20 +62,29 @@
             class='pl-row'
             :class='{ active: store.activePlaylistId.value === pl.id, "drop-target": dropId === pl.id && !pl.filter }'
             @click='select(pl.id)'
-            @dblclick='pl.filter ? editing = pl : undefined'
             @dragover='onDragOver(pl, $event)'
             @dragleave='dropId = dropId === pl.id ? undefined : dropId'
             @drop='onDrop(pl, $event)'
         >
             <q-icon :name='pl.filter ? "mdi-filter-outline" : "mdi-playlist-music"' size='14px' class='pl-icon' />
-            <span class='pl-name' :title='pl.name'>{{ pl.name }}</span>
+            <template v-if='editing?.kind === "playlist" && editing.id === pl.id'>
+                <input
+                    class='pl-rename' :value='pl.name' spellcheck='false'
+                    @keydown.enter='commitRename(($event.target as HTMLInputElement).value)'
+                    @keydown.escape='editing = undefined'
+                    @blur='commitRename(($event.target as HTMLInputElement).value)'
+                    @click.stop
+                    v-focus
+                />
+            </template>
+            <span v-else class='pl-name' :title='pl.name' @dblclick.stop='startRename("playlist", pl.id)'>{{ pl.name }}</span>
             <span class='pl-count ft-num'>{{ playlistCount(pl).toLocaleString() }}</span>
             <button type='button' class='ft-btn icon-only pl-menu-btn' aria-label='Playlist menu' @click.stop>
                 <q-icon name='mdi-dots-horizontal' size='13px' />
                 <q-menu class='flowtag-theme ft-pop' auto-close>
                     <div class='pl-menu'>
-                        <button v-if='pl.filter' type='button' class='ft-btn pl-menu-item' @click='editing = pl'>Edit rules</button>
-                        <button type='button' class='ft-btn pl-menu-item' @click='renamePlaylist(pl)'>Rename</button>
+                        <button v-if='pl.filter' type='button' class='ft-btn pl-menu-item' @click='rulesFor = pl'>Edit rules</button>
+                        <button type='button' class='ft-btn pl-menu-item' @click='startRename("playlist", pl.id)'>Rename</button>
                         <button type='button' class='ft-btn pl-menu-item danger' @click='deletePlaylist(pl)'>Delete</button>
                     </div>
                 </q-menu>
@@ -59,7 +95,7 @@
         </div>
     </div>
 
-    <SmartPlaylistEditor :playlist='editing' @close='editing = undefined' />
+    <SmartPlaylistEditor :playlist='rulesFor' @close='rulesFor = undefined' />
 </div>
 </template>
 
@@ -74,7 +110,43 @@ import { diag } from '../../scripts/diag';
 const $1t = get1t();
 const store = getTagStore();
 const dropId = ref<number | undefined>(undefined);
-const editing = ref<FlowPlaylist | undefined>(undefined);
+const rulesFor = ref<FlowPlaylist | undefined>(undefined);
+/** Inline rename target (double-click a name, or the menu's Rename) */
+const editing = ref<{ kind: 'playlist' | 'source'; id: number } | undefined>(undefined);
+
+const vFocus = { mounted: (el: HTMLInputElement) => { el.focus(); el.select(); } };
+
+function startRename(kind: 'playlist' | 'source', id: number) {
+    editing.value = { kind, id };
+}
+
+function commitRename(raw: string) {
+    const target = editing.value;
+    editing.value = undefined;
+    if (!target) return;
+    const name = raw.trim();
+    if (!name) return;
+    if (target.kind === 'playlist') {
+        const pl = store.playlists.value.find((p) => p.id === target.id);
+        if (pl && pl.name !== name) $1t.send('playlistRename', { id: target.id, name });
+    } else {
+        const f = store.folders.value.find((x) => x.id === target.id);
+        if (f && f.name !== name) $1t.send('tagFolderRename', { id: target.id, name });
+    }
+    diag('inlineRename', { kind: target.kind, id: target.id });
+}
+
+/** Track counts per source folder, rebuilt when the library changes */
+const sourceCounts = computed(() => {
+    const counts = new Map<number, number>();
+    for (const t of store.tracks.value) {
+        counts.set(t.folderId, (counts.get(t.folderId) ?? 0) + 1);
+    }
+    return counts;
+});
+function sourceCount(id: number): number {
+    return sourceCounts.value.get(id) ?? 0;
+}
 
 const filtersActive = computed(() =>
     store.filter.value.trim().length > 0
@@ -82,6 +154,7 @@ const filtersActive = computed(() =>
     || store.untaggedOnly.value);
 
 function select(id?: number) {
+    if (id === undefined) store.selectSource(undefined);
     store.selectPlaylist(id);
 }
 
@@ -117,12 +190,6 @@ function saveFilterAsPlaylist() {
     namePrompt('Save filter as playlist', '', (name) => {
         $1t.send('playlistCreate', { name, filter: JSON.stringify(saved) });
         diag('playlistCreate', { smart: true });
-    });
-}
-
-function renamePlaylist(pl: FlowPlaylist) {
-    namePrompt('Rename playlist', pl.name, (name) => {
-        $1t.send('playlistRename', { id: pl.id, name });
     });
 }
 
@@ -215,6 +282,19 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
         text-overflow: ellipsis;
     }
     .pl-count { font-size: 10.5px; color: var(--ft-text-3); flex-shrink: 0; }
+    .pl-rename {
+        flex: 1;
+        min-width: 0;
+        background: var(--ft-bg);
+        border: 1px solid var(--ft-focus);
+        border-radius: 4px;
+        color: var(--ft-text);
+        font-size: 12.5px;
+        font-weight: 500;
+        font-family: inherit;
+        padding: 2px 5px;
+        outline: none;
+    }
     .pl-menu-btn { opacity: 0; padding: 0 3px; height: 20px; flex-shrink: 0; }
 }
 .pl-menu {

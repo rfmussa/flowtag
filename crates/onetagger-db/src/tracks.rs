@@ -6,14 +6,34 @@ use crate::models::{DbFolder, DbTrack, ScannedTrack};
 use crate::validate::validate_folder;
 use crate::{now, Db};
 
-/// List library root folders
+/// List library root folders; a folder never renamed shows its path basename
 pub fn list_folders(db: &Db) -> Result<Vec<DbFolder>, Error> {
     let conn = db.conn();
-    let mut stmt = conn.prepare("SELECT id, path FROM folders ORDER BY path")?;
+    let mut stmt = conn.prepare("SELECT id, path, name FROM folders ORDER BY path")?;
     let folders = stmt
-        .query_map([], |r| Ok(DbFolder { id: r.get(0)?, path: r.get(1)? }))?
+        .query_map([], |r| {
+            let path: String = r.get(1)?;
+            let name: Option<String> = r.get(2)?;
+            let name = name.filter(|n| !n.trim().is_empty()).unwrap_or_else(|| {
+                std::path::Path::new(&path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_else(|| path.clone())
+            });
+            Ok(DbFolder { id: r.get(0)?, path, name })
+        })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(folders)
+}
+
+/// Rename a source folder's display name (the path on disk is untouched)
+pub fn rename_folder(db: &Db, id: i64, name: &str) -> Result<(), Error> {
+    let name = name.trim();
+    if name.is_empty() || name.len() > 64 {
+        return Err(anyhow::anyhow!("Folder name must be 1-64 characters"));
+    }
+    db.conn().execute("UPDATE folders SET name = ?2 WHERE id = ?1", rusqlite::params![id, name])?;
+    Ok(())
 }
 
 /// Add a library root folder (validated against existing roots, stored canonicalized)
@@ -22,7 +42,11 @@ pub fn add_folder(db: &Db, path: &str) -> Result<DbFolder, Error> {
     let canonical = validate_folder(path, &existing)?;
     let conn = db.conn();
     conn.execute("INSERT INTO folders (path) VALUES (?1)", [&canonical])?;
-    Ok(DbFolder { id: conn.last_insert_rowid(), path: canonical })
+    let name = std::path::Path::new(&canonical)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| canonical.clone());
+    Ok(DbFolder { id: conn.last_insert_rowid(), path: canonical, name })
 }
 
 /// Remove a library root folder and (via cascade) all its tracks
@@ -47,7 +71,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at
+        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at, folder_id
          FROM tracks ORDER BY path",
     )?;
     let tracks = stmt
@@ -65,6 +89,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
                 key: r.get(9)?,
                 year: r.get(10)?,
                 added_at: r.get(11)?,
+                folder_id: r.get(12)?,
                 tag_ids: vec![],
             })
         })?

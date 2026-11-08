@@ -15,6 +15,17 @@ enum Migration {
 /// v5: add tracks.added_at. Pre-existing rows take their file mtime as the
 /// best available approximation of when they entered the library.
 /// Idempotent: safe to re-run on a database that already has the column.
+/// v8: folders.name display alias. Idempotent for the re-run tests.
+fn add_folder_name(conn: &Connection) -> Result<(), Error> {
+    let has_column = conn
+        .prepare("SELECT 1 FROM pragma_table_info('folders') WHERE name = 'name'")?
+        .exists([])?;
+    if !has_column {
+        conn.execute_batch("ALTER TABLE folders ADD COLUMN name TEXT;")?;
+    }
+    Ok(())
+}
+
 fn add_added_at(conn: &Connection) -> Result<(), Error> {
     let has_column = conn
         .prepare("SELECT 1 FROM pragma_table_info('tracks') WHERE name = 'added_at'")?
@@ -107,23 +118,23 @@ const MIGRATIONS: &[Migration] = &[
     Migration::Code(add_added_at),
     // v6: playlists — manual (explicit membership) and smart (saved filter)
     Migration::Sql("
-        CREATE TABLE playlists (
+        CREATE TABLE IF NOT EXISTS playlists (
             id INTEGER PRIMARY KEY,
             name TEXT NOT NULL UNIQUE COLLATE NOCASE,
             position INTEGER NOT NULL DEFAULT 0,
             filter TEXT
         );
-        CREATE TABLE playlist_tracks (
+        CREATE TABLE IF NOT EXISTS playlist_tracks (
             playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
             track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
             position INTEGER NOT NULL DEFAULT 0,
             PRIMARY KEY (playlist_id, track_id)
         );
-        CREATE INDEX idx_playlist_tracks_track ON playlist_tracks(track_id);
+        CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id);
     "),
     // v7: audition analysis (experimental flag): loudness + section markers
     Migration::Sql("
-        CREATE TABLE analysis (
+        CREATE TABLE IF NOT EXISTS analysis (
             track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
             lufs REAL,
             intro_ms INTEGER,
@@ -131,6 +142,8 @@ const MIGRATIONS: &[Migration] = &[
             outro_ms INTEGER
         );
     "),
+    // v8: source folders carry a display name (defaults to the path basename)
+    Migration::Code(add_folder_name),
 ];
 
 /// Apply pending migrations. Idempotent: already-applied migrations are skipped
