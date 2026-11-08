@@ -34,11 +34,22 @@ export interface FlowPlaylist {
     count: number;
 }
 
-/** The saved-filter shape a smart playlist stores */
+/** The saved-filter shape a smart playlist stores. All rules AND together;
+ *  `tagMode` controls how the include-tags combine among themselves. */
 export interface SavedFilter {
     text?: string;
     tagIds?: number[];
+    tagMode?: 'all' | 'any';
+    excludeTagIds?: number[];
     untaggedOnly?: boolean;
+    bpmMin?: number;
+    bpmMax?: number;
+    /** Uppercased key strings as they appear on tracks ('7A', 'AM', ...) */
+    keys?: string[];
+    yearMin?: number;
+    yearMax?: number;
+    /** Added to the library within the last N days */
+    addedDays?: number;
 }
 
 export function parseSavedFilter(raw: string): SavedFilter {
@@ -259,7 +270,32 @@ export class TagStore {
         return !text || this.haystack(t).includes(text);
     }
 
-    /** The list as currently shown: playlist scope + filter + untagged + sort */
+    /** Does the track satisfy a smart playlist's saved rules? */
+    passesSaved(t: FlowTrack, f: SavedFilter, now: number): boolean {
+        if (f.untaggedOnly && t.tagIds.length > 0) return false;
+        const include = f.tagIds ?? [];
+        if (include.length > 0) {
+            const hit = (f.tagMode ?? 'all') === 'any'
+                ? include.some((id) => t.tagIds.includes(id))
+                : include.every((id) => t.tagIds.includes(id));
+            if (!hit) return false;
+        }
+        if ((f.excludeTagIds ?? []).some((id) => t.tagIds.includes(id))) return false;
+        if (f.bpmMin !== undefined && !(t.bpm !== undefined && t.bpm >= f.bpmMin)) return false;
+        if (f.bpmMax !== undefined && !(t.bpm !== undefined && t.bpm <= f.bpmMax)) return false;
+        if (f.keys && f.keys.length > 0
+            && !(t.key && f.keys.includes(t.key.trim().toUpperCase()))) return false;
+        if (f.yearMin !== undefined && !(t.year !== undefined && t.year >= f.yearMin)) return false;
+        if (f.yearMax !== undefined && !(t.year !== undefined && t.year <= f.yearMax)) return false;
+        if (f.addedDays !== undefined
+            && !(t.addedAt && t.addedAt * 1000 >= now - f.addedDays * 86_400_000)) return false;
+        const text = (f.text ?? '').trim().toLowerCase();
+        return !text || this.haystack(t).includes(text);
+    }
+
+    /** The list as currently shown: playlist scope + filter + untagged + sort.
+     *  A manual playlist scopes by membership, a smart one by its rules; the
+     *  live controls filter within that scope. */
     visibleTracks(): FlowTrack[] {
         const f = this.filter.value.trim().toLowerCase();
         const tagFilters = this.filterTagIds.value;
@@ -267,8 +303,11 @@ export class TagStore {
         const members = active && !active.filter
             ? new Set(this.playlistMembers.value.get(active.id) ?? [])
             : undefined;
+        const saved = active?.filter ? parseSavedFilter(active.filter) : undefined;
+        const now = Date.now();
         const filtered = this.tracks.value.filter((t) => {
             if (members && !members.has(t.id)) return false;
+            if (saved && !this.passesSaved(t, saved, now)) return false;
             return this.passes(t, f, tagFilters, this.untaggedOnly.value);
         });
         return this.sortTracks(filtered);
@@ -288,12 +327,7 @@ export class TagStore {
             if (id !== undefined) this.activePlaylistId.value = undefined;
             return;
         }
-        if (pl.filter) {
-            const f = parseSavedFilter(pl.filter);
-            this.filter.value = f.text ?? '';
-            this.filterTagIds.value = f.tagIds ?? [];
-            this.untaggedOnly.value = !!f.untaggedOnly;
-        } else if (!this.playlistMembers.value.has(pl.id)) {
+        if (!pl.filter && !this.playlistMembers.value.has(pl.id)) {
             get1t().send('playlistTracksLoad', { id: pl.id });
         }
         diag('playlistSelect', { id, smart: !!pl.filter });
@@ -304,10 +338,8 @@ export class TagStore {
     playlistTrackIds(pl: FlowPlaylist): number[] {
         if (!pl.filter) return this.playlistMembers.value.get(pl.id) ?? [];
         const f = parseSavedFilter(pl.filter);
-        const text = (f.text ?? '').trim().toLowerCase();
-        return this.tracks.value
-            .filter((t) => this.passes(t, text, f.tagIds ?? [], !!f.untaggedOnly))
-            .map((t) => t.id);
+        const now = Date.now();
+        return this.tracks.value.filter((t) => this.passesSaved(t, f, now)).map((t) => t.id);
     }
 
     private sortTracks(tracks: FlowTrack[]): FlowTrack[] {

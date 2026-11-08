@@ -60,6 +60,12 @@ pub fn rename(db: &Db, id: i64, name: &str) -> Result<(), Error> {
     Ok(())
 }
 
+/// Replace a smart playlist's saved rules (opaque JSON)
+pub fn set_filter(db: &Db, id: i64, filter: &str) -> Result<(), Error> {
+    db.conn().execute("UPDATE playlists SET filter = ?2 WHERE id = ?1", params![id, filter])?;
+    Ok(())
+}
+
 pub fn delete(db: &Db, id: i64) -> Result<(), Error> {
     db.conn().execute("DELETE FROM playlists WHERE id = ?1", [id])?;
     Ok(())
@@ -164,6 +170,15 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM playlist_tracks WHERE playlist_id = ?1", [id], |r| r.get(0))
             .unwrap();
         assert_eq!(orphans, 0, "membership rows cascade with the playlist");
+    }
+
+    #[test]
+    fn set_filter_updates_rules() {
+        let (_dir, db) = db_with_tracks(1);
+        let id = super::create(&db, "Smart", Some(r#"{"bpmMin":120}"#)).unwrap();
+        super::set_filter(&db, id, r#"{"bpmMin":118,"bpmMax":126}"#).unwrap();
+        let pl = super::list(&db).unwrap().into_iter().find(|p| p.id == id).unwrap();
+        assert_eq!(pl.filter.as_deref(), Some(r#"{"bpmMin":118,"bpmMax":126}"#));
     }
 
     #[test]

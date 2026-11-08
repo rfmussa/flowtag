@@ -35,6 +35,7 @@
             class='pl-row'
             :class='{ active: store.activePlaylistId.value === pl.id, "drop-target": dropId === pl.id && !pl.filter }'
             @click='select(pl.id)'
+            @dblclick='pl.filter ? editing = pl : undefined'
             @dragover='onDragOver(pl, $event)'
             @dragleave='dropId = dropId === pl.id ? undefined : dropId'
             @drop='onDrop(pl, $event)'
@@ -46,6 +47,7 @@
                 <q-icon name='mdi-dots-horizontal' size='13px' />
                 <q-menu class='flowtag-theme ft-pop' auto-close>
                     <div class='pl-menu'>
+                        <button v-if='pl.filter' type='button' class='ft-btn pl-menu-item' @click='editing = pl'>Edit rules</button>
                         <button type='button' class='ft-btn pl-menu-item' @click='renamePlaylist(pl)'>Rename</button>
                         <button type='button' class='ft-btn pl-menu-item danger' @click='deletePlaylist(pl)'>Delete</button>
                     </div>
@@ -56,6 +58,8 @@
             Drag tracks here, or save a filter as a playlist.
         </div>
     </div>
+
+    <SmartPlaylistEditor :playlist='editing' @close='editing = undefined' />
 </div>
 </template>
 
@@ -64,11 +68,13 @@ import { computed, ref } from 'vue';
 import { Dialog, Notify } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
+import SmartPlaylistEditor from './SmartPlaylistEditor.vue';
 import { diag } from '../../scripts/diag';
 
 const $1t = get1t();
 const store = getTagStore();
 const dropId = ref<number | undefined>(undefined);
+const editing = ref<FlowPlaylist | undefined>(undefined);
 
 const filtersActive = computed(() =>
     store.filter.value.trim().length > 0

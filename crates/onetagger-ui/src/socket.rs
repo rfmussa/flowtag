@@ -114,6 +114,7 @@ enum Action {
     PlaylistCreate { name: String, filter: Option<String> },
     PlaylistRename { id: i64, name: String },
     PlaylistDelete { id: i64 },
+    PlaylistSetFilter { id: i64, filter: String },
     #[serde(rename_all = "camelCase")]
     PlaylistAddTracks { id: i64, track_ids: Vec<i64> },
     #[serde(rename_all = "camelCase")]
@@ -847,6 +848,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::PlaylistCreate { name, filter } => tagflow::playlist_create(context, &name, filter.as_deref())?,
         Action::PlaylistRename { id, name } => tagflow::playlist_rename(context, id, &name)?,
         Action::PlaylistDelete { id } => tagflow::playlist_delete(context, id)?,
+        Action::PlaylistSetFilter { id, filter } => tagflow::playlist_set_filter(context, id, &filter)?,
         Action::PlaylistAddTracks { id, track_ids } => tagflow::playlist_add_tracks(context, id, &track_ids)?,
         Action::PlaylistRemoveTracks { id, track_ids } => tagflow::playlist_remove_tracks(context, id, &track_ids)?,
         Action::PlaylistTracksLoad { id } => tagflow::playlist_tracks_load(context, id)?,

@@ -365,6 +365,11 @@ pub(crate) fn playlist_rename(context: &SocketContext, id: i64, name: &str) -> R
     context.broadcast(playlists_message(&context.db)?)
 }
 
+pub(crate) fn playlist_set_filter(context: &SocketContext, id: i64, filter: &str) -> Result<(), Error> {
+    onetagger_db::playlists::set_filter(&context.db, id, filter)?;
+    context.broadcast(playlists_message(&context.db)?)
+}
+
 pub(crate) fn playlist_delete(context: &SocketContext, id: i64) -> Result<(), Error> {
     onetagger_db::playlists::delete(&context.db, id)?;
     context.broadcast(playlists_message(&context.db)?)
