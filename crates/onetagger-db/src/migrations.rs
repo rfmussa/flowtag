@@ -1,59 +1,57 @@
 use anyhow::Error;
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
+use rusqlite_migration::{HookResult, Migrations, M};
 
 use crate::tags::{DEFAULT_TAG_COLOR, TAG_COLOR_PALETTE};
 
-/// A migration step: plain SQL, or code when the change needs Rust-side data
-/// (e.g. the shared color palette).
-enum Migration {
-    Sql(&'static str),
-    Code(fn(&Connection) -> Result<(), Error>),
-}
-
 /// v4: tags created before auto-coloring all wear the old teal default and are
 /// indistinguishable. Re-spread them across the palette (custom colors stay).
+fn recolor_legacy_teal_tags(tx: &Transaction) -> HookResult {
+    let ids: Vec<i64> = {
+        let mut stmt = tx.prepare("SELECT id FROM tags WHERE color = ?1 ORDER BY id")?;
+        let rows = stmt.query_map([DEFAULT_TAG_COLOR], |r| r.get(0))?;
+        rows.collect::<Result<_, _>>()?
+    };
+    for (i, id) in ids.iter().enumerate() {
+        let color = TAG_COLOR_PALETTE[i % TAG_COLOR_PALETTE.len()];
+        tx.execute("UPDATE tags SET color = ?2 WHERE id = ?1", rusqlite::params![id, color])?;
+    }
+    Ok(())
+}
+
 /// v5: add tracks.added_at. Pre-existing rows take their file mtime as the
 /// best available approximation of when they entered the library.
 /// Idempotent: safe to re-run on a database that already has the column.
-/// v8: folders.name display alias. Idempotent for the re-run tests.
-fn add_folder_name(conn: &Connection) -> Result<(), Error> {
-    let has_column = conn
-        .prepare("SELECT 1 FROM pragma_table_info('folders') WHERE name = 'name'")?
-        .exists([])?;
-    if !has_column {
-        conn.execute_batch("ALTER TABLE folders ADD COLUMN name TEXT;")?;
-    }
-    Ok(())
-}
-
-fn add_added_at(conn: &Connection) -> Result<(), Error> {
-    let has_column = conn
+fn add_added_at(tx: &Transaction) -> HookResult {
+    let has_column = tx
         .prepare("SELECT 1 FROM pragma_table_info('tracks') WHERE name = 'added_at'")?
         .exists([])?;
     if !has_column {
-        conn.execute_batch("ALTER TABLE tracks ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;")?;
+        tx.execute_batch("ALTER TABLE tracks ADD COLUMN added_at INTEGER NOT NULL DEFAULT 0;")?;
     }
-    conn.execute("UPDATE tracks SET added_at = mtime WHERE added_at = 0", [])?;
+    tx.execute("UPDATE tracks SET added_at = mtime WHERE added_at = 0", [])?;
     Ok(())
 }
 
-fn recolor_legacy_teal_tags(conn: &Connection) -> Result<(), Error> {
-    let mut stmt = conn.prepare("SELECT id FROM tags WHERE color = ?1 ORDER BY id")?;
-    let ids: Vec<i64> = stmt
-        .query_map([DEFAULT_TAG_COLOR], |r| r.get(0))?
-        .collect::<Result<_, _>>()?;
-    for (i, id) in ids.iter().enumerate() {
-        let color = TAG_COLOR_PALETTE[i % TAG_COLOR_PALETTE.len()];
-        conn.execute("UPDATE tags SET color = ?2 WHERE id = ?1", rusqlite::params![id, color])?;
+/// v8: folders.name display alias. Idempotent for the re-run tests.
+fn add_folder_name(tx: &Transaction) -> HookResult {
+    let has_column = tx
+        .prepare("SELECT 1 FROM pragma_table_info('folders') WHERE name = 'name'")?
+        .exists([])?;
+    if !has_column {
+        tx.execute_batch("ALTER TABLE folders ADD COLUMN name TEXT;")?;
     }
     Ok(())
 }
 
-/// Ordered list of migrations; `user_version` records how many have been applied.
-const MIGRATIONS: &[Migration] = &[
-    Migration::Sql(
-    // v1: initial schema
-    "
+/// The ordered migration list. `rusqlite_migration` records progress in
+/// `PRAGMA user_version` (number of migrations applied), the same counter the
+/// previous hand-rolled runner used, so existing libraries carry over as-is.
+/// Never reorder or edit a shipped entry: append new ones.
+pub fn migrations() -> Migrations<'static> {
+    Migrations::new(vec![
+        // v1: initial schema
+        M::up("
     CREATE TABLE folders (
         id INTEGER PRIMARY KEY,
         path TEXT NOT NULL UNIQUE
@@ -101,65 +99,61 @@ const MIGRATIONS: &[Migration] = &[
         bars BLOB NOT NULL
     );
     "),
-    // v2: tag_version guards the flusher against clearing edits made while a
-    // flush batch was in flight (bumped on every tag change of a track)
-    Migration::Sql("ALTER TABLE tracks ADD COLUMN tag_version INTEGER NOT NULL DEFAULT 0;"),
-    // v3: DJ metadata columns. Existing rows get stats reset so the next scan
-    // re-parses every file once and backfills them.
-    Migration::Sql("
-    ALTER TABLE tracks ADD COLUMN bpm INTEGER;
-    ALTER TABLE tracks ADD COLUMN key TEXT;
-    ALTER TABLE tracks ADD COLUMN year INTEGER;
-    UPDATE tracks SET mtime = 0, size = -1;
-    "),
-    // v4: spread legacy teal-default tags across the color palette
-    Migration::Code(recolor_legacy_teal_tags),
-    // v5: tracks remember when they entered the library
-    Migration::Code(add_added_at),
-    // v6: playlists — manual (explicit membership) and smart (saved filter)
-    Migration::Sql("
-        CREATE TABLE IF NOT EXISTS playlists (
-            id INTEGER PRIMARY KEY,
-            name TEXT NOT NULL UNIQUE COLLATE NOCASE,
-            position INTEGER NOT NULL DEFAULT 0,
-            filter TEXT
-        );
-        CREATE TABLE IF NOT EXISTS playlist_tracks (
-            playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-            track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-            position INTEGER NOT NULL DEFAULT 0,
-            PRIMARY KEY (playlist_id, track_id)
-        );
-        CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id);
-    "),
-    // v7: audition analysis (experimental flag): loudness + section markers
-    Migration::Sql("
-        CREATE TABLE IF NOT EXISTS analysis (
-            track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
-            lufs REAL,
-            intro_ms INTEGER,
-            drop_ms INTEGER,
-            outro_ms INTEGER
-        );
-    "),
-    // v8: source folders carry a display name (defaults to the path basename)
-    Migration::Code(add_folder_name),
-];
+        // v2: tag_version guards the flusher against clearing edits made while a
+        // flush batch was in flight (bumped on every tag change of a track)
+        M::up("ALTER TABLE tracks ADD COLUMN tag_version INTEGER NOT NULL DEFAULT 0;"),
+        // v3: DJ metadata columns. Existing rows get stats reset so the next scan
+        // re-parses every file once and backfills them.
+        M::up("
+        ALTER TABLE tracks ADD COLUMN bpm INTEGER;
+        ALTER TABLE tracks ADD COLUMN key TEXT;
+        ALTER TABLE tracks ADD COLUMN year INTEGER;
+        UPDATE tracks SET mtime = 0, size = -1;
+        "),
+        // v4: spread legacy teal-default tags across the color palette
+        M::up_with_hook("", recolor_legacy_teal_tags),
+        // v5: tracks remember when they entered the library
+        M::up_with_hook("", add_added_at),
+        // v6: playlists — manual (explicit membership) and smart (saved filter)
+        M::up("
+            CREATE TABLE IF NOT EXISTS playlists (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                position INTEGER NOT NULL DEFAULT 0,
+                filter TEXT
+            );
+            CREATE TABLE IF NOT EXISTS playlist_tracks (
+                playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+                position INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (playlist_id, track_id)
+            );
+            CREATE INDEX IF NOT EXISTS idx_playlist_tracks_track ON playlist_tracks(track_id);
+        "),
+        // v7: audition analysis (experimental flag): loudness + section markers
+        M::up("
+            CREATE TABLE IF NOT EXISTS analysis (
+                track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                lufs REAL,
+                intro_ms INTEGER,
+                drop_ms INTEGER,
+                outro_ms INTEGER
+            );
+        "),
+        // v8: source folders carry a display name (defaults to the path basename)
+        M::up_with_hook("", add_folder_name),
+    ])
+}
 
-/// Apply pending migrations. Idempotent: already-applied migrations are skipped
-/// based on PRAGMA user_version.
-pub fn migrate(conn: &Connection) -> Result<(), Error> {
-    let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    for (i, migration) in MIGRATIONS.iter().enumerate() {
-        let target = (i + 1) as i64;
-        if version < target {
-            match migration {
-                Migration::Sql(sql) => conn.execute_batch(sql)?,
-                Migration::Code(f) => f(conn)?,
-            }
-            conn.pragma_update(None, "user_version", target)?;
-            info!("Applied DB migration v{target}");
-        }
+/// Apply pending migrations. All pending steps run in one transaction and
+/// `user_version` is written at commit, so a failure rolls the whole upgrade
+/// back and leaves the database exactly as it was.
+pub fn migrate(conn: &mut Connection) -> Result<(), Error> {
+    let before: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    migrations().to_latest(conn)?;
+    let after: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if after != before {
+        info!("Applied DB migrations v{} to v{after}", before + 1);
     }
     Ok(())
 }
@@ -177,7 +171,7 @@ mod tests {
         let path = dir.path().join("test.db");
         let db = Db::open(&path).unwrap();
         {
-            let conn = db.conn();
+            let mut conn = db.conn();
             // Simulate a pre-v4 library: several teal tags + one custom
             for name in ["dark", "rolling", "peak", "warm"] {
                 conn.execute(
@@ -188,7 +182,7 @@ mod tests {
             conn.execute("INSERT INTO tags (name, color) VALUES ('custom', '#123456')", []).unwrap();
             // Roll back to v3 and re-run migrations
             conn.pragma_update(None, "user_version", 3).unwrap();
-            super::migrate(&conn).unwrap();
+            super::migrate(&mut conn).unwrap();
 
             let mut stmt = conn.prepare("SELECT name, color FROM tags ORDER BY id").unwrap();
             let rows: Vec<(String, String)> = stmt
@@ -206,6 +200,31 @@ mod tests {
             // Custom color untouched
             assert!(rows.iter().any(|(n, c)| n == "custom" && c == "#123456"));
         }
+    }
+
+    /// rusqlite_migration's own check: every migration applies cleanly to a
+    /// fresh in-memory database, in order
+    #[test]
+    fn migrations_validate() {
+        super::migrations().validate().unwrap();
+    }
+
+    /// The guarantee the runner switch was for: a failing step rolls back the
+    /// whole pending batch, schema version included
+    #[test]
+    fn failed_upgrade_rolls_back_atomically() {
+        let mut conn = rusqlite::Connection::open_in_memory().unwrap();
+        let broken = rusqlite_migration::Migrations::new(vec![
+            rusqlite_migration::M::up("CREATE TABLE first_step (x INTEGER);"),
+            rusqlite_migration::M::up("CREATE TABLE second_step (x INTEGER); THIS IS NOT SQL;"),
+        ]);
+        assert!(broken.to_latest(&mut conn).is_err());
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        assert_eq!(version, 0, "version must not advance on a failed upgrade");
+        let first_exists = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE name = 'first_step'").unwrap()
+            .exists([]).unwrap();
+        assert!(!first_exists, "an earlier step of the failed batch must be rolled back");
     }
 
     #[test]
@@ -227,7 +246,7 @@ mod tests {
     fn v5_backfills_added_at_from_mtime() {
         let dir = tempfile::tempdir().unwrap();
         let db = Db::open(dir.path().join("test.db")).unwrap();
-        let conn = db.conn();
+        let mut conn = db.conn();
         conn.execute("INSERT INTO folders (path) VALUES ('/x')", []).unwrap();
         conn.execute(
             "INSERT INTO tracks (folder_id, path, format, title, mtime, size, added_at)
@@ -236,7 +255,7 @@ mod tests {
         ).unwrap();
         // Roll back and re-run: the backfill must fill the zeroed row
         conn.pragma_update(None, "user_version", 4).unwrap();
-        super::migrate(&conn).unwrap();
+        super::migrate(&mut conn).unwrap();
         let added: i64 = conn
             .query_row("SELECT added_at FROM tracks WHERE path = '/x/a.mp3'", [], |r| r.get(0))
             .unwrap();

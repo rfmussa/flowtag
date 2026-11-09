@@ -35,11 +35,11 @@ pub struct Db {
 impl Db {
     /// Open (creating if needed) and migrate the database at `path`
     pub fn open(path: impl AsRef<Path>) -> Result<Db, Error> {
-        let conn = Connection::open(path.as_ref())?;
+        let mut conn = Connection::open(path.as_ref())?;
         conn.pragma_update(None, "journal_mode", "WAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.busy_timeout(std::time::Duration::from_secs(5))?;
-        migrations::migrate(&conn)?;
+        migrations::migrate(&mut conn)?;
         Ok(Db {
             conn: Mutex::new(conn),
             path: path.as_ref().to_owned(),
