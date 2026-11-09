@@ -1,5 +1,6 @@
 <template>
     <div>
+        <Toaster position='bottom-right' :duration='2500' />
         <q-layout view="hHh lpR fFf" class="bg-background">
             <!-- FlowTag IS the app: no header, no tabs -->
             <q-page-container class="content">
@@ -47,6 +48,7 @@ import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
 import { initDiag } from './scripts/diag';
+import { Toaster } from '@/components/ui/sonner';
 
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';

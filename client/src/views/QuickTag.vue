@@ -127,7 +127,7 @@
 <script lang='ts' setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { useLocalStorage, watchDebounced } from '@vueuse/core';
-import { Dialog, Notify } from 'quasar';
+import { Dialog } from 'quasar';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../scripts/tagstore';
 import { diag } from '../scripts/diag';

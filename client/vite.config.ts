@@ -1,5 +1,7 @@
 import path from 'path';
+import { fileURLToPath, URL } from 'node:url';
 import { defineConfig } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import { quasar, transformAssetUrls } from '@quasar/vite-plugin';
 import vue from '@vitejs/plugin-vue';
 
@@ -12,8 +14,14 @@ export default defineConfig({
         }),
         quasar({
             sassVariables: path.resolve('src/style/quasar.scss')
-        })
+        }),
+        tailwindcss()
     ],
+    resolve: {
+        alias: {
+            '@': fileURLToPath(new URL('./src', import.meta.url))
+        }
+    },
     server: {
         port: 8080
     },

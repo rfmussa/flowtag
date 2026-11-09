@@ -1,9 +1,18 @@
-import { Notify } from 'quasar';
+
 import { get1t } from './onetagger';
+import { notify } from '@/lib/notify';
 import { getTagStore } from './tagstore';
 import { Keybind } from './utils';
 import { diag } from './diag';
 import { FlowTagAction } from './settings';
+
+/**
+ * Any open overlay that owns the keyboard: Quasar dialogs (still used by the
+ * inherited lookup screen) and the shadcn / Reka overlays, which render with
+ * ARIA roles (dialog, alert dialog, menu, select listbox). While one is open,
+ * FlowTag's shortcuts must not act on the list behind it.
+ */
+const OPEN_OVERLAY_SELECTOR = '.q-dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 /** Default key (KeyboardEvent.code) per remappable action */
 export const FLOWTAG_ACTION_DEFAULTS: Record<FlowTagAction, string> = {
@@ -102,7 +111,7 @@ function navMatches(event: KeyboardEvent, action: 'prev' | 'next'): { extend: bo
  */
 export function handleFlowKeys(event: KeyboardEvent): boolean {
     // Never act behind an open dialog (export confirm, settings, tag manager...)
-    if (document.querySelector('.q-dialog')) return false;
+    if (document.querySelector(OPEN_OVERLAY_SELECTOR)) return false;
 
     const $1t = get1t();
     const store = getTagStore();
@@ -177,7 +186,7 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     // Undo the last tag edit (fixed)
     if (event.code === 'KeyZ' && (event.metaKey || event.ctrlKey) && !event.shiftKey) {
         const undone = store.undo();
-        if (undone) Notify.create({ message: `Undo: ${undone}`, timeout: 1800 });
+        if (undone) notify({ message: `Undo: ${undone}`, timeout: 1800 });
         return true;
     }
 

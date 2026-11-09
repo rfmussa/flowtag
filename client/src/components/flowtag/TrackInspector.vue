@@ -57,8 +57,9 @@
 
 <script lang='ts' setup>
 import { computed, nextTick, ref, watch } from 'vue';
+import { notify } from '@/lib/notify';
 import { useEventListener } from '@vueuse/core';
-import { Notify } from 'quasar';
+
 import { get1t } from '../../scripts/onetagger';
 import { FlowTrack, getTagStore, TrackMeta } from '../../scripts/tagstore';
 import { diag } from '../../scripts/diag';
@@ -131,7 +132,7 @@ watch(store.metaSavedSignal, () => {
     saving.value = false;
     open.value = false;
     const t = track.value;
-    Notify.create({ message: 'Metadata saved', timeout: 1500 });
+    notify({ message: 'Metadata saved', timeout: 1500 });
     if (t && resumeAfterSave) {
         const fresh = store.tracks.value.find((x) => x.id === t.id);
         $1t.player.value.startTrack(t.path, t.id, fresh?.title ?? t.title, fresh?.artist ?? t.artist, true);

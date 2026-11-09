@@ -54,7 +54,8 @@
 
 <script lang='ts' setup>
 import { computed, ref } from 'vue';
-import { Notify } from 'quasar';
+import { notify } from '@/lib/notify';
+
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore } from '../../scripts/tagstore';
 import { diag } from '../../scripts/diag';
@@ -103,7 +104,7 @@ const exportCount = computed(() =>
 function run() {
     $1t.send('rekordboxExport', { mode: 'comment', trackIds: scopedTrackIds.value ?? null });
     diag('exportComments', { scope: scope.value, tracks: exportCount.value });
-    Notify.create({ message: 'Export started…', timeout: 1500 });
+    notify({ message: 'Export started…', timeout: 1500 });
     emit('update:modelValue', false);
 }
 </script>

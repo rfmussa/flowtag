@@ -1,0 +1,83 @@
+/*
+ * Tailwind v4 + shadcn-vue, mapped onto FlowTag's design system.
+ *
+ * Preflight (Tailwind's global reset) is deliberately not imported while
+ * Quasar still draws the inherited lookup screen: it would restyle every
+ * plain button, heading and list on the page. It lands when Quasar leaves.
+ */
+@import "tailwindcss/theme.css" layer(theme);
+@import "tailwindcss/utilities.css" layer(utilities);
+@import "tw-animate-css";
+
+/* shadcn-vue's semantic tokens, pointed at FlowTag's --ft-* tokens (dark only) */
+:root {
+    --background: var(--ft-bg);
+    --foreground: var(--ft-text);
+    --card: var(--ft-panel);
+    --card-foreground: var(--ft-text);
+    --popover: var(--ft-overlay);
+    --popover-foreground: var(--ft-text);
+    --primary: var(--ft-raised);
+    --primary-foreground: var(--ft-text);
+    --secondary: var(--ft-raised);
+    --secondary-foreground: var(--ft-text);
+    --muted: var(--ft-panel);
+    --muted-foreground: var(--ft-text-3);
+    --accent: var(--ft-active);
+    --accent-foreground: var(--ft-text);
+    --destructive: var(--ft-danger);
+    --border: var(--ft-line-strong);
+    --input: var(--ft-line);
+    --ring: var(--ft-focus);
+    --radius: 8px;
+}
+
+@theme inline {
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    /* FlowTag radii: 4px keycaps, 6px controls, 8px floating panels */
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+
+    /* FlowTag's type ramp: shadcn's text-sm is FlowTag's 12.5px body */
+    --text-xs: 0.6875rem;
+    --text-xs--line-height: 1.4;
+    --text-sm: 0.78125rem;
+    --text-sm--line-height: 1.45;
+    --text-base: 0.8125rem;
+    --text-base--line-height: 1.45;
+    --text-lg: 0.84375rem;
+    --text-lg--line-height: 1.3;
+
+    --font-sans: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    --font-mono: 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+}
+
+@layer base {
+    /* The one preflight rule shadcn components rely on: border color.
+       Scoped to their data-slot elements so Quasar's elements are untouched. */
+    [data-slot],
+    [data-slot]::before,
+    [data-slot]::after {
+        border-color: var(--color-border);
+    }
+}

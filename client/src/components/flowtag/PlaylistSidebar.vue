@@ -116,8 +116,9 @@
 
 <script lang='ts' setup>
 import { computed, ref } from 'vue';
+import { notify } from '@/lib/notify';
 import { useLocalStorage } from '@vueuse/core';
-import { Dialog, Notify } from 'quasar';
+import { Dialog } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
 import SmartPlaylistEditor from './SmartPlaylistEditor.vue';
@@ -270,7 +271,7 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
         if (!Array.isArray(trackIds) || trackIds.length === 0) return;
         $1t.send('playlistAddTracks', { id: pl.id, trackIds });
         diag('playlistAddTracks', { id: pl.id, tracks: trackIds.length });
-        Notify.create({ message: `Added ${trackIds.length} track(s) to "${pl.name}"`, timeout: 1200 });
+        notify({ message: `Added ${trackIds.length} track(s) to "${pl.name}"`, timeout: 1200 });
     } catch { /* foreign drag payload */ }
 }
 </script>

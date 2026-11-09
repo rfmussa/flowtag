@@ -59,7 +59,8 @@
 
 <script lang='ts' setup>
 import { computed, ref, watch } from 'vue';
-import { Dialog, Notify } from 'quasar';
+import { notify } from '@/lib/notify';
+import { Dialog } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTag, FlowGroup, getTagStore } from '../../scripts/tagstore';
 import { reservedFlowtagCodes } from '../../scripts/flowkeys';
@@ -104,7 +105,7 @@ function normalizeCode(code: string): string {
 const keybindNonce = ref(0);
 
 function reject(message: string) {
-    Notify.create({ type: 'warning', message });
+    notify({ type: 'warning', message });
     keybindNonce.value++;
 }
 

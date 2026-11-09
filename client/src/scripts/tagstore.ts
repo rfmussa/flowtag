@@ -1,5 +1,6 @@
 import { ref, Ref } from 'vue';
-import { Notify } from 'quasar';
+import { notify } from '@/lib/notify';
+
 import { get1t } from './onetagger';
 import { diag, diagError } from './diag';
 
@@ -688,7 +689,7 @@ export class TagStore {
             case 'analysisDone': {
                 this.analysisRun.value = { running: false, done: 0, total: 0 };
                 diag('analysisDone', { analyzed: json.analyzed, failed: json.failed });
-                Notify.create({ message: `Analysis done: ${json.analyzed} track(s)` + (json.failed ? `, ${json.failed} failed` : ''), timeout: 2500 });
+                notify({ message: `Analysis done: ${json.analyzed} track(s)` + (json.failed ? `, ${json.failed} failed` : ''), timeout: 2500 });
                 return true;
             }
             case 'trackWaveform': {
@@ -777,7 +778,7 @@ export class TagStore {
                 return false;
             case 'rekordboxExportDone': {
                 const r = json.result ?? {};
-                Notify.create({
+                notify({
                     message: `Export done: ${r.written ?? 0} written, ${r.unchanged ?? 0} unchanged` +
                         (r.failed ? `, ${r.failed} FAILED` : ''),
                     color: r.failed ? 'negative' : 'positive',

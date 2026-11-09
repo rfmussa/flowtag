@@ -114,7 +114,8 @@
 
 <script lang='ts' setup>
 import { ref, watch } from 'vue';
-import { Notify } from 'quasar';
+import { notify } from '@/lib/notify';
+
 import { get1t } from '../scripts/onetagger';
 import { getTagStore } from '../scripts/tagstore';
 import { FLOWTAG_ACTIONS, FlowTagAction } from '../scripts/settings';
@@ -163,7 +164,7 @@ function sameBind(a: { key?: string, ctrl?: boolean, alt?: boolean, shift?: bool
 }
 
 function reject(message: string) {
-    Notify.create({ type: 'warning', message });
+    notify({ type: 'warning', message });
     nonce.value++;
 }
 
@@ -225,11 +226,11 @@ async function copyDebugReport() {
     diag('debugReportCopied', { bytes: report.length });
     try {
         await navigator.clipboard.writeText(report);
-        Notify.create({ message: 'Debug report copied to clipboard', timeout: 1500 });
+        notify({ message: 'Debug report copied to clipboard', timeout: 1500 });
     } catch {
         // eslint-disable-next-line no-console
         console.log(report);
-        Notify.create({ type: 'warning', message: 'Clipboard unavailable — report printed to the devtools console' });
+        notify({ type: 'warning', message: 'Clipboard unavailable — report printed to the devtools console' });
     }
 }
 

@@ -1,4 +1,5 @@
-import { Dialog, DialogChainObject, Notify } from 'quasar';
+import { Dialog, DialogChainObject } from 'quasar';
+import { notify } from '@/lib/notify';
 import { ref, Ref } from 'vue';
 import { AutotaggerConfig, AutotaggerPlatform, ConfigCallbackResponse, TaggerStatus } from './autotagger';
 import { Player } from './player';
@@ -304,7 +305,7 @@ class OneTagger {
 
             // Show notification
             case 'notify':
-                Notify.create({
+                notify({
                     position: 'top-right',
                     timeout: 5000,
                     progress: true,
@@ -432,7 +433,7 @@ class OneTagger {
         this.send("saveSettings", {settings: JSON.parse(JSON.stringify(this.settings.value))});
         // Notification
         if (notif)
-            Notify.create({
+            notify({
                 message: "Settings saved",
                 timeout: 500,
                 position: 'top-right'
