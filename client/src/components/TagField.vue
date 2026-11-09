@@ -1,143 +1,48 @@
 <template>
-<div>
-
-    <q-select
+<label class='flex flex-col gap-1 min-w-0'>
+    <span class='text-[10.5px] font-semibold uppercase tracking-[0.06em] text-ft-text-3'>{{ LABELS[format] }}</span>
+    <Input
         :model-value='value'
-        use-input
-        fill-input
-        hide-selected
-        filled
-        input-debounce="0"
-        :color='color'
-        :options='options'
-        :dense='dense'
-        :label='label'
-        :error-message='error'
-        :error='error?true:false'
-        @update:model-value='onInput'
-        @input-value='onInputValue'
-        @filter='onFilter'
-        popup-content-class='no-shadow'
-    ></q-select>
-
-
-</div>
+        :list='listId'
+        spellcheck='false'
+        class='font-mono text-xs'
+        :aria-invalid='!!error'
+        @update:model-value='onInput(String($event))'
+    />
+    <datalist :id='listId'>
+        <option v-for='o in OPTIONS[format]' :key='o' :value='o' />
+    </datalist>
+    <span v-if='error' class='text-[11px] text-ft-danger'>{{ error }}</span>
+    <span v-else-if='custom' class='text-[11px] text-ft-warn'>Custom field (written as TXXX / freeform)</span>
+</label>
 </template>
 
 <script lang='ts' setup>
-import { Ref, computed, ref, toRef, watch } from 'vue';
-import {MP4, VORBIS, ID3} from '../scripts/tags';
+import { computed, ref, useId, watch } from 'vue';
+import { Input } from '@/components/ui/input';
+import { FrameFormat, stripFrameHelper, validateFrameName } from '@/lib/tagframe';
+import { MP4, VORBIS, ID3 } from '../scripts/tags';
 
-type BannedTags = { id3: string[], vorbis: string[], mp4: string[] };
-
-// Tags you shouldn't use
-const banned: BannedTags = {
-    id3: ["APIC", "TXXX", "POPM", "TYER", "TDAT", "TORY", "TRDA", "TRCK", "TDTG", "TSOT", "TIT2",
-        "TDOR", "TKEY", "TSOC", "TCMP", "TBPM", "TSOP", "TSO2", "TSOA", "SYLT", "TSRC"],
-    vorbis: ["METADATA_BLOCK_PICTURE", "DATE", "ORIGINALDATE", "TRACKNUMBER", "TAGGINGTIME", 
-        "TRACK", "TITLESORT", "ORIGYEAR", "INITIALKEY", "KEY", "COMPOSERSORT", "COMPILATION", 
-        "BPM", "ARTISTSORT", "ALBUMARTISTSORT", "ALBUMSORT", "POPULARIMETER", "RATING", "ISRC"],
-    mp4: []
-}
-
-const bannedTagEditor: BannedTags = {
-    id3: ["APIC", "TXXX", "POPM", "COMM", "USLT"],
-    vorbis: [],
-    mp4: []
-}
-
-const props = defineProps({
-    format: { type: String, required: true },
-    modelValue: { type: String, required: false, default: '' },
-    dense: { default: false, type: Boolean },
-    tageditor: { default: false, type: Boolean }
+/** One container format's frame name, with suggestions and safety checks */
+const props = withDefaults(defineProps<{ format: FrameFormat; modelValue?: string; tageditor?: boolean }>(), {
+    modelValue: '',
+    tageditor: false,
 });
-const { format, dense, tageditor } = props;
+const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>();
 
-// Autocompletion
-let options: string[] = [];
-switch (format) {
-    case 'id3':
-        options = ID3;
-        break;
-    case 'vorbis':
-        options = VORBIS;
-        break;
-    case 'mp4':
-        options = MP4;
-        break;
-}
-let originalOptions = JSON.parse(JSON.stringify(options));
+const LABELS: Record<FrameFormat, string> = { id3: 'ID3 · MP3 AIFF WAV', vorbis: 'Vorbis · FLAC OGG OPUS', mp4: 'MP4 · M4A' };
+const OPTIONS: Record<FrameFormat, readonly string[]> = { id3: ID3, vorbis: VORBIS, mp4: MP4 };
 
-const value: Ref<string> = ref(props.modelValue);
-const error = ref<string | undefined>();
-const emit = defineEmits(['update:modelValue']);
+const listId = useId();
+const value = ref(props.modelValue);
+const error = computed(() => validateFrameName(props.format, value.value, props.tageditor));
+const custom = computed(() => (props.format === 'id3' || props.format === 'mp4') && value.value.trim().length !== 4);
 
+watch(() => props.modelValue, (v) => { value.value = v ?? ''; });
 
-// Remove ID3 helper text
-function removeHelper() {
-    if ((format == 'id3' || format == 'mp4') && value.value.match(/[©a-zA-Z0-9]{4} \(.*\)/)) {
-        value.value = value.value.replace(/ \(.*\)/, '');
-    }
-}
-
-// Clear helpers
-function onInput(v: any) {
-    // console.log(v)
+function onInput(raw: string) {
+    const v = stripFrameHelper(props.format, raw.trim());
     value.value = v;
-    removeHelper();
-}
-
-// Update text typed without autocomplete taking over
-function onInputValue(v: string) {
-    v = v.trim();
-    value.value = v;
-    removeHelper();
-
-    // Validate
-    // warning.value = null;
-    error.value = undefined;
-
-    if (format != 'mp4' && v.toUpperCase() != v && !(format == 'id3' && v.length != 4))
-        error.value = 'Tag names should be uppercase!';
-
-    if (v.includes(' ') && !(format == 'id3' && v.length != 4))
-        error.value = "Tag names shouldn't contain spaces!"
-
-    // @ts-ignore
-    if ((tageditor ? bannedTagEditor : banned)[format].includes(v.toUpperCase()))
-        error.value = "tag.value is reserved, might cause corruption!"
-
-    if (!v)
-        error.value = "Shouldn't be empty!"
-
     emit('update:modelValue', v);
 }
-
-// On filter for quasar
-function onFilter(val: any, update: any) {
-    update(() => {
-        let n = val.toUpperCase();
-        options = originalOptions.filter((v: string) => v.toUpperCase().includes(n));
-    });
-}
-
-const label = computed(() => {
-    switch (format) {
-        case 'id3': return 'ID3 (MP3/AIFF/WAV)';
-        case 'vorbis': return 'Vorbis (FLAC/OGG/OPUS)';
-        case 'mp4': return 'MP4/M4A';
-    }
-});
-
-// Different color if writing to comment/custom tag
-const color = computed(() => {
-    if ((format == 'id3' || format == 'mp4') && (value.value??'').length != 4) return 'yellow';
-    return 'primary';
-});
-
-watch(() => props.modelValue, () => {
-    onInput(props.modelValue);
-});
-
 </script>

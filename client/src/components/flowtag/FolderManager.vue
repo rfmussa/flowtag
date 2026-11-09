@@ -54,9 +54,9 @@ async function remove(id: number) {
     if (ok) $1t.send('tagFolderRemove', { id });
 }
 
-// Async: the main app wires the 'browse' reply (context 'tagFolderAdd') to tagFolderAdd
+// Native picker, or the in-app browser (Settings → Advanced); the reply lands in onBrowse
 function add() {
-    $1t.send('browse', { context: 'tagFolderAdd' });
+    $1t.browse('tagFolderAdd');
 }
 
 function rescan() {

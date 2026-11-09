@@ -30,7 +30,6 @@
 </template>
 
 <script lang='ts' setup>
-import { getCssVar, setCssVar } from 'quasar';
 import { computed, onMounted, onUnmounted, ref } from 'vue';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore } from '../scripts/tagstore';
@@ -97,17 +96,16 @@ onUnmounted(() => {
 const time = computed(() => duration(pos.value * $1t.player.value.duration));
 const waveformBackground = computed(() => {
     if (!hover.value) {
-        return `background-image: linear-gradient(to right, var(--q-primary) ${pos.value*100}%, #3a3c3c ${pos.value*100}%, #3a3c3c);`;
+        return `background-image: linear-gradient(to right, var(--wave-played) ${pos.value*100}%, var(--wave-rest) ${pos.value*100}%, var(--wave-rest));`;
     } else {
         // Calculate light and dark parts
         let hoverPos = pos.value * 100.0;
         let audioPos = ($1t.player.value.position / $1t.player.value.duration) * 100.0;
-        setCssVar('primary-dark', `${getCssVar('primary')!.substring(0, 7)}70`);
         // Generate gradient
         if (hoverPos > audioPos) {
-            return `background-image: linear-gradient(to right, var(--q-primary) ${audioPos}%, var(--q-primary-dark) ${audioPos}%, var(--q-primary-dark) ${hoverPos}%, #3a3c3c ${hoverPos}%, #3a3c3c);`;
+            return `background-image: linear-gradient(to right, var(--wave-played) ${audioPos}%, var(--wave-hover) ${audioPos}%, var(--wave-hover) ${hoverPos}%, var(--wave-rest) ${hoverPos}%, var(--wave-rest));`;
         } else {
-            return `background-image: linear-gradient(to right, var(--q-primary) ${hoverPos}%, var(--q-primary-dark) ${hoverPos}%, var(--q-primary-dark) ${audioPos}%, #3a3c3c ${audioPos}%, #3a3c3c);`;
+            return `background-image: linear-gradient(to right, var(--wave-played) ${hoverPos}%, var(--wave-hover) ${hoverPos}%, var(--wave-hover) ${audioPos}%, var(--wave-rest) ${audioPos}%, var(--wave-rest));`;
         }
     }
 
@@ -128,7 +126,7 @@ const waveformBackground = computed(() => {
 }
 
 .waveform {
-    /* background: linear-gradient(to right, var(--q-primary) var(--waveform-filled), #3a3c3c var(--waveform-filled), #3a3c3c); */
+    /* background: linear-gradient(to right, var(--wave-played) var(--waveform-filled), var(--wave-rest) var(--waveform-filled), var(--wave-rest)); */
     background-clip: text;
     color: transparent;
     -webkit-background-clip: text;

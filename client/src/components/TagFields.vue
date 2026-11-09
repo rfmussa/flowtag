@@ -1,52 +1,30 @@
 <template>
-<div class='row'>
-
+<div class='grid grid-cols-3 gap-3'>
     <TagField
-        format='id3'
-        :dense='dense'
+        v-for='format in FORMATS'
+        :key='format'
+        :format='format'
         :tageditor='tageditor'
-        v-model='tag.id3'
-        @change='tag.id3 = $event; onChange()'
-        class='col-4 q-pr-sm'
-    ></TagField>
-
-    <TagField
-        format='vorbis'
-        :dense='dense'
-        :tageditor='tageditor'
-        v-model='tag.vorbis'
-        @change='tag.vorbis = $event; onChange()'
-        class='col-4 q-px-sm'
-    ></TagField>
-
-    <TagField
-        format='mp4'
-        :dense='dense'
-        :tageditor='tageditor'
-        v-model='tag.mp4'
-        @change='tag.mp4 = $event; onChange()'
-        class='col-4 q-pl-sm'
-    ></TagField>
-
+        :model-value='modelValue[format]'
+        @update:model-value='(v: string) => update(format, v)'
+    />
 </div>
 </template>
 
 <script lang='ts' setup>
-import { toRefs } from 'vue';
 import { FrameName } from '../scripts/utils';
+import type { FrameFormat } from '@/lib/tagframe';
 import TagField from './TagField.vue';
 
-const props = defineProps({
-    modelValue: { type: FrameName, required: true },
-    dense: { default: false, type: Boolean },
-    tageditor: { default: false, type: Boolean }
-});
-const { modelValue, dense, tageditor } = toRefs(props);
-const tag = modelValue;
+/** A tag's frame name in each container format (ID3, Vorbis, MP4) */
+const props = withDefaults(defineProps<{ modelValue: FrameName; tageditor?: boolean }>(), { tageditor: false });
+const emit = defineEmits<{ (e: 'update:modelValue', v: FrameName): void }>();
 
-const emit = defineEmits(['update:modelValue']);
+const FORMATS: readonly FrameFormat[] = ['id3', 'vorbis', 'mp4'];
 
-function onChange() {
-    emit('update:modelValue', tag.value);
+function update(format: FrameFormat, value: string) {
+    const next = new FrameName(props.modelValue.id3, props.modelValue.vorbis, props.modelValue.mp4);
+    next[format] = value;
+    emit('update:modelValue', next);
 }
 </script>

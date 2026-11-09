@@ -31,16 +31,27 @@
         <!-- confirm / prompt / alert requests from lib/dialogs -->
         <DialogHost />
 
-        <!-- Folder browser dialog -->
-        <q-dialog v-model='$1t.folderBrowser.value.open'>
-            <FolderBrowser v-if='$1t.folderBrowser.value.open' :base='$1t.folderBrowser.value.basePath'></FolderBrowser>
-        </q-dialog>
+        <!-- In-app folder browser (Settings → Advanced) -->
+        <FolderBrowser />
+
+        <!-- F3 -->
+        <DevTools v-model='devToolsOpen' />
+
+        <!-- Startup: the lookup needs the platform list -->
+        <AlertDialog :open='$1t.platformsLoading.value && !isMini'>
+            <AlertDialogContent class='sm:max-w-[280px]' @escape-key-down.prevent>
+                <AlertDialogHeader class='flex-row items-center gap-3'>
+                    <LoaderCircleIcon class='size-4 animate-spin text-ft-text-3' />
+                    <AlertDialogTitle>Loading platforms…</AlertDialogTitle>
+                </AlertDialogHeader>
+                <AlertDialogDescription class='sr-only'>FlowTag is loading its metadata platforms</AlertDialogDescription>
+            </AlertDialogContent>
+        </AlertDialog>
     </div>
     </TooltipProvider>
 </template>
 
 <script lang='ts' setup>
-import { useQuasar } from 'quasar';
 import { computed, onMounted, ref } from "vue";
 import { useEventListener } from '@vueuse/core';
 import { useRoute } from 'vue-router';
@@ -56,9 +67,9 @@ import DialogHost from '@/components/flowtag/DialogHost.vue';
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';
 import FolderBrowser from './components/FolderBrowser.vue';
+import DevTools from './components/DevTools.vue';
 
 const $1t = get1t();
-const $q = useQuasar();
 
 const settings = ref(false);
 const sizeDialog = ref(false);
@@ -88,7 +99,6 @@ function onResize() {
 
 // Setup
 onMounted(() => {
-    $q.dark.set(true);
     initDiag();
     setWaveformWidth();
     if (!isMini.value) initMediaSync();
@@ -96,4 +106,7 @@ onMounted(() => {
 
 useEventListener(window, 'resize', onResize);
 useEventListener(window, 'flowtag-open-settings', openSettings);
+
+const devToolsOpen = ref(false);
+useEventListener(window, 'flowtag-open-devtools', () => { devToolsOpen.value = true; });
 </script>

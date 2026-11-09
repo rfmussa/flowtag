@@ -149,10 +149,10 @@ function toggleSection(key: 'sources' | 'playlists') {
     target.value = !target.value;
 }
 
-// Same flow as the header's Folders menu: native picker -> tagFolderAdd
+// Same flow as the header's Folders menu (native or in-app picker) -> tagFolderAdd
 function addSource() {
     diag('sourceAdd');
-    $1t.send('browse', { context: 'tagFolderAdd' });
+    $1t.browse('tagFolderAdd');
 }
 
 function startRename(kind: 'playlist' | 'source', id: number) {

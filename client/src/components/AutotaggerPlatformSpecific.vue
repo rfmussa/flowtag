@@ -1,127 +1,112 @@
 <template>
-<div class='text-center'>
+<div class='flex flex-col gap-5'>
+    <section v-for='platform in platforms' :key='platform.id'>
+        <div class='ft-label mb-2'>{{ platform.name }} options</div>
+        <div class='flex flex-col gap-3'>
+            <div v-for='option in platform.customOptions.options' :key='option.id'>
 
-    <!-- Platforms -->
-    <div v-for='(platform, i) in platforms' :key='"p"+i' class='q-mb-md'>
-        <div class='text-subtitle2 text-bold text-uppercase text-grey-4' style='margin-top: 1px; margin-bottom: -16px'>{{platform.name}}</div>
-
-        <!-- Custom options -->
-        <div v-for='(option, j) in platform.customOptions.options' :key='i+"o"+j' class='q-mt-lg'>
-
-            <!-- Slider -->
-            <div v-if='option.value.type == "number"'>
-                <q-chip text-color='black' color='primary'>
-                    {{option.label}}: {{$1t.config.value.custom[platform.id][option.id]}}
-                    <q-tooltip v-if='option.tooltip'>
-                        {{option.tooltip}}
-                    </q-tooltip>
-                </q-chip>
-                <div class='row justify-center' :style='"margin-bottom: -12px"'>
-                    <q-slider
-                        label-text-color='black'
-                        v-model='$1t.config.value.custom[platform.id][option.id]'
+                <!-- Number: slider with its value -->
+                <div v-if='option.value.type == "number"' class='flex items-center gap-3'>
+                    <span class='w-[180px] shrink-0 text-sm text-ft-text-2' :title='option.tooltip'>{{ option.label }}</span>
+                    <Slider
+                        :model-value='[custom(platform.id)[option.id]]'
                         :min='option.value.min'
                         :max='option.value.max'
                         :step='option.value.step'
-                        label
-                        class='slider col-10'
-                    ></q-slider>
+                        class='flex-1'
+                        :aria-label='option.label'
+                        @update:model-value='(v) => setOption(platform.id, option.id, v?.[0])'
+                    />
+                    <span class='w-12 text-right ft-num text-sm text-ft-text'>{{ custom(platform.id)[option.id] }}</span>
+                </div>
+
+                <!-- Custom tag frame per format -->
+                <div v-else-if='option.value.type == "tag"'>
+                    <div class='text-sm text-ft-text-2 mb-1.5'>{{ option.label }}</div>
+                    <TagFields v-model='custom(platform.id)[option.id]' />
+                </div>
+
+                <!-- Pick one value -->
+                <div v-else-if='option.value.type == "option"' class='flex items-center gap-3'>
+                    <span class='w-[180px] shrink-0 text-sm text-ft-text-2' :title='option.tooltip'>{{ option.label }}</span>
+                    <OptionSelect
+                        :model-value='custom(platform.id)[option.id]'
+                        :options='option.value.values.map((v: string) => ({ label: v, value: v }))'
+                        :label='option.label'
+                        @update:model-value='(v: string) => setOption(platform.id, option.id, v)'
+                    />
+                </div>
+
+                <!-- Text (or secret) -->
+                <div v-else-if='option.value.type == "string"'>
+                    <label class='flex items-center gap-3'>
+                        <span class='w-[180px] shrink-0 text-sm text-ft-text-2'>{{ option.label }}</span>
+                        <Input
+                            v-model='custom(platform.id)[option.id]'
+                            :type='option.value.hidden ? "password" : "text"'
+                            spellcheck='false'
+                            class='flex-1'
+                        />
+                    </label>
+                    <div v-if='option.tooltip' class='mt-1 ml-[192px] text-xs text-ft-text-3 option-help' v-html='option.tooltip'></div>
+                </div>
+
+                <!-- On / off -->
+                <label v-else-if='option.value.type == "boolean"' class='flex items-center justify-between gap-3 h-7 cursor-pointer'>
+                    <span class='text-sm text-ft-text-2' :title='option.tooltip'>{{ option.label }}</span>
+                    <Switch v-model='custom(platform.id)[option.id]' />
+                </label>
+
+                <!-- Action (sends the platform's config callback) -->
+                <div v-else-if='option.value.type == "button"' class='flex items-center gap-3'>
+                    <Button variant='default' size='sm' @click='callback(platform.id, option.id)'>{{ option.label }}</Button>
+                    <span v-if='option.tooltip' class='text-xs text-ft-text-3 option-help' v-html='option.tooltip'></span>
                 </div>
             </div>
-
-            <!-- Custom tag type -->
-            <div v-if='option.value.type == "tag"'>
-                <div class='text-body1'>{{option.label}}</div>
-                <TagFields v-model='$1t.config.value.custom[platform.id][option.id]' class='input'></TagFields>
-            </div>
-
-            <!-- Select -->
-            <div v-if='option.value.type == "option"'>
-                <div class='text-subtitle2 text-grey-6 q-mb-md' v-if='option.tooltip'>
-                    {{option.tooltip}}
-                </div>
-                <q-select
-                    dark
-                    standout='text-grey-4 bg-dark'
-                    v-model='$1t.config.value.custom[platform.id][option.id]'
-                    :options='option.value.values'
-                    class='select'
-                    :label='option.label'
-                    popup-content-class='no-shadow'
-                ></q-select>
-            </div>
-
-            <!-- Input -->
-            <div v-if='option.value.type == "string"'>
-                <div class='text-subtitle2 text-grey-6 q-mb-sm' v-if='option.tooltip' v-html='option.tooltip'></div>
-                <q-input
-                    dark
-                    standout='text-grey-4 bg-dark'
-                    v-model='$1t.config.value.custom[platform.id][option.id]'
-                    class='input' 
-                    :label='option.label'
-                    :type='option.value.hidden ? "password" : "text"'
-                ></q-input>
-            </div>
-
-            <!-- Switch -->
-            <div v-if='option.value.type == "boolean"'>
-                <div>
-                    <q-toggle 
-                        style='margin-bottom: -14px;' 
-                        v-model='$1t.config.value.custom[platform.id][option.id]' 
-                        :label="option.label"
-                    ><br></q-toggle>
-                </div>
-            </div>
-
-            <!-- Button -->
-            <div v-if='option.value.type == "button"'>
-                <div>
-                    <div class='text-subtitle2 text-grey-6 q-mb-md' v-if='option.tooltip' v-html='option.tooltip'></div>
-                    <q-btn color='primary' outline :label='option.label' @click='$1t.send("configCallback", { platform: platform.id, config: $1t.config.value.custom[platform.id], id: option.id })'></q-btn>
-                </div>
-            </div>
-
         </div>
+    </section>
 
-        <!-- Separator -->
-        <q-separator class='q-mx-auto' :style='"max-width: 513px; margin-top: 40px; margin-bottom: 35px"' inset color="dark"/>
-    </div>
-
-    <!-- No settings available -->
-    <div v-if='platforms.length == 0 && !spotify'>
-        <div class='text-subtitle2 q-my-md text-grey-4' v-if='!$1t.settings.value.autoTaggerSinglePage'>
-            No platform specific settings available for the selected platform(s)
-        </div>
-    </div>
-
-    <!-- Spotify -->
-    <div v-if='spotify'>  
-        <div class='text-subtitle2 text-bold text-uppercase text-grey-4' style='margin-top: 35px; margin-bottom: -16px'>Spotify</div>
-        <div class='justify-center' style='max-width: 836px; margin: auto;'>
-            <SpotifyLogin v-if='!$1t.spotify.value.authorized'></SpotifyLogin>
-        </div>
-        <div v-if='$1t.spotify.value.authorized'>
-            <div class='q-mt-lg text-h7 text-primary'>You are successfully logged in to Spotify</div>
-        </div>
-        <br>
-    </div>
-
-
+    <!-- Spotify needs the user's own developer app -->
+    <section v-if='spotify'>
+        <div class='ft-label mb-2'>Spotify</div>
+        <div v-if='$1t.spotify.value.authorized' class='text-sm text-ft-text-2'>Signed in to Spotify.</div>
+        <SpotifyLogin v-else />
+    </section>
 </div>
 </template>
 
 <script lang='ts' setup>
+import { computed } from 'vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Slider } from '@/components/ui/slider';
+import { Switch } from '@/components/ui/switch';
+import OptionSelect from './flowtag/OptionSelect.vue';
 import TagFields from './TagFields.vue';
 import SpotifyLogin from './SpotifyLogin.vue';
 import { get1t } from '../scripts/onetagger';
-import { computed } from 'vue';
 
+/** Settings a platform declares for itself (sliders, selects, tag frames...) */
 const $1t = get1t();
 const spotify = computed(() => $1t.config.value.platforms.includes('spotify'));
 const platforms = computed(() => $1t.info.value.platforms
     .filter((p) => $1t.config.value.platforms.includes(p.platform.id) && p.platform.customOptions.options.length > 0)
     .map((p) => p.platform));
 
+function custom(platformId: string): Record<string, any> {
+    return $1t.config.value.custom[platformId];
+}
+
+function setOption(platformId: string, optionId: string, value: unknown) {
+    if (value === undefined) return;
+    $1t.config.value.custom[platformId][optionId] = value;
+}
+
+function callback(platformId: string, optionId: string) {
+    $1t.send('configCallback', { platform: platformId, config: $1t.config.value.custom[platformId], id: optionId });
+}
 </script>
+
+<style lang='scss' scoped>
+.option-help :deep(a) { color: var(--ft-text-2); text-decoration: underline; }
+</style>

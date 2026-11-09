@@ -1,18 +1,14 @@
-import { Dialog, DialogChainObject } from 'quasar';
 import { notify } from '@/lib/notify';
-import { alertDialog } from '@/lib/dialogs';
+import { alertDialog, confirmDialog } from '@/lib/dialogs';
 import { ref, Ref } from 'vue';
 import { AutotaggerConfig, AutotaggerPlatform, ConfigCallbackResponse, TaggerStatus } from './autotagger';
 import { Player } from './player';
 import { Settings } from './settings';
 import { Playlist, Spotify, wsUrl } from './utils';
 import { ManualTag } from './manualtag';
-import ExitDialog from '../components/ExitDialog.vue';
 import router from './router';
 import { getTagStore } from './tagstore';
 import { handleFlowKeys } from './flowkeys';
-import DevToolsVue from '../components/DevTools.vue';
-import PlatformsRepoVue from '../components/PlatformsRepo.vue';
 
 class OneTagger {
     // Singleton
@@ -35,8 +31,9 @@ class OneTagger {
     private wsPromiseResolve?: (_: any) => void;
     private wsPromise?;
 
-    // Dialog when loading platforms
-    loadingPlatformsDialog?: DialogChainObject;
+    // Startup: platforms still loading
+    /** True until the backend has sent the platform list (App.vue shows a blocking notice) */
+    platformsLoading: Ref<boolean> = ref(false);
 
     constructor() {
         // Singleton
@@ -83,7 +80,7 @@ class OneTagger {
 
             // Dev tools
             if (e.key == 'F3') {
-                Dialog.create({ component: DevToolsVue, class: 'flowtag-theme' });
+                window.dispatchEvent(new CustomEvent('flowtag-open-devtools'));
                 e.preventDefault();
                 e.stopPropagation();
                 return true;
@@ -268,28 +265,7 @@ class OneTagger {
             case 'loadPlatforms':
                 this.info.value.platforms = json.platforms;
                 this.send('defaultCustomPlatformSettings');
-                this.loadingPlatformsDialog!.hide();
-                this.loadingPlatformsDialog = undefined;
-                break;
-
-            // Show repo dialog
-            case 'repoManifest':
-                Dialog.create({
-                    component: PlatformsRepoVue,
-                    class: 'flowtag-theme',
-                    componentProps: {
-                        manifest: json.manifest
-                    }
-                });
-                break;
-
-            // Platform installed
-            case 'installPlatform':
-                let isOk = json.status == 'ok';
-                alertDialog({
-                    title: isOk ? 'Platform installed' : 'Failed to install platform',
-                    message: isOk ? 'Platform was installed successfully, press OK to continue' : json.error,
-                }).then(() => window.location.reload());
+                this.platformsLoading.value = false;
                 break;
 
             // Show notification
@@ -352,13 +328,12 @@ class OneTagger {
             case 'exit':
                 // AT
                 if (this.lock.value.locked && !this.taggerStatus.value.done) {
-                    Dialog.create({
-                        component: ExitDialog,
-                        class: 'flowtag-theme',
-                        persistent: true,
-                        ok: false,
-                        cancel: false,
-                    });
+                    confirmDialog({
+                        title: 'Tagging in progress',
+                        message: 'Tagging is still running. Exit anyway?',
+                        okLabel: 'Exit anyway',
+                        destructive: true,
+                    }).then((ok) => { if (ok) this.forceExit(); });
                 }
                 // Exit anyway
                 else {
@@ -459,14 +434,13 @@ class OneTagger {
     /// Load AT platforms
     loadPlatforms() {
         this.send('loadPlatforms');
-        this.loadingPlatformsDialog = Dialog.create({
-            title: 'Loading platforms...',
-            class: 'flowtag-theme',
-            progress: {},
-            persistent: true,
-            ok: false,
-            cancel: false,
-        });
+        this.platformsLoading.value = true;
+    }
+
+    /// Exit while the tagger holds the main connection: use a fresh socket
+    forceExit() {
+        const ws = new WebSocket(wsUrl());
+        ws.onopen = () => ws.send(JSON.stringify({ action: 'exit' }));
     }
 
     /// Stop the tagging process

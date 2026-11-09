@@ -33,6 +33,10 @@
     --ft-danger: #e5534b;
     // Playback is data: the one green in the chrome marks the playing track
     --ft-playing: #30a46c;
+    // Player waveform: played / hover-scrub range / rest
+    --wave-played: var(--ft-text);
+    --wave-hover: rgba(237, 237, 239, 0.44);
+    --wave-rest: #3a3c3c;
 
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
     color: var(--ft-text);

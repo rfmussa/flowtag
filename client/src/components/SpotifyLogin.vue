@@ -1,22 +1,34 @@
 <template>
-<div>
-    <div class='text-subtitle1 text-grey-6 q-mt-md'>
-        <span class='text-grey-4'>1.</span> Open 
-            <span class='clickable doc-link' @click='$1t.url("https://developer.spotify.com/dashboard")'>Spotify Developer<span class="q-ml-xs text-caption margin-open"><q-icon name='mdi-open-in-new'></q-icon></span></span> account & create an app<br>
-        <span class='text-grey-4'>2.</span> In settings set the Callback URL to: <span class='selectable text-grey-4'>{{redirectUrl}}</span> <br>
-        <span class='text-grey-4'>3.</span> Enter your Client ID & Client Secret below &<span class='keybind-icon q-px-sm text-caption text-bold'>CLICK</span> login <br>
-        <span @click='$1t.url("https://youtu.be/i0q5qWQSH9Y")' class='clickable doc-link text-caption text-uppercase'><span class="q-mr-xs text-subtitle1 margin-yt"><q-icon name='mdi-youtube'></q-icon></span>video demo</span>
-    </div>
-    <!-- Client ID and secret field -->
-    <form class='row q-mt-xl auth-container justify-evenly'>
-        <q-input v-model='$1t.spotify.value.clientId' outlined label='Client ID' class='col-5 q-pr-xs'></q-input>
-        <q-input v-model='$1t.spotify.value.clientSecret' :type='$1t.info.value.os == "macos" ? "text" : "password"' outlined label='Client Secret' class='col-5 q-pr-xs q-pl-sm'></q-input>
-        <q-btn push color='primary' class='text-black q-ml-sm' @click='authorize'>Login</q-btn>
+<div class='flex flex-col gap-3'>
+    <ol class='list-decimal pl-5 text-sm text-ft-text-2 leading-relaxed'>
+        <li>
+            Create an app in the
+            <button type='button' class='inline-flex items-center gap-0.5 underline text-ft-text cursor-pointer' @click='$1t.url("https://developer.spotify.com/dashboard")'>
+                Spotify Developer dashboard<ExternalLinkIcon class='size-3' />
+            </button>
+        </li>
+        <li>Set its redirect URL to <span class='ft-mono text-ft-text select-text'>{{ redirectUrl }}</span></li>
+        <li>Paste the app's Client ID and Client Secret, then sign in</li>
+    </ol>
+    <form class='flex items-center gap-2' @submit.prevent='authorize'>
+        <Input v-model='$1t.spotify.value.clientId' placeholder='Client ID' aria-label='Spotify Client ID' spellcheck='false' class='flex-1' />
+        <Input
+            v-model='$1t.spotify.value.clientSecret'
+            :type='$1t.info.value.os == "macos" ? "text" : "password"'
+            placeholder='Client Secret'
+            aria-label='Spotify Client Secret'
+            spellcheck='false'
+            class='flex-1'
+        />
+        <Button type='submit' variant='default' :disabled='!$1t.spotify.value.clientId || !$1t.spotify.value.clientSecret'>Sign in</Button>
     </form>
 </div>
 </template>
 
 <script lang='ts' setup>
+import { ExternalLinkIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { get1t } from '../scripts/onetagger.js';
 import { spotifyUrl } from '../scripts/utils';
 
@@ -34,21 +46,3 @@ function authorize() {
     $1t.saveSettings();
 }
 </script>
-
-<style>
-
-.doc-link {
-    color: var(--q-primary) !important;  
-    text-decoration-line: underline;  
-}
-
-.doc-link:hover {
-    color: #f0f0f0 !important; 
-    text-decoration-line: underline;   
-}
-
-.margin-open {
-    margin-right: 2px;    
-}
-
-</style>

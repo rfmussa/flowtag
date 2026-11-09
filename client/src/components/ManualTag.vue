@@ -1,181 +1,102 @@
 <template>
-<q-dialog v-model='show' persistent>
-<q-card style='min-width: 650px; min-height: 50vh;' class='q-pa-lg flowtag-theme'>
+<Dialog :open='show' @update:open='(o: boolean) => { if (!o) exit(); }'>
+    <DialogContent
+        class='flex flex-col gap-0 p-0 sm:max-w-[700px] h-[min(82vh,760px)]'
+        :show-close-button='false'
+        @interact-outside.prevent
+        @escape-key-down='(e: KeyboardEvent) => { if (saving) e.preventDefault(); }'
+    >
+        <!-- Header -->
+        <div class='flex items-center gap-3 px-5 pt-4 pb-3 border-b border-ft-line'>
+            <DialogTitle>Online lookup</DialogTitle>
+            <DialogDescription class='sr-only'>Search metadata platforms for this track and apply a match</DialogDescription>
+            <div class='flex-1'></div>
+            <div class='lookup-path ft-mono truncate text-ft-text-3' :title='path'>{{ path }}</div>
+        </div>
 
-    <!-- Title -->
-    <q-card-section>
-        <div class='text-subtitle2 q-mb-xs text-bold text-center text-primary'>MANUAL TAG</div>
-        <div class='monospace text-subtitle2 text-grey-6 text-center'>{{ path }}</div>
-    </q-card-section>
-
-    <!-- Body -->
-    <q-card-section>
-        <div class='manualtag-results bg-dark q-pt-md'>
-
-            <!-- Results list -->
-            <q-list v-if='$1t.manualTag.value.busy || $1t.manualTag.value.done'>
-
-                <!-- Empty results -->
-                <div v-if='$1t.manualTag.value.done && $1t.manualTag.value.matches.length == 0' class='text-center'>
-                    <div class='text-h6 text-grey-4 q-mt-md'>No results!</div>
-                    <div class='text-subtitle2 text-grey-6 q-mt-md'>Try enabling more platforms or correcting <q-badge  outline color='grey-8'><span class='text-uppercase text-grey-4'>Title</span></q-badge> + <q-badge  outline color='grey-8'><span class='text-uppercase text-grey-4'>Artist</span></q-badge> tag</div>
+        <!-- Body -->
+        <div class='flex-1 min-h-0 overflow-y-auto px-3 py-3'>
+            <!-- Results -->
+            <template v-if='mt.busy || mt.done'>
+                <div v-if='mt.busy && !mt.done' class='flex items-center gap-2 px-3 pb-2 text-xs text-ft-text-3'>
+                    <LoaderCircleIcon class='size-3.5 animate-spin' />
+                    Searching {{ $1t.config.value.platforms.length }} platform(s)…
                 </div>
+                <div v-if='mt.done && mt.matches.length === 0' class='flex flex-col items-center justify-center text-center h-full py-10'>
+                    <SearchXIcon class='size-9 text-ft-text-3 mb-3' :stroke-width='1.25' />
+                    <div class='text-[15px] font-semibold text-ft-text'>No results</div>
+                    <div class='mt-1 text-sm text-ft-text-3 max-w-[340px]'>
+                        Enable more platforms, or correct the track's title and artist (E) and search again.
+                    </div>
+                </div>
+                <LookupMatch
+                    v-for='(match, i) in mt.matches'
+                    :key='i'
+                    :match='match'
+                    :selected='selected.includes(match)'
+                    @toggle='toggleMatch(match)'
+                />
+            </template>
 
-                <!-- Matches -->
-                <q-item v-for='(match, i) in $1t.manualTag.value.matches' :key='i'>
-                    <q-item-section avatar>
-                        <div class='row items-center'>
-                            <div>
-                                <div class='q-pr-sm'>
-                                    <q-checkbox
-                                        :model-value="selected.includes(match)"
-                                        @update:model-value="(v: any) => toggleMatch(match)"
-                                    ></q-checkbox>
-                                </div>
-                                <!-- Open URL -->
-                                <q-btn 
-                                    icon='mdi-open-in-new' 
-                                    flat 
-                                    round 
-                                    size='sm' 
-                                    color='grey-7'
-                                    style='margin-left: 5px;'
-                                    @click='$1t.url(match.track.url)'                                    
-                                    v-if='match.track.url'
-                                ></q-btn>
-                            </div>
-                            <q-img 
-                                width='48px' 
-                                height='48px'
-                                :src='match.track.thumbnail??match.track.art'
-                                :placeholder-src="PLACEHOLDER_IMG"
-                            ></q-img>
-                        </div>
-                    </q-item-section>
-                    <q-item-section>
-                        <q-item-label overline class='text-grey-4'>
-                            <span>{{ match.track.platform.toUpperCase() }}</span>
-                            <span class='q-px-sm' :class='accuracyColor(match.accuracy)'><span class='text-subtitle3'>{{ (match.accuracy * 100.0).toFixed(2) }}%</span></span>
-                            <span v-if='match.reason != "fuzzy"'>{{ match.reason.toUpperCase() }}</span>
-                        </q-item-label>
-                        <q-item-label class='title-span text-grey-6 text-weight-medium'>{{ match.track.artists.join(", ") }}
-                            <span class='text-grey-4 text-weight-medium'> {{ match.track.title }}</span>
-                            <span class='text-grey-4' v-if='match.track.version'> ({{ match.track.version }})</span>
-                        </q-item-label>
-                        <q-item-label class='text-grey-6' v-if='match.track.album'><q-badge  outline color='grey-9'><span class='text-uppercase text-grey-6'>Album</span></q-badge> <span class='text-caption text-weight-medium text-grey-5'>{{ match.track.album }}</span></q-item-label>
-                        <q-item-label class='text-grey-6'>
-                            <span v-if='match.track.genres.length > 0'>
-                                <q-badge outline color='grey-9' class='q-mr-xs'><span class='text-uppercase text-grey-6'>Genre</span></q-badge>
-                                <span class='text-caption text-weight-bold text-grey-4'>{{ match.track.genres.join(", ") }}</span>
-                            </span>
-                            <span v-if='match.track.bpm'>
-                                <q-badge outline color='grey-9' class='q-mx-xs'><span class='text-uppercase text-grey-6'>BPM</span></q-badge>
-                                <span class='text-caption monospace text-weight-medium text-grey-4'>{{ match.track.bpm }}</span>
-                            </span>
-                            <span v-if='match.track.key'>
-                                <q-badge outline color='grey-9' class='q-mx-xs'><span class='text-uppercase text-grey-6'>Key</span></q-badge>
-                                <span class='text-caption monospace text-weight-medium' :style='keyColorStyle(match.track.key)'>{{ match.track.key }}</span>
-                            </span>
-                            <br>
-                            <span v-if='match.track.release_date'>
-                                <q-badge outline color='grey-9' class='q-mr-xs'><span class='text-uppercase text-grey-6'>Release Date</span></q-badge>
-                                <span class='text-caption monospace text-weight-medium text-grey-4'>{{ match.track.release_date }}</span>
-                            </span>
-                        </q-item-label>
-                    </q-item-section>
-                </q-item>
-            </q-list>
-
-            <!-- Config -->
-            <div v-else>
-                <div class='q-mt-md text-subtitle2 text-bold text-center text-primary'>PLATFORMS</div>
-                <autotagger-platforms dense></autotagger-platforms>
-                <autotagger-tags manual-tag></autotagger-tags>
-                <autotagger-platform-specific class='q-mt-lg q-px-lg'></autotagger-platform-specific>
+            <!-- Search settings -->
+            <div v-else class='flex flex-col gap-5 px-2'>
+                <section>
+                    <div class='ft-label mb-2'>Platforms <span class='normal-case tracking-normal font-normal'>· drag to set priority</span></div>
+                    <AutotaggerPlatforms />
+                </section>
+                <section>
+                    <div class='ft-label mb-2'>Tags to fetch</div>
+                    <AutotaggerTags />
+                </section>
+                <AutotaggerPlatformSpecific />
             </div>
-
         </div>
 
-        <!-- Errors -->
-        <div v-if='$1t.manualTag.value.errors.length > 0' class='text-center text-red text-body2 q-pt-sm clickable' @click='errorList = true'>
-            Some platforms failed to search.<span class='keybind-icon q-px-sm text-caption text-bold'>CLICK</span> here to see details.
+        <!-- Footer -->
+        <div class='flex items-center gap-2 px-5 py-3 border-t border-ft-line'>
+            <Popover v-if='mt.errors.length > 0'>
+                <PopoverTrigger as-child>
+                    <Button size='sm' class='text-ft-danger hover:text-ft-danger'>
+                        <CircleAlertIcon class='size-3.5' />{{ mt.errors.length }} platform(s) failed
+                    </Button>
+                </PopoverTrigger>
+                <PopoverContent align='start' side='top' class='w-[420px] max-h-[300px] overflow-y-auto'>
+                    <div v-for='(error, i) in mt.errors' :key='i' class='text-xs text-ft-text-2 mb-1.5 break-words'>
+                        <span class='ft-mono text-ft-text uppercase'>{{ error.platform }}</span>: {{ error.error }}
+                    </div>
+                </PopoverContent>
+            </Popover>
+            <div class='flex-1'></div>
+            <Button v-if='!saving' @click='exit'>Close</Button>
+            <Button v-if='!mt.done' variant='default' :disabled='mt.busy || $1t.config.value.platforms.length === 0' @click='start'>
+                <LoaderCircleIcon v-if='mt.busy' class='size-3.5 animate-spin' />
+                Search
+            </Button>
+            <Button v-if='selected.length > 0' variant='default' :disabled='saving' @click='apply'>
+                <LoaderCircleIcon v-if='saving' class='size-3.5 animate-spin' />
+                Apply {{ selected.length > 1 ? `${selected.length} matches` : 'match' }}
+            </Button>
         </div>
-
-    </q-card-section>
-
-    <!-- Actions -->    
-    <q-card-section class='row'>
-        <q-space></q-space>
-        <!-- Cancel / close -->
-        <div class='q-px-sm'>
-            <q-btn flat color='red' @click='exit' v-if='!saving'>Close</q-btn>
-        </div>
-        <!-- Start tagging -->
-        <div class='q-px-sm' v-if='!$1t.manualTag.value.done'>
-            <q-btn 
-                flat 
-                color='primary' 
-                @click='start' 
-                :disable='$1t.manualTag.value.busy && !$1t.manualTag.value.done' 
-                :loading='$1t.manualTag.value.busy'
-            >Start</q-btn>
-        </div>
-        <!-- Apply -->
-        <div class='q-px-sm' v-if='selected.length > 0'>
-            <q-btn 
-                flat 
-                color='primary' 
-                @click='apply'
-                :disable='saving'
-                :loading='saving'
-            >Apply</q-btn>
-        </div>
-
-    </q-card-section>
-
-</q-card>
-</q-dialog>
-
-<!-- Error list -->
-<q-dialog v-model='errorList'>
-<q-card style='min-width: 420px;' class='flowtag-theme'>
-    <!-- Title -->
-    <q-card-section>
-        <div class='q-mt-md text-subtitle2 text-bold text-center text-red'>ERRORS</div>
-    </q-card-section>
-
-    <!-- Errors -->
-    <q-card-section>
-        <div v-for='error in $1t.manualTag.value.errors' class='text-subtitle2'>
-            <span class="text-grey-5"><span class='text-grey-4 monospace'>{{ error.platform.toUpperCase() }}</span>: {{ error.error }}</span>
-        </div>
-    </q-card-section>
-
-    <!-- Hide -->
-    <q-card-section class='row'>
-        <q-space></q-space>
-        <q-btn flat color='red' @click='errorList = false'>Close</q-btn>
-    </q-card-section>
-
-</q-card>
-</q-dialog>
-
-
+    </DialogContent>
+</Dialog>
 </template>
 
 <script lang='ts' setup>
-import { ref, toRefs, watch } from 'vue';
+import { computed, ref, toRefs, watch } from 'vue';
+import { CircleAlertIcon, LoaderCircleIcon, SearchXIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { notify } from '@/lib/notify';
+import { alertDialog } from '@/lib/dialogs';
 import { TrackMatch } from '../scripts/manualtag';
 import { get1t } from '../scripts/onetagger';
 import { AutotaggerConfig } from '../scripts/autotagger';
-import { useQuasar } from 'quasar';
 import AutotaggerPlatforms from './AutotaggerPlatforms.vue';
 import AutotaggerTags from './AutotaggerTags.vue';
 import AutotaggerPlatformSpecific from './AutotaggerPlatformSpecific.vue';
-import { keyColorStyle } from '../scripts/musickey';
-import { PLACEHOLDER_IMG } from '../scripts/utils';
+import LookupMatch from './flowtag/LookupMatch.vue';
 
-const $q = useQuasar();
 const $1t = get1t();
 const show = ref(false);
 const emit = defineEmits(['exit']);
@@ -185,7 +106,7 @@ const props = defineProps({
 const { path } = toRefs(props);
 const saving = ref(false);
 const selected = ref<TrackMatch[]>([]);
-const errorList = ref(false);
+const mt = computed(() => $1t.manualTag.value);
 let cachedConfig = {};
 
 /// Start manual tagger
@@ -209,80 +130,39 @@ function start() {
 
 /// Add or remove match
 function toggleMatch(match: TrackMatch) {
-    let i = selected.value.indexOf(match);
-    if (i != -1) {
-        selected.value.splice(i, 1);
-        return;
-    }
-    selected.value.push(match);
+    selected.value = selected.value.includes(match)
+        ? selected.value.filter((m) => m !== match)
+        : [...selected.value, match];
 }
 
 /// Exit manual tagger
 function exit() {
+    if (saving.value) return;
     $1t.manualTag.value.reset();
     selected.value = [];
-    saving.value = false;
     show.value = false;
     emit('exit');
-}
-
-/// Get accuracy color
-function accuracyColor(acc: number) {
-    if (acc == 1.0) return 'text-green';
-    if (acc > 0.85) return 'text-yellow';
-    return 'text-red';
 }
 
 /// Apply the matches
 async function apply() {
     saving.value = true;
     let response: any = await $1t.manualTag.value.apply(selected.value, path!.value!, cachedConfig as AutotaggerConfig);
-    // All ok
+    saving.value = false;
     if (response.status == 'ok') {
-        $q.notify({
-            message: "Track saved!",
-            timeout: 3000,
-            position: 'top-right'
-        });
-    // Show error
+        notify({ message: 'Track saved', timeout: 3000 });
     } else {
-        await new Promise((r, _) => {
-            $q.dialog({
-                title: 'Failed to save track',
-                message: response.error,
-                ok: true,
-                cancel: false
-            })
-            .onOk(() => r(true));
-        });
+        await alertDialog({ title: 'Failed to save track', message: String(response.error) });
     }
-
     exit();
 }
 
 // Show / Hide
 watch(path!, () => {
-    // to bool
     show.value = !!(path!.value);
 });
-
-
 </script>
 
 <style lang='scss' scoped>
-.manualtag-results {
-    min-height: 50vh;
-    height: 50vh;
-    overflow-y: scroll;
-    overflow-x: hidden;
-    border-radius: 8px;
-    background-color: #99999910 !important
-}
-.keybind-icon {
-    padding: 4px;
-    border-radius: 2px;
-    background: #262828;
-    margin-bottom: 4px;
-    margin-left: 4px;
-}
+.lookup-path { max-width: 60%; direction: rtl; text-align: right; }
 </style>
