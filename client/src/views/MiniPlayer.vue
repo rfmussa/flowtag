@@ -10,17 +10,17 @@
         </div>
         <div class='mini-transport' @mousedown.stop>
             <button type='button' class='ft-btn icon-only' aria-label='Previous' @click='remote("prev")'>
-                <q-icon name='mdi-skip-previous' size='18px' />
+                <SkipBackIcon class='size-[18px]' />
             </button>
             <button type='button' class='ft-btn icon-only' aria-label='Play/pause' @click='remote("playPause")'>
-                <q-icon :name='np?.playing ? "mdi-pause" : "mdi-play"' size='20px' />
+                <PauseIcon v-if='np?.playing' class='size-5' /><PlayIcon v-else class='size-5' />
             </button>
             <button type='button' class='ft-btn icon-only' aria-label='Next' @click='remote("next")'>
-                <q-icon name='mdi-skip-next' size='18px' />
+                <SkipForwardIcon class='size-[18px]' />
             </button>
         </div>
         <button type='button' class='ft-btn icon-only mini-close' aria-label='Close miniplayer' @mousedown.stop @click='closeMini'>
-            <q-icon name='mdi-close' size='14px' />
+            <XIcon class='size-3.5' />
         </button>
     </div>
 
@@ -42,6 +42,7 @@
 </template>
 
 <script lang='ts' setup>
+import { PauseIcon, PlayIcon, SkipBackIcon, SkipForwardIcon, XIcon } from '@lucide/vue';
 import { computed, onMounted, ref } from 'vue';
 import { useEventListener, useIntervalFn } from '@vueuse/core';
 import { get1t } from '../scripts/onetagger';

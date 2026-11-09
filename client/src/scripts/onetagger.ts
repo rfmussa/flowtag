@@ -1,5 +1,6 @@
 import { Dialog, DialogChainObject } from 'quasar';
 import { notify } from '@/lib/notify';
+import { alertDialog } from '@/lib/dialogs';
 import { ref, Ref } from 'vue';
 import { AutotaggerConfig, AutotaggerPlatform, ConfigCallbackResponse, TaggerStatus } from './autotagger';
 import { Player } from './player';
@@ -107,12 +108,7 @@ class OneTagger {
     // Display error to the user
     onError(msg: any) {
         // Show error dialog
-        Dialog.create({
-            title: 'Error',
-            message: `${msg}`,
-            class: 'flowtag-theme',
-            ok: { flat: true }
-        });
+        alertDialog({ title: 'Error', message: `${msg}` });
 
         console.error(msg);
     }
@@ -290,17 +286,10 @@ class OneTagger {
             // Platform installed
             case 'installPlatform':
                 let isOk = json.status == 'ok';
-                Dialog.create({
+                alertDialog({
                     title: isOk ? 'Platform installed' : 'Failed to install platform',
                     message: isOk ? 'Platform was installed successfully, press OK to continue' : json.error,
-                    persistent: true,
-                    cancel: false,
-                    class: 'flowtag-theme',
-                    ok: { flat: true }
-                })
-                .onOk(() => {
-                    window.location.reload();
-                });
+                }).then(() => window.location.reload());
                 break;
 
             // Show notification

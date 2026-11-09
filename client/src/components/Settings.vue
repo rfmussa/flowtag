@@ -1,40 +1,41 @@
 <template>
-<q-dialog v-model='open' @hide='close()'>
-    <q-card flat class='settings-card flowtag-theme'>
+<Dialog :open='open' @update:open='onOpenChange'>
+    <DialogContent class='sm:max-w-[540px] max-h-[82vh] gap-0 px-6 pt-[18px] pb-[22px]' :show-close-button='false'>
+        <DialogDescription class='sr-only'>Playback, keyboard, column and lookup preferences</DialogDescription>
 
         <div class='settings-head'>
-            <span class='ft-title'>Settings</span>
+            <DialogTitle>Settings</DialogTitle>
             <span class='head-actions'>
-                <button type='button' class='ft-btn' title='Copy log + settings for debugging' @click='copyDebugReport'>
-                    <q-icon name='mdi-clipboard-text-outline' size='14px' />
+                <Button title='Copy log + settings for debugging' @click='copyDebugReport'>
+                    <ClipboardListIcon class='size-3.5' />
                     Debug report
-                </button>
-                <button type='button' class='ft-btn' @click='$1t.send("openSettingsFolder")'>
-                    <q-icon name='mdi-folder-outline' size='14px' />
+                </Button>
+                <Button @click='$1t.send("openSettingsFolder")'>
+                    <FolderOpenIcon class='size-3.5' />
                     Data folder
-                </button>
+                </Button>
             </span>
         </div>
 
         <div class='settings-body'>
             <!-- Playback -->
             <div class='ft-label section'>Playback</div>
-            <div class='row-item'>
+            <label class='row-item'>
                 <span class='row-label'>Start playback when selecting a row <span class='sub'>off: Space, double-click and D play</span></span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.playOnSelect' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.playOnSelect' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>Keep playing when switching tracks</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.continuePlayback' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.continuePlayback' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>Resume playback after seeking</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.playOnSeek' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.playOnSeek' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>Advance to next track when playback ends</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.autoPlayNext' @update:model-value='save' />
-            </div>
+                <Switch v-model='$1t.settings.value.autoPlayNext' @update:model-value='save' />
+            </label>
 
             <!-- Keyboard -->
             <div class='ft-label section'>Keyboard</div>
@@ -54,28 +55,28 @@
             <!-- Columns -->
             <div class='ft-label section'>Track list columns</div>
             <div class='hint'>Title, artist and tags are always shown.</div>
-            <div v-for='col in COLUMN_OPTIONS' :key='col.key' class='row-item'>
+            <label v-for='col in COLUMN_OPTIONS' :key='col.key' class='row-item'>
                 <span class='row-label'>{{ col.label }}</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.flowtag.columns[col.key]' @update:model-value='save' />
-            </div>
+                <Switch v-model='$1t.settings.value.flowtag.columns[col.key]' @update:model-value='save' />
+            </label>
 
             <!-- Lookup -->
             <div class='ft-label section'>Lookup (M)</div>
-            <div class='row-item'>
+            <label class='row-item'>
                 <span class='row-label'>Single-page platform settings</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.autoTaggerSinglePage' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.autoTaggerSinglePage' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>Show lookup profiles</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.showAutoTaggerProfiles' @update:model-value='save' />
-            </div>
+                <Switch v-model='$1t.settings.value.showAutoTaggerProfiles' @update:model-value='save' />
+            </label>
 
             <!-- Experimental -->
             <div class='ft-label section'>Experimental</div>
-            <div class='row-item'>
+            <label class='row-item'>
                 <span class='row-label'>Audition analysis <span class='sub'>auto-gain, intro/drop markers, shift+space plays the drop</span></span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.flowtag.analysisEnabled' @update:model-value='save' />
-            </div>
+                <Switch v-model='$1t.settings.value.flowtag.analysisEnabled' @update:model-value='save' />
+            </label>
             <div v-if='$1t.settings.value.flowtag.analysisEnabled' class='row-item'>
                 <span class='row-label'>
                     <template v-if='store.analysisRun.value.running'>
@@ -83,38 +84,42 @@
                     </template>
                     <template v-else>Analyze unprocessed tracks <span class='sub'>loudness needs one full decode per track</span></template>
                 </span>
-                <button type='button' class='ft-btn ft-btn-primary' :disabled='store.analysisRun.value.running' @click='runAnalysis'>
+                <Button variant='default' :disabled='store.analysisRun.value.running' @click='runAnalysis'>
                     {{ store.analysisRun.value.running ? 'Running…' : 'Analyze library' }}
-                </button>
+                </Button>
             </div>
 
             <!-- Advanced -->
             <div class='ft-label section'>Advanced</div>
-            <div class='row-item'>
+            <label class='row-item'>
                 <span class='row-label'>Webview devtools <span class='sub'>takes effect after restart</span></span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.devtools' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.devtools' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>In-app folder browser</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.nonNativeBrowser' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.nonNativeBrowser' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>Open tracks in external audio player</span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.externalAudioPlayer' @update:model-value='save' />
-            </div>
-            <div class='row-item'>
+                <Switch v-model='$1t.settings.value.externalAudioPlayer' @update:model-value='save' />
+            </label>
+            <label class='row-item'>
                 <span class='row-label'>Client-side player <span class='sub'>server mode</span></span>
-                <q-toggle dense size='sm' v-model='$1t.settings.value.clientSidePlayer' @update:model-value='save' />
-            </div>
+                <Switch v-model='$1t.settings.value.clientSidePlayer' @update:model-value='save' />
+            </label>
         </div>
 
-    </q-card>
-</q-dialog>
+    </DialogContent>
+</Dialog>
 </template>
 
 <script lang='ts' setup>
 import { ref, watch } from 'vue';
+import { ClipboardListIcon, FolderOpenIcon } from '@lucide/vue';
 import { notify } from '@/lib/notify';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 
 import { get1t } from '../scripts/onetagger';
 import { getTagStore } from '../scripts/tagstore';
@@ -245,6 +250,11 @@ function runAnalysis() {
     $1t.send('analysisRun');
 }
 
+function onOpenChange(value: boolean) {
+    open.value = value;
+    if (!value) close();
+}
+
 // Save on close
 function close() {
     $1t.saveSettings(false);
@@ -258,12 +268,6 @@ watch(props, () => {
 </script>
 
 <style lang='scss' scoped>
-.settings-card {
-    width: 540px;
-    max-width: 92vw;
-    max-height: 82vh;
-    padding: 18px 24px 22px;
-}
 .settings-head {
     display: flex;
     align-items: center;

@@ -1,40 +1,46 @@
 <template>
 <div>
+    <!-- Current bind (click to change) -->
+    <button
+        v-if='isSet'
+        type='button'
+        class='keybind-caps inline-flex items-center gap-1 h-7 px-1.5 rounded-md cursor-pointer hover:bg-ft-hover'
+        :aria-label='`Hotkey ${describe(value)}, click to change`'
+        @click='overlay = true'
+    >
+        <kbd v-for='cap in caps(value)' :key='cap' class='ft-kbd'>{{ cap }}</kbd>
+    </button>
+    <Hint v-else text='Set hotkey'>
+        <Button size='icon-sm' aria-label='Set hotkey' @click='overlay = true'><KeyboardIcon class='size-4' /></Button>
+    </Hint>
 
-    <!-- Icon -->
-    <q-btn round flat dense icon='mdi-keyboard-outline' @click='overlay = true' v-if='!isSet'></q-btn>
-    <div v-if='isSet' class='row q-pt-sm justify-around' @click='overlay = true'>
-        <q-icon v-if='value?.shift' name='mdi-apple-keyboard-shift' size='xs' class='col-2'></q-icon>
-        <q-icon v-if='value?.ctrl' name='mdi-apple-keyboard-control' size='xs' class='col-2'></q-icon>
-        <q-icon v-if='value?.alt' name='mdi-apple-keyboard-option' size='xs' class='col-2'></q-icon>
-        <q-icon :name='keyIcon(value)' size='xs' class='col-2'></q-icon>
-    </div>
-
-    <!-- Dialog picker -->
-    <q-dialog @keydown='keydown' v-model='overlay'>
-        <q-card class='flowtag-theme'>
-            <q-card-section>
-                <div class='text-h6'>Set keybind</div>
-            </q-card-section>
-            <q-card-section class='preview'>
-                <q-icon v-if='key.shift' name='mdi-apple-keyboard-shift' size='md' class='q-px-sm'></q-icon>
-                <q-icon v-if='key.ctrl' name='mdi-apple-keyboard-control' size='md' class='q-px-sm'></q-icon>
-                <q-icon v-if='key.alt' name='mdi-apple-keyboard-option' size='md' class='q-px-sm'></q-icon>
-                <q-icon :name='keyIcon(key)' size='md' class='q-px-sm'></q-icon>
-            </q-card-section>
-            <q-card-section class='text-right'>
-                <q-btn flat color='red' @click='reset' v-if='isSet'>Reset</q-btn>
-                <q-btn flat @click='close'>Cancel</q-btn>
-                <q-btn flat color='primary' v-if='key.key' @click='set'>Save</q-btn>
-            </q-card-section>
-        </q-card>
-    </q-dialog>
-
+    <!-- Recorder -->
+    <Dialog v-model:open='overlay' @update:open='(o: boolean) => { if (!o) key.clear(); }'>
+        <DialogContent class='sm:max-w-[300px]' @keydown='keydown'>
+            <DialogHeader>
+                <DialogTitle>Set keybind</DialogTitle>
+                <DialogDescription>Press a letter, digit or F-key, with modifiers if you like.</DialogDescription>
+            </DialogHeader>
+            <div class='flex items-center justify-center gap-1.5 min-h-[52px] rounded-md border border-ft-line bg-ft-panel' aria-live='polite'>
+                <kbd v-for='cap in caps(key)' :key='cap' class='ft-kbd keybind-preview'>{{ cap }}</kbd>
+                <span v-if='!key.key' class='text-xs text-ft-text-3'>Waiting for a key…</span>
+            </div>
+            <DialogFooter>
+                <Button v-if='isSet' variant='destructive' class='mr-auto' @click='reset'>Reset</Button>
+                <Button @click='close'>Cancel</Button>
+                <Button variant='default' :disabled='!key.key' @click='set'>Save</Button>
+            </DialogFooter>
+        </DialogContent>
+    </Dialog>
 </div>
 </template>
 
 <script lang='ts' setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, ref, watch } from 'vue';
+import { KeyboardIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import Hint from './flowtag/Hint.vue';
 import { Keybind } from '../scripts/utils.js';
 
 const props = defineProps({
@@ -44,11 +50,11 @@ const overlay = ref(false);
 const key = ref(new Keybind());
 const value = ref<Keybind | undefined>();
 const emit = defineEmits(['update:modelValue']);
-   
+
 function keydown(e: KeyboardEvent) {
-    //Save key
-    if (e.code.match(/F\d{1,2}/) || e.code.startsWith('Key') || e.code.startsWith("Digit") || e.code.startsWith("Numpad")) {
-        key.value.key = e.code.toLowerCase().replace("key", "").replace("digit", "").replace("numpad", "");
+    // Record letters, digits and F-keys; everything else (Esc, Tab...) keeps its meaning
+    if (e.code.match(/F\d{1,2}/) || e.code.startsWith('Key') || e.code.startsWith('Digit') || e.code.startsWith('Numpad')) {
+        key.value.key = e.code.toLowerCase().replace('key', '').replace('digit', '').replace('numpad', '');
         key.value.ctrl = (e.ctrlKey || e.metaKey);
         key.value.alt = e.altKey;
         key.value.shift = e.shiftKey;
@@ -65,7 +71,7 @@ function close() {
 // Save
 function set() {
     emit('update:modelValue', Object.assign(new Keybind(), key.value));
-    value.value = key.value;
+    value.value = Object.assign(new Keybind(), key.value);
     close();
 }
 
@@ -76,46 +82,32 @@ function reset() {
     close();
 }
 
-// Get icon for key
-function keyIcon(k?: Keybind) {
-    if (!k || !k.key) return '';
-    //Numeric
-    if (!isNaN(parseInt(k.key, 10))) {
-        return `mdi-numeric-${k.key}-box-outline`;
-    }
-    //F
-    if (k.key.toString().match(/f\d{1,2}/)) {
-        return `mdi-keyboard-${k.key}`;
-    }
-    return `mdi-alpha-${k.key}-box-outline`;
+/** Keycap labels, modifiers first in macOS order (⌘ stands for ctrl or cmd: Keybind.ctrl stores either) */
+function caps(k?: Keybind): string[] {
+    if (!k || !k.key) return [];
+    return [
+        ...(k.ctrl ? ['⌘'] : []),
+        ...(k.alt ? ['⌥'] : []),
+        ...(k.shift ? ['⇧'] : []),
+        String(k.key).toUpperCase(),
+    ];
 }
 
-// Is key set
-const isSet = computed(() => {
-    if (!value.value || !value.value.key) return false;
-    return true;
-});
+function describe(k?: Keybind): string {
+    return caps(k).join(' ');
+}
 
-// Update initial
-watch(props, () => {
-    if (props.modelValue)
-        value.value = Object.assign(new Keybind(), props.modelValue);
-    else
-        value.value = undefined;
-});
+const isSet = computed(() => !!value.value?.key);
 
-onMounted(() => {
-    if (props.modelValue)
-        value.value = Object.assign(new Keybind(), props.modelValue);
-    else
-        value.value = undefined;
-});
-
+watch(() => props.modelValue, (v) => {
+    value.value = v ? Object.assign(new Keybind(), v) : undefined;
+}, { immediate: true, deep: true });
 </script>
 
 <style>
-.preview {
-    text-align: center;
-    min-width: 200px;
+.flowtag-theme .ft-kbd.keybind-preview {
+    font-size: 13px;
+    padding: 5px 8px;
+    color: var(--ft-text);
 }
 </style>

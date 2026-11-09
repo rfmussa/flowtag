@@ -1,60 +1,66 @@
 <template>
-<q-dialog :model-value='modelValue' @update:model-value='emit("update:modelValue", $event)'>
-    <q-card flat class='export-card flowtag-theme'>
-        <div class='ft-title'>Export to comments</div>
-        <div class='export-sub'>
-            Appends tags as #hashtags to each file's comment field (searchable in
-            Rekordbox). Existing comment text is kept; re-exporting updates the block.
-        </div>
+<Dialog :open='modelValue' @update:open='emit("update:modelValue", $event)'>
+    <DialogContent class='sm:max-w-[440px] gap-0 px-[22px] pt-[18px] pb-4'>
+        <DialogHeader>
+            <DialogTitle>Export to comments</DialogTitle>
+            <DialogDescription class='mt-1.5'>
+                Appends tags as #hashtags to each file's comment field (searchable in
+                Rekordbox). Existing comment text is kept; re-exporting updates the block.
+            </DialogDescription>
+        </DialogHeader>
 
         <div class='ft-label section'>Scope</div>
         <div class='scope-row' :class='{ on: scope === "all" }' @click='scope = "all"'>
-            <q-icon name='mdi-music-box-multiple-outline' size='14px' />
+            <LibraryIcon class='scope-icon' />
             <span>Whole library</span>
             <span class='scope-count ft-num'>{{ store.tracks.value.length.toLocaleString() }}</span>
         </div>
         <div class='scope-row' :class='{ on: scope === "playlist", dim: store.playlists.value.length === 0 }' @click='pickPlaylist'>
-            <q-icon name='mdi-playlist-music' size='14px' />
+            <ListMusicIcon class='scope-icon' />
             <span>Playlist</span>
-            <q-select
+            <OptionSelect
                 v-if='store.playlists.value.length > 0'
                 v-model='playlistId'
                 :options='playlistOptions'
-                dense options-dense borderless emit-value map-options
-                class='scope-select'
-                popup-content-class='flowtag-theme ft-pop'
+                label='Playlist'
+                placeholder='Pick a playlist'
+                size='sm'
+                trigger-class='ml-auto min-w-[150px]'
                 @update:model-value='scope = "playlist"'
-                @click.stop
             />
             <span v-else class='scope-count'>none yet</span>
         </div>
         <div class='scope-row' :class='{ on: scope === "tag" }' @click='pickTag'>
-            <q-icon name='mdi-tag-outline' size='14px' />
+            <TagIcon class='scope-icon' />
             <span>Tag</span>
-            <q-select
+            <OptionSelect
                 v-model='tagId'
                 :options='tagOptions'
-                dense options-dense borderless emit-value map-options
-                class='scope-select'
-                popup-content-class='flowtag-theme ft-pop'
+                label='Tag'
+                placeholder='Pick a tag'
+                size='sm'
+                trigger-class='ml-auto min-w-[150px]'
                 @update:model-value='scope = "tag"'
-                @click.stop
             />
         </div>
 
-        <div class='export-actions'>
-            <button type='button' class='ft-btn' @click='emit("update:modelValue", false)'>Cancel</button>
-            <button type='button' class='ft-btn ft-btn-primary' :disabled='exportCount === 0' @click='run'>
+        <DialogFooter class='mt-4'>
+            <Button @click='emit("update:modelValue", false)'>Cancel</Button>
+            <Button variant='default' :disabled='exportCount === 0' @click='run'>
                 Export {{ exportCount.toLocaleString() }} track(s)
-            </button>
-        </div>
-    </q-card>
-</q-dialog>
+            </Button>
+        </DialogFooter>
+    </DialogContent>
+</Dialog>
 </template>
 
 <script lang='ts' setup>
 import { computed, ref } from 'vue';
+import { LibraryIcon, ListMusicIcon, TagIcon } from '@lucide/vue';
 import { notify } from '@/lib/notify';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import OptionSelect from './OptionSelect.vue';
 
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore } from '../../scripts/tagstore';
@@ -110,17 +116,6 @@ function run() {
 </script>
 
 <style lang='scss' scoped>
-.export-card {
-    width: 440px;
-    max-width: 92vw;
-    padding: 18px 22px 16px;
-}
-.export-sub {
-    font-size: 12px;
-    color: var(--ft-text-3);
-    line-height: 1.5;
-    margin: 6px 0 2px;
-}
 .section { margin: 14px 0 6px; }
 .scope-row {
     display: flex;
@@ -133,17 +128,10 @@ function run() {
     color: var(--ft-text-2);
     cursor: default;
 
-    .q-icon { color: var(--ft-text-3); }
+    .scope-icon { width: 14px; height: 14px; color: var(--ft-text-3); flex-shrink: 0; }
     &:hover { background: var(--ft-hover); }
     &.on { background: var(--ft-raised); color: var(--ft-text); box-shadow: inset 0 0 0 1px var(--ft-line-strong); }
     &.dim { opacity: 0.55; }
     .scope-count { margin-left: auto; font-size: 11px; color: var(--ft-text-3); }
-    .scope-select { margin-left: auto; min-width: 150px; }
-}
-.export-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 16px;
 }
 </style>

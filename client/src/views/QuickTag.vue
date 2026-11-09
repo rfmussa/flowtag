@@ -1,57 +1,58 @@
 <template>
-<div class='flowtag flowtag-theme column no-wrap'>
+<div class='flowtag flowtag-theme flex flex-col'>
 
     <!-- Header -->
-    <div class='header-bar row items-center no-wrap'>
+    <div class='header-bar flex items-center'>
         <FolderManager />
-        <ScanStatus class='q-ml-sm' />
+        <ScanStatus class='ml-2' />
 
-        <div class='seg q-ml-md' role='group' aria-label='Scope'>
+        <div class='seg ml-4' role='group' aria-label='Scope'>
             <button type='button' class='seg-btn' :class='{on: !store.untaggedOnly.value}' @click='setUntagged(false, $event)'>All</button>
             <button type='button' class='seg-btn' :class='{on: store.untaggedOnly.value}' @click='setUntagged(true, $event)'>Untagged</button>
         </div>
 
-        <q-select
+        <OptionSelect
             v-model='store.sortBy.value'
             :options='sortOptions'
-            dense options-dense borderless emit-value map-options
-            class='q-ml-sm sort-select'
-            popup-content-class='flowtag-theme ft-pop'
+            label='Sort by'
+            trigger-class='ml-2 border-transparent bg-transparent hover:bg-ft-hover hover:border-transparent text-ft-text-2 font-medium h-[26px] pl-2.5 pr-1.5'
         />
         <button type='button' class='ft-btn dir-btn' :aria-label='store.sortDesc.value ? "Sort descending" : "Sort ascending"' @click='toggleSortDir'>
-            <q-icon :name='store.sortDesc.value ? "mdi-arrow-down-thin" : "mdi-arrow-up-thin"' size='15px' />
+            <ArrowDownIcon v-if='store.sortDesc.value' class='size-[15px]' />
+            <ArrowUpIcon v-else class='size-[15px]' />
         </button>
 
         <!-- Active tag filters -->
         <template v-if='store.filterTagIds.value.length > 0'>
-            <span v-for='tagId in store.filterTagIds.value' :key='tagId' class='flowtag-chip filter-chip q-ml-sm'>
+            <span v-for='tagId in store.filterTagIds.value' :key='tagId' class='flowtag-chip filter-chip ml-2'>
                 <span class='chip-dot' :style='{ background: store.tagById(tagId)?.color }'></span>
                 <span class='chip-name'>{{ store.tagById(tagId)?.name }}</span>
                 <button type='button' class='chip-x' :aria-label='`Stop filtering by ${store.tagById(tagId)?.name}`' @click='store.toggleTagFilter(tagId)'>×</button>
             </span>
         </template>
 
-        <q-space />
+        <div class='flex-1'></div>
 
         <span class='counts ft-num'>{{ taggedCount.toLocaleString() }} <span class='counts-dim'>/ {{ store.tracks.value.length.toLocaleString() }} tagged</span></span>
-        <FlushIndicator class='q-ml-md' />
+        <FlushIndicator class='ml-4' />
 
-        <label class='ft-field search-field q-ml-md'>
-            <q-icon name='mdi-magnify' size='14px' class='search-icon' />
+        <label class='ft-field search-field ml-4'>
+            <SearchIcon class='search-icon size-3.5 shrink-0' />
             <input ref='filterEl' v-model='filterInput' type='text' placeholder='Filter tracks or tags' spellcheck='false' @keydown.escape.prevent='blurFilter' />
             <span v-if='!filterInput' class='ft-kbd'>F</span>
         </label>
 
-        <button type='button' class='ft-btn q-ml-sm' @click='openManager'>Manage</button>
+        <button type='button' class='ft-btn ml-2' @click='openManager'>Manage</button>
         <button type='button' class='ft-btn' @click='confirmExport' title="Write tags as #hashtags into each file's comment (Rekordbox-searchable)">Export</button>
         <button type='button' class='ft-btn icon-only' :aria-label='paletteOpen ? "Hide tag palette" : "Show tag palette"' @click='togglePalette'>
-            <q-icon :name='paletteOpen ? "mdi-dock-right" : "mdi-dock-left"' size='15px' />
+            <PanelRightCloseIcon v-if='paletteOpen' class='size-[15px]' />
+            <PanelRightOpenIcon v-else class='size-[15px]' />
         </button>
         <button v-if='hasShell' type='button' class='ft-btn icon-only' aria-label='Toggle miniplayer' @click='toggleMini'>
-            <q-icon name='mdi-picture-in-picture-bottom-right' size='15px' />
+            <PictureInPicture2Icon class='size-[15px]' />
         </button>
         <button type='button' class='ft-btn icon-only' aria-label='Settings' @click='openSettings'>
-            <q-icon name='mdi-cog-outline' size='15px' />
+            <SettingsIcon class='size-[15px]' />
         </button>
     </div>
 
@@ -59,17 +60,17 @@
     <div class='progress-line' aria-hidden='true'><div class='progress-fill' :style='{ width: progressPct + "%" }'></div></div>
 
     <!-- Playlists + track list + palette -->
-    <div class='col row no-wrap list-row'>
+    <div class='flex flex-1 list-row'>
         <PlaylistSidebar v-if='sidebarOpen' />
-        <div class='col list-area'>
-            <div v-if='store.folders.value.length === 0 && store.loaded.value' class='column items-center justify-center full-height empty-state'>
-                <q-icon name='mdi-music-box-multiple-outline' size='44px' class='empty-icon' />
+        <div class='flex-1 list-area'>
+            <div v-if='store.folders.value.length === 0 && store.loaded.value' class='flex flex-col items-center justify-center h-full empty-state'>
+                <LibraryIcon class='empty-icon size-11' :stroke-width='1.25' />
                 <div class='empty-title'>No music folders yet</div>
                 <div class='empty-sub'>Add a folder — a 20,000-track library scans in seconds.</div>
-                <FolderManager class='q-mt-md' />
+                <FolderManager class='mt-4' />
             </div>
-            <div v-else-if='!store.loaded.value' class='column items-center justify-center full-height'>
-                <q-spinner size='28px' color='grey-6' />
+            <div v-else-if='!store.loaded.value' class='flex items-center justify-center h-full'>
+                <LoaderCircleIcon class='size-7 animate-spin text-ft-text-3' aria-label='Loading library' />
             </div>
             <TrackList v-else @play='playTrack' />
         </div>
@@ -79,16 +80,15 @@
     </div>
 
     <!-- Tagging panel -->
-    <div class='tag-panel row items-center no-wrap'>
+    <div class='tag-panel flex items-center'>
         <template v-if='selected'>
             <div class='panel-meta'>
                 <span class='panel-title' :title='selected.title'>{{ selected.title }}</span>
                 <span class='panel-artist' :title='selected.artist'>{{ selected.artist }}</span>
             </div>
-            <span v-if='multiCount > 1' class='multi-badge ft-num'>
-                {{ multiCount }} tracks
-                <q-tooltip>Tag edits apply to all selected tracks — Esc clears</q-tooltip>
-            </span>
+            <Hint v-if='multiCount > 1' text='Tag edits apply to all selected tracks — Esc clears'>
+                <span class='multi-badge ft-num'>{{ multiCount }} tracks</span>
+            </Hint>
             <TagChips :tag-ids='selected.tagIds' :track-id='selected.id' removable class='panel-chips' />
             <TagInput :track-id='selected.id' />
             <button
@@ -97,7 +97,7 @@
                 :title='"Remove from " + activeManualPlaylist.name'
                 @click='removeFromPlaylist'
             >
-                <q-icon name='mdi-playlist-minus' size='16px' />
+                <ListMinusIcon class='size-4' />
             </button>
         </template>
         <div v-else class='panel-hint'>
@@ -127,9 +127,12 @@
 <script lang='ts' setup>
 import { computed, onMounted, ref, watch } from 'vue';
 import { useLocalStorage, watchDebounced } from '@vueuse/core';
-import { Dialog } from 'quasar';
+import {
+    ArrowDownIcon, ArrowUpIcon, LibraryIcon, ListMinusIcon, LoaderCircleIcon,
+    PanelRightCloseIcon, PanelRightOpenIcon, PictureInPicture2Icon, SearchIcon, SettingsIcon,
+} from '@lucide/vue';
 import { get1t } from '../scripts/onetagger';
-import { getTagStore, FlowTrack } from '../scripts/tagstore';
+import { getTagStore, FlowTrack, SortField } from '../scripts/tagstore';
 import { diag } from '../scripts/diag';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
@@ -140,6 +143,8 @@ import ExportDialog from '../components/flowtag/ExportDialog.vue';
 import TagChips from '../components/flowtag/TagChips.vue';
 import TagInput from '../components/flowtag/TagInput.vue';
 import TagPalette from '../components/flowtag/TagPalette.vue';
+import OptionSelect from '../components/flowtag/OptionSelect.vue';
+import Hint from '../components/flowtag/Hint.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
 import TrackInspector from '../components/flowtag/TrackInspector.vue';
 import ManualTag from '../components/ManualTag.vue';
@@ -178,7 +183,7 @@ function blurFilter() {
 const managerOpen = ref(false);
 const paletteOpen = useLocalStorage(PALETTE_KEY, true);
 
-const sortOptions = [
+const sortOptions: { label: string; value: SortField }[] = [
     { label: 'Path', value: 'path' },
     { label: 'Title', value: 'title' },
     { label: 'Artist', value: 'artist' },
@@ -305,14 +310,9 @@ onMounted(() => {
 
 <style lang='scss'>
 .flowtag {
-    // Full viewport minus the player footer (the only other chrome left);
-    // --player-h is set by PlayerBar (60px full, 36px compact)
-    height: calc(100vh - var(--player-h, 60px));
+    // Fills App's main area (everything above the docked player)
+    height: 100%;
     background: var(--ft-bg);
-
-    // Quiet the Quasar controls that remain inside the theme
-    .q-btn { color: var(--ft-text-2); }
-    .q-field--borderless .q-field__control { color: var(--ft-text-2); font-size: 12.5px; }
 }
 
 .flowtag .header-bar {
@@ -346,32 +346,6 @@ onMounted(() => {
     }
 }
 
-// The sort select masquerades as a ghost control (q-field chrome suppressed)
-.flowtag .sort-select {
-    min-width: 64px;
-    .q-field__control {
-        min-height: 26px;
-        height: 26px;
-        padding: 0 4px 0 10px;
-        border-radius: 6px;
-        transition: background 80ms ease-out;
-        &::before, &::after { display: none; }
-        &:hover { background: var(--ft-hover); }
-    }
-    .q-field__native {
-        color: var(--ft-text-2);
-        font-size: 12.5px;
-        font-weight: 500;
-        min-height: 26px;
-        padding: 0;
-    }
-    .q-field__append {
-        color: var(--ft-text-3);
-        min-height: 26px;
-        height: 26px;
-        .q-icon { font-size: 16px; }
-    }
-}
 .flowtag .dir-btn { padding: 0 5px; height: 26px; }
 .flowtag .icon-only { padding: 0 6px; }
 
@@ -460,5 +434,4 @@ onMounted(() => {
         .hint-sep { width: 14px; }
     }
 }
-.flowtag .full-height { height: 100%; }
 </style>

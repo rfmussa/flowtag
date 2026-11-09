@@ -1,43 +1,42 @@
 <template>
+    <TooltipProvider :delay-duration='400'>
     <div>
         <Toaster position='bottom-right' :duration='2500' />
-        <q-layout view="hHh lpR fFf" class="bg-background">
-            <!-- FlowTag IS the app: no header, no tabs -->
-            <q-page-container class="content">
+        <!-- FlowTag IS the app: no header, no tabs; the player docks at the bottom -->
+        <div class='flex flex-col h-screen bg-ft-bg'>
+            <main class='flex-1 min-h-0'>
                 <router-view v-if='$1t.info.value.ready'></router-view>
-                <!-- Loading -->
-                <div v-if='!$1t.info.value.ready' class='row justify-center items-center' style='height: 100vh'>
-                    <q-circular-progress indeterminate color='primary' size='64px'></q-circular-progress>
+                <div v-else class='flex h-full items-center justify-center'>
+                    <LoaderCircleIcon class='size-10 animate-spin text-ft-text-3' :stroke-width='1.5' aria-label='Loading' />
                 </div>
-            </q-page-container>
-
-            <!-- Player -->
-            <q-footer v-if='!isMini' class="flowtag-theme">
+            </main>
+            <footer v-if='!isMini' class='ft-footer flowtag-theme shrink-0'>
                 <PlayerBar v-if='$1t.info.value.ready'></PlayerBar>
-            </q-footer>
-        </q-layout>
+            </footer>
+        </div>
 
         <!-- Settings (opened from the FlowTag header gear) -->
         <Settings v-model="settings" @close="settingsClosed"></Settings>
 
-        <!-- Min size dialog -->
-        <q-dialog v-model="sizeDialog" persistent>
-            <q-card class='flowtag-theme'>
-                <q-card-section>
-                    <div class="text-h6">Warning</div>
-                </q-card-section>
-                <q-card-section>
-                    FlowTag requires at least a 1200x550 window. Please
-                    resize to continue.
-                </q-card-section>
-            </q-card>
-        </q-dialog>
+        <!-- Min size: blocks the app (and its shortcuts) until the window grows -->
+        <AlertDialog :open='sizeDialog'>
+            <AlertDialogContent @escape-key-down.prevent>
+                <AlertDialogHeader>
+                    <AlertDialogTitle>Window too small</AlertDialogTitle>
+                    <AlertDialogDescription>FlowTag needs at least a 1200×550 window. Resize to continue.</AlertDialogDescription>
+                </AlertDialogHeader>
+            </AlertDialogContent>
+        </AlertDialog>
+
+        <!-- confirm / prompt / alert requests from lib/dialogs -->
+        <DialogHost />
 
         <!-- Folder browser dialog -->
         <q-dialog v-model='$1t.folderBrowser.value.open'>
             <FolderBrowser v-if='$1t.folderBrowser.value.open' :base='$1t.folderBrowser.value.basePath'></FolderBrowser>
         </q-dialog>
     </div>
+    </TooltipProvider>
 </template>
 
 <script lang='ts' setup>
@@ -49,6 +48,10 @@ import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
 import { initDiag } from './scripts/diag';
 import { Toaster } from '@/components/ui/sonner';
+import { TooltipProvider } from '@/components/ui/tooltip';
+import { LoaderCircleIcon } from '@lucide/vue';
+import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+import DialogHost from '@/components/flowtag/DialogHost.vue';
 
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';
@@ -94,11 +97,3 @@ onMounted(() => {
 useEventListener(window, 'resize', onResize);
 useEventListener(window, 'flowtag-open-settings', openSettings);
 </script>
-
-<style lang='scss'>
-.content {
-    overflow-y: auto !important;
-    height: calc(100vh);
-    min-height: 100vh;
-}
-</style>

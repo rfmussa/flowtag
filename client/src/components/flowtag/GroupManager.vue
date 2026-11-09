@@ -1,8 +1,8 @@
 <template>
 <div class='group-manager'>
-    <div class='ft-label q-px-sm q-mb-xs'>Groups</div>
+    <div class='ft-label px-2 mb-1'>Groups</div>
 
-    <div v-if='ordered.length === 0' class='text-grey-6 text-caption q-px-sm q-py-xs'>No groups yet</div>
+    <div v-if='ordered.length === 0' class='px-2 py-1 text-xs text-ft-text-3'>No groups yet</div>
 
     <draggable
         v-model='ordered'
@@ -11,69 +11,46 @@
         @end='persistOrder'
     >
         <template #item='{ element: group }'>
-            <div class='group-row row items-center no-wrap q-px-sm q-py-xs'>
-                <q-icon name='mdi-drag' class='drag-handle q-mr-xs cursor-pointer' size='sm' />
-
-                <q-btn
-                    round unelevated size='sm'
-                    class='swatch q-mr-sm'
-                    :style='{ backgroundColor: group.color }'
-                    @click='blur'
-                >
-                    <q-popup-proxy class='flowtag-theme'>
-                        <q-color
-                            :model-value='group.color'
-                            no-header-tabs
-                            @change='(c: string) => setColor(group, c)'
-                        />
-                    </q-popup-proxy>
-                </q-btn>
-
-                <q-input
-                    :model-value='drafts[group.id] ?? group.name'
-                    dense borderless
-                    class='col'
-                    @update:model-value='(v: string | number | null) => drafts = { ...drafts, [group.id]: String(v ?? "") }'
+            <div class='group-row flex items-center gap-2 px-2 py-1'>
+                <GripVerticalIcon class='drag-handle size-4 shrink-0 text-ft-text-3' aria-label='Drag to reorder' />
+                <ColorPicker :model-value='group.color' @update:model-value='(c: string) => setColor(group, c)' />
+                <input
+                    :value='drafts[group.id] ?? group.name'
+                    class='ft-inline-input flex-1'
+                    spellcheck='false'
+                    title='Press Enter to rename'
+                    :aria-label='`Rename ${group.name}`'
+                    @input='drafts = { ...drafts, [group.id]: ($event.target as HTMLInputElement).value }'
                     @keyup.enter='rename(group)'
                     @blur='clearDraft(group.id)'
-                >
-                    <q-tooltip :delay='800'>Press Enter to rename</q-tooltip>
-                </q-input>
-
-                <q-btn flat round dense size='sm' icon='mdi-delete' color='red' @click='confirmDelete(group)'>
-                    <q-tooltip>Delete group</q-tooltip>
-                </q-btn>
+                />
+                <Hint text='Delete group'>
+                    <Button size='icon-sm' variant='destructive' :aria-label='`Delete ${group.name}`' @click='confirmDelete(group)'>
+                        <TrashIcon class='size-3.5' />
+                    </Button>
+                </Hint>
             </div>
         </template>
     </draggable>
 
     <!-- Add group -->
-    <div class='row items-center no-wrap q-px-sm q-pt-sm'>
-        <q-btn
-            round unelevated size='sm'
-            class='swatch q-mr-sm'
-            :style='{ backgroundColor: newColor }'
-            @click='blur'
-        >
-            <q-popup-proxy class='flowtag-theme'>
-                <q-color v-model='newColor' no-header-tabs />
-            </q-popup-proxy>
-        </q-btn>
-        <q-input
-            v-model='newName'
-            dense outlined
-            placeholder='New group name'
-            class='col q-mr-sm'
-            @keyup.enter='add'
-        />
-        <q-btn flat dense no-caps icon='mdi-plus' label='Add group' color='primary' :disable='!newName.trim()' @click='add' />
-    </div>
+    <form class='flex items-center gap-2 px-2 pt-2' @submit.prevent='add'>
+        <span class='w-4 shrink-0'></span>
+        <ColorPicker v-model='newColor' label='New group color' />
+        <Input v-model='newName' placeholder='New group name' class='flex-1' spellcheck='false' />
+        <Button type='submit' size='sm' class='text-ft-text' :disabled='!newName.trim()'><PlusIcon class='size-3.5' />Add group</Button>
+    </form>
 </div>
 </template>
 
 <script lang='ts' setup>
 import { computed, ref } from 'vue';
-import { Dialog } from 'quasar';
+import { GripVerticalIcon, PlusIcon, TrashIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { confirmDialog } from '@/lib/dialogs';
+import ColorPicker from './ColorPicker.vue';
+import Hint from './Hint.vue';
 import draggable from 'vuedraggable';
 import { get1t } from '../../scripts/onetagger';
 import { FlowGroup, getTagStore } from '../../scripts/tagstore';
@@ -94,10 +71,6 @@ const ordered = computed<FlowGroup[]>({
         ?? [...store.groups.value].sort((a, b) => a.position - b.position || a.id - b.id),
     set: (v) => { localOrder.value = v; },
 });
-
-function blur(e: Event) {
-    (e.currentTarget as HTMLElement | null)?.blur();
-}
 
 /** Send the new index as position for every group that moved */
 function persistOrder() {
@@ -125,16 +98,15 @@ function rename(group: FlowGroup) {
     if (name && name !== group.name) $1t.send('groupUpdate', { id: group.id, name });
 }
 
-function confirmDelete(group: FlowGroup) {
+async function confirmDelete(group: FlowGroup) {
     const n = store.tags.value.filter((t) => t.groupId === group.id).length;
-    Dialog.create({
+    const ok = await confirmDialog({
         title: 'Delete group',
         message: `Delete "${group.name}"? Its ${n} tag(s) will become ungrouped.`,
-        cancel: true,
-        class: 'flowtag-theme',
-        ok: { label: 'Delete', color: 'red', flat: true },
-        persistent: true,
-    }).onOk(() => $1t.send('groupDelete', { id: group.id }));
+        okLabel: 'Delete',
+        destructive: true,
+    });
+    if (ok) $1t.send('groupDelete', { id: group.id });
 }
 
 function add() {
@@ -148,12 +120,6 @@ function add() {
 <style lang='scss'>
 .group-manager {
     .group-row { border-bottom: 1px solid var(--ft-line-faint); }
-    .swatch {
-        width: 22px;
-        height: 22px;
-        min-height: 22px;
-        border: 1px solid var(--ft-ring);
-    }
     .drag-handle { cursor: grab; opacity: 0.6; }
 }
 </style>

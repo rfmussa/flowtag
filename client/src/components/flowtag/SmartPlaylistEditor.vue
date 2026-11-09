@@ -1,8 +1,10 @@
 <template>
-<q-dialog :model-value='playlist !== undefined' @update:model-value='(v: boolean) => { if (!v) emit("close"); }'>
-    <q-card v-if='playlist' flat class='spe-card flowtag-theme'>
-        <div class='ft-title'>{{ playlist.name }} — rules</div>
-        <div class='spe-sub'>All rules combine; a track must satisfy every row.</div>
+<Dialog :open='playlist !== undefined' @update:open='(v: boolean) => { if (!v) emit("close"); }'>
+    <DialogContent v-if='playlist' class='sm:max-w-[520px] gap-0 px-[22px] pt-[18px] pb-4'>
+        <DialogHeader class='mb-3'>
+            <DialogTitle>{{ playlist.name }} — rules</DialogTitle>
+            <DialogDescription class='text-[11.5px]'>All rules combine; a track must satisfy every row.</DialogDescription>
+        </DialogHeader>
 
         <div class='spe-body'>
             <div class='spe-row'>
@@ -12,11 +14,7 @@
 
             <div class='spe-row'>
                 <span class='spe-label'>Has tags</span>
-                <q-select
-                    v-model='draft.tagIds' :options='tagOptions' multiple dense options-dense
-                    borderless emit-value map-options use-chips class='spe-select spe-wide'
-                    popup-content-class='flowtag-theme ft-pop'
-                />
+                <MultiOptionSelect v-model='draft.tagIds' :options='tagOptions' label='Has tags' trigger-class='flex-1 min-w-0' />
                 <div class='seg' role='group' aria-label='Tag matching'>
                     <button type='button' class='seg-btn' :class='{ on: draft.tagMode === "all" }' @click='draft.tagMode = "all"'>all</button>
                     <button type='button' class='seg-btn' :class='{ on: draft.tagMode === "any" }' @click='draft.tagMode = "any"'>any</button>
@@ -25,11 +23,7 @@
 
             <div class='spe-row'>
                 <span class='spe-label'>Not tags</span>
-                <q-select
-                    v-model='draft.excludeTagIds' :options='tagOptions' multiple dense options-dense
-                    borderless emit-value map-options use-chips class='spe-select spe-wide'
-                    popup-content-class='flowtag-theme ft-pop'
-                />
+                <MultiOptionSelect v-model='draft.excludeTagIds' :options='tagOptions' label='Not tags' placeholder='None' trigger-class='flex-1 min-w-0' />
             </div>
 
             <div class='spe-row'>
@@ -41,11 +35,7 @@
 
             <div class='spe-row'>
                 <span class='spe-label'>Key</span>
-                <q-select
-                    v-model='draft.keys' :options='keyOptions' multiple dense options-dense
-                    borderless emit-value map-options use-chips class='spe-select spe-wide'
-                    popup-content-class='flowtag-theme ft-pop'
-                />
+                <MultiOptionSelect v-model='draft.keys' :options='keyOptions' label='Key' trigger-class='flex-1 min-w-0' />
             </div>
 
             <div class='spe-row'>
@@ -63,24 +53,28 @@
 
             <div class='spe-row'>
                 <span class='spe-label'>Untagged only</span>
-                <q-toggle dense size='sm' v-model='draft.untaggedOnly' />
+                <Switch v-model='draft.untaggedOnly' aria-label='Untagged only' />
             </div>
         </div>
 
         <div class='spe-footer'>
             <span class='spe-count ft-num'>Matches {{ matchCount.toLocaleString() }} track(s)</span>
             <span class='spe-actions'>
-                <button type='button' class='ft-btn' @click='emit("close")'>Cancel</button>
-                <button type='button' class='ft-btn ft-btn-primary' @click='save'>Save rules</button>
+                <Button @click='emit("close")'>Cancel</Button>
+                <Button variant='default' @click='save'>Save rules</Button>
             </span>
         </div>
-    </q-card>
-</q-dialog>
+    </DialogContent>
+</Dialog>
 </template>
 
 <script lang='ts' setup>
 import { computed, reactive, watch } from 'vue';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Switch } from '@/components/ui/switch';
 import { get1t } from '../../scripts/onetagger';
+import MultiOptionSelect from './MultiOptionSelect.vue';
 import { getTagStore, FlowPlaylist, SavedFilter, parseSavedFilter } from '../../scripts/tagstore';
 import { diag } from '../../scripts/diag';
 
@@ -119,7 +113,7 @@ watch(() => props.playlist, (pl) => {
 }, { immediate: true });
 
 const tagOptions = computed(() =>
-    [...store.tags.value].sort((a, b) => b.count - a.count).map((t) => ({ label: t.name, value: t.id })));
+    [...store.tags.value].sort((a, b) => b.count - a.count).map((t) => ({ label: t.name, value: t.id, color: t.color })));
 
 const keyOptions = computed(() => {
     const seen = new Set<string>();
@@ -164,16 +158,6 @@ function save() {
 </script>
 
 <style lang='scss' scoped>
-.spe-card {
-    width: 520px;
-    max-width: 94vw;
-    padding: 18px 22px 16px;
-}
-.spe-sub {
-    font-size: 11.5px;
-    color: var(--ft-text-3);
-    margin: 4px 0 12px;
-}
 .spe-body {
     display: flex;
     flex-direction: column;
@@ -197,8 +181,6 @@ function save() {
     input { width: 100%; }
 }
 .spe-dash, .spe-unit { color: var(--ft-text-3); font-size: 12px; }
-.spe-select :deep(.q-field__control) { min-height: 28px; padding: 0 4px; }
-.spe-select :deep(.q-field__control)::before, .spe-select :deep(.q-field__control)::after { display: none; }
 .spe-footer {
     display: flex;
     align-items: center;

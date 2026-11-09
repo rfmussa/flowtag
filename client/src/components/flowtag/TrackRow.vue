@@ -7,15 +7,15 @@
     draggable='true'
     @dragstart='onDragStart'
 >
-    <q-icon v-if='playing' name='mdi-volume-high' size='12px' class='row-playing' />
+    <Volume2Icon v-if='playing' class='row-playing size-3' />
     <span class='row-title' :title='track.title'>{{ track.title }}</span>
     <span class='row-artist' :title='track.artist'>{{ track.artist }}</span>
     <span class='row-spacer'></span>
     <TagChips dense :tagIds='track.tagIds' class='row-chips'></TagChips>
     <span v-if='track.needsFlush' class='row-pending' title='Not yet written to file'></span>
-    <q-icon v-if='track.missing' name='mdi-file-alert-outline' size='13px' class='row-missing'>
-        <q-tooltip>File missing</q-tooltip>
-    </q-icon>
+    <Hint v-if='track.missing' text='File missing'>
+        <FileExclamationPointIcon class='row-missing size-[13px]' />
+    </Hint>
     <span v-if='cols.path' class='row-path' :title='track.path'>{{ track.path }}</span>
     <span v-if='cols.added' class='row-added ft-num'>{{ addedDate }}</span>
     <span v-if='cols.year' class='row-meta ft-num'>{{ track.year ?? '' }}</span>
@@ -25,6 +25,8 @@
 </template>
 
 <script lang='ts' setup>
+import { FileExclamationPointIcon, Volume2Icon } from '@lucide/vue';
+import Hint from './Hint.vue';
 import { computed } from 'vue';
 import TagChips from './TagChips.vue';
 import { FlowTrack, getTagStore } from '../../scripts/tagstore';

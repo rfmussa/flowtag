@@ -4,110 +4,73 @@
     <!-- Compact: slim strip, waveform hidden -->
     <div v-if='compact' class='compact-row'>
         <div class='compact-progress' :style='{ width: progress + "%" }'></div>
-        <q-btn
-            round flat dense size='12px'
-            :icon='$1t.player.value.playing ? "mdi-pause" : "mdi-play"'
-            :ripple='false'
-            @click='$1t.player.value.playing ? $1t.player.value.pause() : $1t.player.value.play()'
+        <Button
             ref='playButton'
-        ></q-btn>
+            size='icon-sm'
+            :aria-label='$1t.player.value.playing ? "Pause" : "Play"'
+            @click='$1t.player.value.playing ? $1t.player.value.pause() : $1t.player.value.play()'
+        >
+            <PauseIcon v-if='$1t.player.value.playing' /><PlayIcon v-else />
+        </Button>
         <span class='compact-title' v-if='$1t.player.value.title'>{{ $1t.player.value.title }}</span>
         <span class='compact-artist' v-if='$1t.player.value.artists?.length'>{{ $1t.player.value.artists.join(', ') }}</span>
         <span class='compact-spacer'></span>
         <span class='monospace'>{{ fmt($1t.player.value.position) }} / {{ fmt($1t.player.value.duration) }}</span>
-        <button type='button' class='ft-btn' title='Expand player' @click='toggleCompact'>
-            <q-icon name='mdi-chevron-up' size='15px' />
-        </button>
+        <Button size='icon' title='Expand player' aria-label='Expand player' @click='toggleCompact'><ChevronUpIcon /></Button>
     </div>
 
     <!-- Full bar -->
-    <div v-else class="row q-mx-md">
+    <div v-else class='mx-4 grid grid-cols-12'>
         <!-- Meta -->
-        <div class="row col-2">
-
-            <!-- Album art -->
-            <div class='q-mt-sm'>
-                <q-img
-                    :src='art'
-                    width='46px'
-                    height='46px'
-                    class='rounded-borders'
-                    :placeholder-src='PLACEHOLDER_IMG'
-                >
-                    <template v-slot:error>
-                        <q-img :src='PLACEHOLDER_IMG' width='46px' height='46px' class='rounded-borders'></q-img>
-                    </template>
-                </q-img>
+        <div class='col-span-2 flex min-w-0'>
+            <!-- Album art, with the placeholder when the file has none -->
+            <img
+                :src='artFailed ? PLACEHOLDER_IMG : art'
+                alt=''
+                class='mt-2 size-[46px] shrink-0 rounded object-cover'
+                @error='artFailed = true'
+            />
+            <div class='mt-2.5 flex min-w-0 flex-col pl-2 text-xs'>
+                <div v-if='$1t.player.value.title' class='truncate font-bold text-ft-text'>{{ $1t.player.value.title }}</div>
+                <div v-if='$1t.player.value.artists' class='truncate text-ft-text-3'>{{ $1t.player.value.artists.join(', ') }}</div>
             </div>
-
-            <div class="column q-mt-sm q-pt-xs q-pl-sm" style="width: calc(100% - 50px);">
-                <div class="text-caption text-weight-bold full-width">
-                    <div v-if="$1t.player.value.title" class="text-no-wrap overflow-hidden" style="text-overflow: ellipsis">
-                        {{ $1t.player.value.title }}
-                    </div>
-                </div>
-
-                <div class="text-caption full-width text-grey-5">
-                    <div v-if="$1t.player.value.artists" class="text-no-wrap overflow-hidden" style="text-overflow: ellipsis">
-                        {{ $1t.player.value.artists.join(', ') }}
-                    </div>
-                </div>
-            </div>
-
         </div>
 
-        <div class="col-8">
-            <div class='row justify-center'>
-                <div class='q-mt-sm'>
-                    <!-- Play button -->
-                    <q-btn
-                        round
-                        flat
-                        icon="mdi-play"
-                        class="q-mr-sm"
-                        :ripple="false"
-                        v-if="!$1t.player.value.playing"
-                        @click="$1t.player.value.play()"
+        <div class='col-span-8'>
+            <div class='flex justify-center'>
+                <div class='mt-2 mr-2'>
+                    <Button
                         ref='playButton'
-                    ></q-btn>
-                    <!-- Pause -->
-                    <q-btn
-                        round
-                        flat
-                        icon="mdi-pause"
-                        class="q-mr-sm"
-                        :ripple="false"
-                        v-else
-                        @click="$1t.player.value.pause()"
-                        ref='playButton'
-                    ></q-btn>
+                        size='icon-lg'
+                        class='rounded-full'
+                        :aria-label='$1t.player.value.playing ? "Pause" : "Play"'
+                        @click='$1t.player.value.playing ? $1t.player.value.pause() : $1t.player.value.play()'
+                    >
+                        <PauseIcon v-if='$1t.player.value.playing' class='size-5' /><PlayIcon v-else class='size-5' />
+                    </Button>
                 </div>
-
                 <div><Waveform></Waveform></div>
             </div>
         </div>
 
-        <div class='row col-2 justify-end items-center'>
+        <div class='col-span-2 flex items-center justify-end'>
             <span
                 v-if='$1t.settings.value.flowtag.analysisEnabled && $1t.player.value.gainDb'
                 class='gain-badge ft-num'
                 title='Auto-gain: matched to -14 LUFS'
             >{{ $1t.player.value.gainDb > 0 ? '+' : '' }}{{ $1t.player.value.gainDb.toFixed(1) }} dB</span>
-            <!-- Volume -->
-            <div class="q-pt-sm" style="width: 88px">
-                <q-slider
-                    v-model="$1t.player.value.volume"
-                    :min="0.0"
-                    :max="1.0"
-                    :step="0.01"
-                    @update:model-value="(v: any) => $1t.player.value.setVolume(v)"
-                    @change="$1t.saveSettings(false)"
-                    style="margin-top: 6px"
-                ></q-slider>
-            </div>
-            <button type='button' class='ft-btn q-ml-sm' title='Compact player' @click='toggleCompact'>
-                <q-icon name='mdi-chevron-down' size='15px' />
-            </button>
+            <!-- Volume: applied while dragging, saved when released -->
+            <Slider
+                class='w-[88px]'
+                :min='0'
+                :max='1'
+                :step='0.01'
+                :model-value='[$1t.player.value.volume]'
+                aria-label='Volume'
+                @update:model-value='(v) => setVolume(v?.[0])'
+                @value-commit='$1t.saveSettings(false)'
+            />
+            <Button size='icon' class='ml-2' title='Compact player' aria-label='Compact player' @click='toggleCompact'><ChevronDownIcon /></Button>
         </div>
     </div>
 
@@ -116,6 +79,9 @@
 
 <script lang='ts' setup>
 import Waveform from './Waveform.vue';
+import { ChevronDownIcon, ChevronUpIcon, PauseIcon, PlayIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Slider } from '@/components/ui/slider';
 import { PLACEHOLDER_IMG, httpUrl } from '../scripts/utils';
 import { computed, onDeactivated, onMounted, ref, watch } from 'vue';
 import { useLocalStorage } from '@vueuse/core';
@@ -164,6 +130,15 @@ onMounted(() => {
 onDeactivated(() => $1t.quickTagUnfocus = () => {});
 
 const art = computed(() => `${httpUrl()}/thumb?path=${encodeURIComponent($1t.player.value.path??'')}`);
+// Fall back to the placeholder when the file has no artwork; retry per track
+const artFailed = ref(false);
+watch(art, () => { artFailed.value = false; });
+
+function setVolume(volume?: number) {
+    if (volume === undefined) return;
+    $1t.player.value.volume = volume;
+    $1t.player.value.setVolume(volume);
+}
 
 </script>
 

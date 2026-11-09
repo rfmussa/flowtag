@@ -1,59 +1,57 @@
 <template>
-<div class='row items-center no-wrap'>
-    <q-btn dense flat no-caps icon='mdi-folder' label='Folders' class='q-px-sm'>
-        <q-menu class='flowtag-theme' style='min-width: 360px'>
-            <q-list dense separator>
-                <q-item v-if='store.folders.value.length === 0'>
-                    <q-item-section class='text-grey-6 text-caption'>No folders added</q-item-section>
-                </q-item>
-                <q-item v-for='folder in store.folders.value' :key='folder.id'>
-                    <q-item-section class='ellipsis text-caption' :title='folder.path'>{{ folder.path }}</q-item-section>
-                    <q-item-section side>
-                        <q-btn flat round dense size='sm' icon='mdi-delete' color='red' @click='remove(folder.id)'>
-                            <q-tooltip>Remove folder</q-tooltip>
-                        </q-btn>
-                    </q-item-section>
-                </q-item>
-            </q-list>
-            <div class='q-pa-sm'>
-                <q-btn dense flat no-caps icon='mdi-folder-plus' label='Add folder' color='primary' @click='add'></q-btn>
+<div class='flex items-center'>
+    <Popover>
+        <PopoverTrigger as-child>
+            <Button class='px-2'><FolderIcon />Folders</Button>
+        </PopoverTrigger>
+        <!-- No auto-focus: the first focusable is a delete button -->
+        <PopoverContent align='start' class='w-[360px] p-1' @open-auto-focus.prevent>
+            <div v-if='store.folders.value.length === 0' class='px-2 py-2 text-xs text-ft-text-3'>No folders added</div>
+            <ul v-else class='divide-y divide-ft-line-faint'>
+                <li v-for='folder in store.folders.value' :key='folder.id' class='flex items-center gap-2 h-8 pl-2'>
+                    <span class='flex-1 min-w-0 truncate text-xs text-ft-text-2' :title='folder.path'>{{ folder.path }}</span>
+                    <Hint text='Remove folder'>
+                        <Button size='icon-sm' variant='destructive' :aria-label='`Remove ${folder.path}`' @click='remove(folder.id)'>
+                            <TrashIcon class='size-3.5' />
+                        </Button>
+                    </Hint>
+                </li>
+            </ul>
+            <div class='border-t border-ft-line mt-1 pt-1'>
+                <Button size='sm' class='text-ft-text' @click='add'><FolderPlusIcon />Add folder</Button>
             </div>
-        </q-menu>
-    </q-btn>
+        </PopoverContent>
+    </Popover>
 
-    <q-btn
-        dense
-        flat
-        no-caps
-        icon='mdi-refresh'
-        label='Rescan'
-        class='q-px-sm q-ml-xs'
-        :disable='store.scan.value.running'
-        @click='rescan'
-    ></q-btn>
+    <Button class='px-2 ml-1' :disabled='store.scan.value.running' @click='rescan'>
+        <RefreshCwIcon />Rescan
+    </Button>
 </div>
 </template>
 
 <script lang='ts' setup>
-import { Dialog } from 'quasar';
+import { FolderIcon, FolderPlusIcon, RefreshCwIcon, TrashIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { confirmDialog } from '@/lib/dialogs';
+import Hint from './Hint.vue';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore } from '../../scripts/tagstore';
 
 const store = getTagStore();
 const $1t = get1t();
 
-function remove(id: number) {
+async function remove(id: number) {
     const folder = store.folders.value.find((f) => f.id === id);
     const count = store.tracks.value.filter((t) => t.path.startsWith((folder?.path ?? '') + '/')).length;
-    Dialog.create({
+    const ok = await confirmDialog({
         title: 'Remove folder?',
         message: `${folder?.path ?? ''} — removes ${count} track(s) from the library, `
             + 'including tags not yet written to their files. Audio files are not touched.',
-        cancel: true,
-        dark: true,
-        class: 'flowtag-theme',
-        ok: { label: 'Remove', color: 'negative' },
-    }).onOk(() => $1t.send('tagFolderRemove', { id }));
+        okLabel: 'Remove',
+        destructive: true,
+    });
+    if (ok) $1t.send('tagFolderRemove', { id });
 }
 
 // Async: the main app wires the 'browse' reply (context 'tagFolderAdd') to tagFolderAdd

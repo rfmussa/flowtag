@@ -1,14 +1,15 @@
 <template>
-<q-dialog v-model='open'>
-    <q-card class='track-inspector flowtag-theme'>
-        <div class='insp-head row items-center no-wrap'>
-            <div class='ft-title'>Edit metadata</div>
-            <q-space />
-            <div class='insp-path ft-mono ellipsis' :title='track?.path'>{{ track?.path }}</div>
+<Dialog v-model:open='open'>
+    <DialogContent class='track-inspector sm:max-w-[460px] gap-0 p-0' :show-close-button='false'>
+        <div class='insp-head flex items-center'>
+            <DialogTitle>Edit metadata</DialogTitle>
+            <DialogDescription class='sr-only'>Edit the file tags of the selected track</DialogDescription>
+            <div class='flex-1'></div>
+            <div class='insp-path ft-mono truncate' :title='track?.path'>{{ track?.path }}</div>
         </div>
 
-        <div v-if='loading' class='insp-loading row justify-center items-center'>
-            <q-spinner size='22px' color='grey-6' />
+        <div v-if='loading' class='insp-loading flex justify-center items-center'>
+            <LoaderCircleIcon class='size-[22px] animate-spin text-ft-text-3' aria-label='Loading metadata' />
         </div>
 
         <form v-else class='insp-body' @submit.prevent='save'>
@@ -42,20 +43,23 @@
             <label class='ft-label'>Comment</label>
             <label class='ft-field'><input v-model='draft.comment' type='text' spellcheck='false' /></label>
 
-            <div class='insp-actions row items-center no-wrap'>
+            <div class='insp-actions flex items-center'>
                 <span class='insp-hint'><span class='ft-kbd'>⌘↵</span> save</span>
-                <q-space />
-                <button type='button' class='ft-btn' @click='open = false'>Cancel</button>
-                <button type='submit' class='ft-btn ft-btn-primary' :disabled='saving'>
+                <div class='flex-1'></div>
+                <Button @click='open = false'>Cancel</Button>
+                <Button type='submit' variant='default' :disabled='saving'>
                     {{ saving ? 'Saving…' : 'Save' }}
-                </button>
+                </Button>
             </div>
         </form>
-    </q-card>
-</q-dialog>
+    </DialogContent>
+</Dialog>
 </template>
 
 <script lang='ts' setup>
+import { LoaderCircleIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { computed, nextTick, ref, watch } from 'vue';
 import { notify } from '@/lib/notify';
 import { useEventListener } from '@vueuse/core';
@@ -151,9 +155,6 @@ useEventListener(() => (open.value ? document : null), 'keydown', onKey);
 
 <style lang='scss'>
 .track-inspector {
-    width: 460px;
-    max-width: 95vw;
-
     .insp-head {
         padding: 14px 16px 10px;
         gap: 12px;

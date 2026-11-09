@@ -6,7 +6,7 @@
         :class='{ active: store.activePlaylistId.value === undefined && store.activeSourceId.value === undefined }'
         @click='select(undefined)'
     >
-        <q-icon name='mdi-music-box-multiple-outline' size='14px' class='pl-icon' />
+        <LibraryIcon class='pl-icon' />
         <span class='pl-name'>Collection</span>
         <span class='pl-count ft-num'>{{ store.tracks.value.length.toLocaleString() }}</span>
     </div>
@@ -15,12 +15,12 @@
     <template v-if='store.folders.value.length > 0'>
         <div class='pl-head pl-head-toggle' @click='toggleSection("sources")'>
             <span class='ft-label head-label'>
-                <q-icon :name='sourcesOpen ? "mdi-chevron-down" : "mdi-chevron-right"' size='13px' />
+                <ChevronDownIcon v-if='sourcesOpen' class='head-chevron' /><ChevronRightIcon v-else class='head-chevron' />
                 Sources
             </span>
             <span class='pl-head-actions' @click.stop>
                 <button type='button' class='ft-btn icon-only' title='Add source folder' @click='addSource'>
-                    <q-icon name='mdi-plus' size='15px' />
+                    <PlusIcon class='size-[15px]' />
                 </button>
             </span>
         </div>
@@ -33,7 +33,7 @@
             :title='f.path'
             @click='store.selectSource(f.id)'
         >
-            <q-icon name='mdi-folder-music-outline' size='14px' class='pl-icon' />
+            <FolderIcon class='pl-icon' />
             <template v-if='editing?.kind === "source" && editing.id === f.id'>
                 <input
                     class='pl-rename' :value='f.name' spellcheck='false'
@@ -52,7 +52,7 @@
 
     <div class='pl-head pl-head-toggle' @click='toggleSection("playlists")'>
         <span class='ft-label head-label'>
-            <q-icon :name='playlistsOpen ? "mdi-chevron-down" : "mdi-chevron-right"' size='13px' />
+            <ChevronDownIcon v-if='playlistsOpen' class='head-chevron' /><ChevronRightIcon v-else class='head-chevron' />
             Playlists
         </span>
         <span class='pl-head-actions' @click.stop>
@@ -62,10 +62,10 @@
                 title='Save the current filter as a smart playlist'
                 @click='saveFilterAsPlaylist'
             >
-                <q-icon name='mdi-filter-plus-outline' size='14px' />
+                <ListFilterPlusIcon class='size-3.5' />
             </button>
             <button type='button' class='ft-btn icon-only' title='New playlist' @click='createPlaylist'>
-                <q-icon name='mdi-plus' size='15px' />
+                <PlusIcon class='size-[15px]' />
             </button>
         </span>
     </div>
@@ -81,7 +81,7 @@
             @dragleave='dropId = dropId === pl.id ? undefined : dropId'
             @drop='onDrop(pl, $event)'
         >
-            <q-icon :name='pl.filter ? "mdi-filter-outline" : "mdi-playlist-music"' size='14px' class='pl-icon' />
+            <ListFilterIcon v-if='pl.filter' class='pl-icon' /><ListMusicIcon v-else class='pl-icon' />
             <template v-if='editing?.kind === "playlist" && editing.id === pl.id'>
                 <input
                     class='pl-rename' :value='pl.name' spellcheck='false'
@@ -94,16 +94,19 @@
             </template>
             <span v-else class='pl-name' :title='pl.name' @dblclick.stop='startRename("playlist", pl.id)'>{{ pl.name }}</span>
             <span class='pl-count ft-num'>{{ playlistCount(pl).toLocaleString() }}</span>
-            <button type='button' class='ft-btn icon-only pl-menu-btn' aria-label='Playlist menu' @click.stop>
-                <q-icon name='mdi-dots-horizontal' size='13px' />
-                <q-menu class='flowtag-theme ft-pop' auto-close>
-                    <div class='pl-menu'>
-                        <button v-if='pl.filter' type='button' class='ft-btn pl-menu-item' @click='rulesFor = pl'>Edit rules</button>
-                        <button type='button' class='ft-btn pl-menu-item' @click='startRename("playlist", pl.id)'>Rename</button>
-                        <button type='button' class='ft-btn pl-menu-item danger' @click='deletePlaylist(pl)'>Delete</button>
-                    </div>
-                </q-menu>
-            </button>
+            <DropdownMenu>
+                <DropdownMenuTrigger as-child>
+                    <button type='button' class='ft-btn icon-only pl-menu-btn' aria-label='Playlist menu' @click.stop>
+                        <EllipsisIcon class='size-[13px]' />
+                    </button>
+                </DropdownMenuTrigger>
+                <!-- Rename focuses its inline field; returning focus to the trigger would blur (commit) it -->
+                <DropdownMenuContent align='end' class='min-w-[140px]' @close-auto-focus.prevent>
+                    <DropdownMenuItem v-if='pl.filter' @select='rulesFor = pl'>Edit rules</DropdownMenuItem>
+                    <DropdownMenuItem @select='startRename("playlist", pl.id)'>Rename</DropdownMenuItem>
+                    <DropdownMenuItem variant='destructive' @select='deletePlaylist(pl)'>Delete</DropdownMenuItem>
+                </DropdownMenuContent>
+            </DropdownMenu>
         </div>
         <div v-if='store.playlists.value.length === 0' class='pl-empty'>
             Drag tracks here, or save a filter as a playlist.
@@ -118,7 +121,12 @@
 import { computed, ref } from 'vue';
 import { notify } from '@/lib/notify';
 import { useLocalStorage } from '@vueuse/core';
-import { Dialog } from 'quasar';
+import {
+    ChevronDownIcon, ChevronRightIcon, EllipsisIcon, FolderIcon, LibraryIcon,
+    ListFilterIcon, ListFilterPlusIcon, ListMusicIcon, PlusIcon,
+} from '@lucide/vue';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
 import SmartPlaylistEditor from './SmartPlaylistEditor.vue';
@@ -204,15 +212,9 @@ function playlistCount(pl: FlowPlaylist): number {
     return pl.filter ? (smartCounts.value.get(pl.id) ?? 0) : pl.count;
 }
 
-function namePrompt(title: string, initial = '', onOk: (name: string) => void) {
-    Dialog.create({
-        title,
-        class: 'flowtag-theme',
-        prompt: { model: initial, type: 'text' },
-        cancel: true,
-    }).onOk((name: string) => {
-        if (name?.trim()) onOk(name.trim());
-    });
+async function namePrompt(title: string, initial: string, onOk: (name: string) => void) {
+    const name = await promptDialog({ title, value: initial, placeholder: 'Playlist name', okLabel: 'Save' });
+    if (name) onOk(name);
 }
 
 function createPlaylist() {
@@ -234,19 +236,18 @@ function saveFilterAsPlaylist() {
     });
 }
 
-function deletePlaylist(pl: FlowPlaylist) {
-    Dialog.create({
+async function deletePlaylist(pl: FlowPlaylist) {
+    const ok = await confirmDialog({
         title: 'Delete playlist',
         message: pl.filter
             ? `Delete "${pl.name}"? The saved filter is lost; tracks are not touched.`
             : `Delete "${pl.name}"? Its ${pl.count} track(s) stay in the library.`,
-        class: 'flowtag-theme',
-        cancel: true,
-        ok: { label: 'Delete', color: 'red', flat: true },
-    }).onOk(() => {
-        $1t.send('playlistDelete', { id: pl.id });
-        diag('playlistDelete', { id: pl.id, smart: !!pl.filter });
+        okLabel: 'Delete',
+        destructive: true,
     });
+    if (!ok) return;
+    $1t.send('playlistDelete', { id: pl.id });
+    diag('playlistDelete', { id: pl.id, smart: !!pl.filter });
 }
 
 // ---- Drag & drop from the track list ----
@@ -294,6 +295,7 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
     padding: 12px 8px 4px;
     .pl-head-actions { display: inline-flex; gap: 2px; }
     .head-label { display: inline-flex; align-items: center; gap: 2px; margin-left: -4px; }
+    .head-chevron { width: 13px; height: 13px; }
 }
 .pl-head-toggle {
     cursor: default;
@@ -317,7 +319,7 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
     &.active { background: var(--ft-raised); color: var(--ft-text); }
     &.drop-target { box-shadow: inset 0 0 0 1px var(--ft-focus); }
 
-    .pl-icon { color: var(--ft-text-3); flex-shrink: 0; }
+    .pl-icon { width: 14px; height: 14px; color: var(--ft-text-3); flex-shrink: 0; }
     .pl-name {
         flex: 1;
         min-width: 0;
@@ -342,14 +344,7 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
         outline: none;
     }
     .pl-menu-btn { opacity: 0; padding: 0 3px; height: 20px; flex-shrink: 0; }
-}
-.pl-menu {
-    display: flex;
-    flex-direction: column;
-    padding: 4px;
-    min-width: 120px;
-    .pl-menu-item { justify-content: flex-start; width: 100%; }
-    .danger { color: var(--ft-danger); }
+    .pl-menu-btn[data-state='open'] { opacity: 1; background: var(--ft-active); }
 }
 .pl-empty {
     font-size: 11.5px;

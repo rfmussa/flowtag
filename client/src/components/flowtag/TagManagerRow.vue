@@ -1,66 +1,55 @@
 <template>
-<div class='tag-row row items-center no-wrap q-px-sm q-py-xs'>
+<div class='tag-row flex items-center gap-2 px-2 py-1'>
+    <ColorPicker :model-value='tag.color' @update:model-value='setColor' />
 
-    <!-- Color swatch -->
-    <q-btn
-        round unelevated size='sm'
-        class='swatch q-mr-sm'
-        :style='{ backgroundColor: tag.color }'
-        @click='blur'
-    >
-        <q-popup-proxy class='flowtag-theme'>
-            <q-color
-                :model-value='tag.color'
-                no-header-tabs
-                @change='setColor'
-            />
-        </q-popup-proxy>
-        <q-tooltip>Change color</q-tooltip>
-    </q-btn>
-
-    <!-- Name (Enter commits) -->
-    <q-input
+    <!-- Name (Enter commits, Esc reverts) -->
+    <input
         v-model='draft'
-        dense borderless
-        class='name-input col'
-        input-class='name-field'
+        class='ft-inline-input flex-1'
+        spellcheck='false'
+        title='Press Enter to rename'
+        :aria-label='`Rename ${tag.name}`'
         @keyup.enter='commitName'
         @keyup.esc.stop='draft = tag.name'
         @blur='draft = tag.name'
-    >
-        <q-tooltip :delay='800'>Press Enter to rename</q-tooltip>
-    </q-input>
+    />
 
     <!-- Usage -->
-    <q-badge color='grey-8' class='q-mx-sm count' :label='tag.count' :title='`${tag.count} tracks`' />
+    <span class='count ft-num' :title='`${tag.count} tracks`'>{{ tag.count }}</span>
 
     <!-- Group -->
-    <q-select
-        :model-value='tag.groupId ?? null'
+    <OptionSelect
+        :model-value='tag.groupId ?? NO_GROUP'
         :options='groupOptions'
-        emit-value map-options
-        dense outlined options-dense
-        class='group-select q-mr-sm'
-        popup-content-class='flowtag-theme'
+        label='Group'
+        size='sm'
+        trigger-class='w-[130px]'
         @update:model-value='setGroup'
     />
 
     <!-- Hotkey -->
-    <div class='hotkey q-mr-xs'>
+    <div class='hotkey'>
         <KeybindVue :key='keybindNonce' :model-value='tag.keybind' @update:model-value='setKeybind' />
     </div>
 
     <!-- Delete -->
-    <q-btn flat round dense size='sm' icon='mdi-delete' color='red' @click='confirmDelete'>
-        <q-tooltip>Delete tag</q-tooltip>
-    </q-btn>
+    <Hint text='Delete tag'>
+        <Button size='icon-sm' variant='destructive' :aria-label='`Delete ${tag.name}`' @click='confirmDelete'>
+            <TrashIcon class='size-3.5' />
+        </Button>
+    </Hint>
 </div>
 </template>
 
 <script lang='ts' setup>
 import { computed, ref, watch } from 'vue';
 import { notify } from '@/lib/notify';
-import { Dialog } from 'quasar';
+import { TrashIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { confirmDialog } from '@/lib/dialogs';
+import ColorPicker from './ColorPicker.vue';
+import Hint from './Hint.vue';
+import OptionSelect from './OptionSelect.vue';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTag, FlowGroup, getTagStore } from '../../scripts/tagstore';
 import { reservedFlowtagCodes } from '../../scripts/flowkeys';
@@ -75,15 +64,12 @@ const draft = ref(props.tag.name);
 // Follow server-side changes (rename echo, merge) unless the user is typing
 watch(() => props.tag.name, (name) => { draft.value = name; });
 
+/** Select values can't be null: a sentinel stands for "no group" */
+const NO_GROUP = -1;
 const groupOptions = computed(() => [
-    { label: 'None', value: null },
+    { label: 'None', value: NO_GROUP },
     ...props.groups.map((g) => ({ label: g.name, value: g.id })),
 ]);
-
-/** Release focus so tagging hotkeys keep working */
-function blur(e: Event) {
-    (e.currentTarget as HTMLElement | null)?.blur();
-}
 
 function setColor(color: string) {
     if (color && color !== props.tag.color) {
@@ -91,8 +77,8 @@ function setColor(color: string) {
     }
 }
 
-function setGroup(groupId: number | null) {
-    if (groupId === null) $1t.send('tagUpdate', { id: props.tag.id, clearGroup: true });
+function setGroup(groupId: number) {
+    if (groupId === NO_GROUP) $1t.send('tagUpdate', { id: props.tag.id, clearGroup: true });
     else $1t.send('tagUpdate', { id: props.tag.id, groupId });
 }
 
@@ -138,7 +124,7 @@ function setKeybind(keybind?: any) {
  * merges this tag into it, so ask first; afterwards reload pool + tracks since
  * the merged-away tag id is gone from the DB.
  */
-function commitName() {
+async function commitName() {
     const name = draft.value.trim();
     if (!name || name === props.tag.name) {
         draft.value = props.tag.name;
@@ -146,32 +132,31 @@ function commitName() {
     }
     const other = store.tagByName(name);
     if (other && other.id !== props.tag.id) {
-        Dialog.create({
+        const ok = await confirmDialog({
             title: 'Merge tags',
             message: `Merge "${props.tag.name}" into "${other.name}"? ${props.tag.count} track(s) affected.`,
-            cancel: true,
-            class: 'flowtag-theme',
-            ok: { label: 'Merge', color: 'primary', flat: true },
-            persistent: true,
-        }).onOk(() => {
-            $1t.send('tagUpdate', { id: props.tag.id, name });
-            $1t.send('tagPoolLoad');
-            $1t.send('tagTracksLoad');
-        }).onCancel(() => { draft.value = props.tag.name; });
+            okLabel: 'Merge',
+        });
+        if (!ok) {
+            draft.value = props.tag.name;
+            return;
+        }
+        $1t.send('tagUpdate', { id: props.tag.id, name });
+        $1t.send('tagPoolLoad');
+        $1t.send('tagTracksLoad');
         return;
     }
     $1t.send('tagUpdate', { id: props.tag.id, name });
 }
 
-function confirmDelete() {
-    Dialog.create({
+async function confirmDelete() {
+    const ok = await confirmDialog({
         title: 'Delete tag',
         message: `Delete "${props.tag.name}"? It will be removed from ${props.tag.count} track(s).`,
-        cancel: true,
-        class: 'flowtag-theme',
-        ok: { label: 'Delete', color: 'red', flat: true },
-        persistent: true,
-    }).onOk(() => $1t.send('tagDelete', { id: props.tag.id }));
+        okLabel: 'Delete',
+        destructive: true,
+    });
+    if (ok) $1t.send('tagDelete', { id: props.tag.id });
 }
 </script>
 
@@ -179,15 +164,15 @@ function confirmDelete() {
 .tag-row {
     border-bottom: 1px solid var(--ft-line-faint);
 
-    .swatch {
-        width: 22px;
-        height: 22px;
-        min-height: 22px;
-        border: 1px solid var(--ft-ring);
+    .count {
+        min-width: 28px;
+        padding: 1px 6px;
+        border-radius: 4px;
+        background: var(--ft-raised);
+        color: var(--ft-text-2);
+        font-size: 11px;
+        text-align: center;
     }
-    .name-input { min-width: 80px; }
-    .count { min-width: 24px; justify-content: center; }
-    .group-select { width: 130px; }
-    .hotkey { width: 110px; min-height: 32px; }
+    .hotkey { width: 110px; min-height: 32px; display: flex; align-items: center; }
 }
 </style>

@@ -5,6 +5,9 @@
  * Quasar still draws the inherited lookup screen: it would restyle every
  * plain button, heading and list on the page. It lands when Quasar leaves.
  */
+/* Cascade order, lowest first. Quasar (layered in vite.config.ts) sits under
+   everything Tailwind emits; unlayered app styles beat all of it. */
+@layer quasar, theme, base, components, utilities;
 @import "tailwindcss/theme.css" layer(theme);
 @import "tailwindcss/utilities.css" layer(utilities);
 @import "tw-animate-css";
@@ -52,6 +55,25 @@
     --color-input: var(--input);
     --color-ring: var(--ring);
 
+    /* FlowTag's own tokens, addressable as utilities (bg-ft-raised, text-ft-text-2, ...) */
+    --color-ft-bg: var(--ft-bg);
+    --color-ft-panel: var(--ft-panel);
+    --color-ft-raised: var(--ft-raised);
+    --color-ft-overlay: var(--ft-overlay);
+    --color-ft-line: var(--ft-line);
+    --color-ft-line-strong: var(--ft-line-strong);
+    --color-ft-line-faint: var(--ft-line-faint);
+    --color-ft-text: var(--ft-text);
+    --color-ft-text-2: var(--ft-text-2);
+    --color-ft-text-3: var(--ft-text-3);
+    --color-ft-text-bright: var(--ft-text-bright);
+    --color-ft-hover: var(--ft-hover);
+    --color-ft-active: var(--ft-active);
+    --color-ft-focus: var(--ft-focus);
+    --color-ft-warn: var(--ft-warn);
+    --color-ft-danger: var(--ft-danger);
+    --color-ft-playing: var(--ft-playing);
+
     /* FlowTag radii: 4px keycaps, 6px controls, 8px floating panels */
     --radius-sm: calc(var(--radius) - 4px);
     --radius-md: calc(var(--radius) - 2px);
@@ -73,11 +95,27 @@
 }
 
 @layer base {
-    /* The one preflight rule shadcn components rely on: border color.
-       Scoped to their data-slot elements so Quasar's elements are untouched. */
+    /* Interim preflight, until Quasar leaves and the real one lands. Only the
+       parts the new components rely on, kept off Quasar's own elements. */
+
+    /* shadcn parts: borders start at 0 solid so `border` alone draws a hairline */
     [data-slot],
     [data-slot]::before,
     [data-slot]::after {
-        border-color: var(--color-border);
+        box-sizing: border-box;
+        border: 0 solid var(--color-border);
+    }
+
+    /* Native button chrome off: utilities and FlowTag's .ft-* styles paint them */
+    button:not(.q-btn),
+    input[data-slot] {
+        font: inherit;
+        letter-spacing: inherit;
+        color: inherit;
+        background-color: transparent;
+        border: 0 solid var(--color-border);
+        border-radius: 0;
+        padding: 0;
+        margin: 0;
     }
 }

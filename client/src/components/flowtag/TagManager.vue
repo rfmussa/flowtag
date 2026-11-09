@@ -1,21 +1,25 @@
 <template>
-<q-dialog v-model='open' @show='listen' @hide='unlisten'>
-    <q-card class='tag-manager column no-wrap flowtag-theme'>
-        <q-card-section class='row items-center q-pb-none'>
-            <div class='text-h6'>Manage tags</div>
-            <q-space />
-            <q-input
-                v-model='search'
-                dense outlined clearable
-                placeholder='Search tags'
-                class='search-input q-mr-sm'
-            />
-            <q-btn flat round dense icon='mdi-close' v-close-popup />
-        </q-card-section>
+<Dialog v-model:open='open'>
+    <DialogContent class='tag-manager flex flex-col gap-0 p-0 sm:max-w-[760px]' :show-close-button='false'>
+        <div class='flex items-center gap-2 px-4 pt-4 pb-2'>
+            <DialogTitle>Manage tags</DialogTitle>
+            <DialogDescription class='sr-only'>Rename, recolor, group and assign hotkeys to tags</DialogDescription>
+            <div class='flex-1'></div>
+            <label class='ft-field w-[200px]'>
+                <SearchIcon class='size-3.5 shrink-0 text-ft-text-3' />
+                <input v-model='search' type='text' placeholder='Search tags' spellcheck='false' aria-label='Search tags' />
+                <button v-if='search' type='button' class='grid place-items-center text-ft-text-3 hover:text-ft-text cursor-pointer' aria-label='Clear search' @click='search = ""'>
+                    <XIcon class='size-3.5' />
+                </button>
+            </label>
+            <DialogClose as-child>
+                <Button size='icon' aria-label='Close'><XIcon /></Button>
+            </DialogClose>
+        </div>
 
         <!-- Tags -->
-        <q-card-section class='col scroll tag-list q-pa-sm'>
-            <div v-if='shown.length === 0' class='text-grey-6 text-center q-pa-md'>
+        <div class='flex-1 min-h-0 overflow-y-auto px-2 pb-2'>
+            <div v-if='shown.length === 0' class='text-ft-text-3 text-sm text-center p-4'>
                 {{ store.tags.value.length === 0 ? 'No tags yet. Tag a track to create one.' : 'No tags match' }}
             </div>
             <TagManagerRow
@@ -24,21 +28,22 @@
                 :tag='tag'
                 :groups='store.groups.value'
             />
-        </q-card-section>
-
-        <q-separator />
+        </div>
 
         <!-- Groups -->
-        <q-card-section class='group-section scroll q-pa-sm'>
+        <div class='group-section shrink-0 overflow-y-auto border-t border-ft-line p-2'>
             <GroupManager />
-        </q-card-section>
-    </q-card>
-</q-dialog>
+        </div>
+    </DialogContent>
+</Dialog>
 </template>
 
 <script lang='ts' setup>
 import { computed, ref } from 'vue';
 import { useEventListener } from '@vueuse/core';
+import { SearchIcon, XIcon } from '@lucide/vue';
+import { Button } from '@/components/ui/button';
+import { Dialog, DialogClose, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog';
 import { getTagStore } from '../../scripts/tagstore';
 import TagManagerRow from './TagManagerRow.vue';
 import GroupManager from './GroupManager.vue';
@@ -57,26 +62,19 @@ const shown = computed(() => {
 /**
  * The FlowTag keyboard map listens on `document`; while this dialog (or the
  * hotkey recorder inside it) is open, swallow keydowns at `body` so Space/J/K
- * and per-tag hotkeys don't fire behind it. Escape must still reach Quasar.
+ * and per-tag hotkeys don't fire behind it. Escape must still reach the dialog.
  */
 function swallowKeys(e: KeyboardEvent) {
     if (e.key !== 'Escape') e.stopPropagation();
 }
-const listening = ref(false);
-function listen() { listening.value = true; }
-function unlisten() { listening.value = false; }
-// Attached while the dialog is shown; detached on hide and on unmount
-useEventListener(() => (listening.value ? document.body : null), 'keydown', swallowKeys);
+// Attached while the dialog is open; detached on close and on unmount
+useEventListener(() => (open.value ? document.body : null), 'keydown', swallowKeys);
 </script>
 
 <style lang='scss'>
 .tag-manager {
-    width: 760px;
-    max-width: 95vw;
     height: 80vh;
     max-height: 80vh;
-
-    .search-input { width: 200px; }
-    .group-section { max-height: 34%; flex-shrink: 0; }
+    .group-section { max-height: 34%; }
 }
 </style>
