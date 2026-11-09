@@ -192,8 +192,18 @@ function select(id?: number) {
 }
 
 /** Smart playlists count live; manual ones use the server's count */
+/** Smart-playlist counts, evaluated once per library/playlist change instead
+ *  of once per sidebar render (rule evaluation walks the whole library) */
+const smartCounts = computed(() => {
+    const counts = new Map<number, number>();
+    for (const pl of store.playlists.value) {
+        if (pl.filter) counts.set(pl.id, store.playlistTrackIds(pl).length);
+    }
+    return counts;
+});
+
 function playlistCount(pl: FlowPlaylist): number {
-    return pl.filter ? store.playlistTrackIds(pl).length : pl.count;
+    return pl.filter ? (smartCounts.value.get(pl.id) ?? 0) : pl.count;
 }
 
 function namePrompt(title: string, initial = '', onOk: (name: string) => void) {
