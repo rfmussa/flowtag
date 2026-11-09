@@ -117,27 +117,29 @@
 <script lang='ts' setup>
 import Waveform from './Waveform.vue';
 import { PLACEHOLDER_IMG, httpUrl } from '../scripts/utils';
-import { computed, onDeactivated, onMounted, ref } from 'vue';
+import { computed, onDeactivated, onMounted, ref, watch } from 'vue';
+import { useLocalStorage } from '@vueuse/core';
 import { get1t } from '../scripts/onetagger';
 
 const $1t = get1t();
 const playButton = ref<any>();
 
-// Compact footer: per-machine convenience, survives restarts
-const COMPACT_KEY = 'flowtag-compact-player';
-const compact = ref(false);
-try { compact.value = localStorage.getItem(COMPACT_KEY) === '1'; } catch (e) { /* storage unavailable */ }
+// Compact footer: per-machine convenience, survives restarts. Stored as
+// '1'/'0' (the format earlier builds wrote), not VueUse's 'true'/'false'.
+const compact = useLocalStorage('flowtag-compact-player', false, {
+    serializer: {
+        read: (v: string) => v === '1' || v === 'true',
+        write: (v: boolean) => (v ? '1' : '0'),
+    },
+});
 
 /** The track list sizes itself against this (QuickTag: calc(100vh - var(--player-h))) */
-function applyPlayerHeight() {
-    document.documentElement.style.setProperty('--player-h', compact.value ? '36px' : '60px');
-}
-applyPlayerHeight();
+watch(compact, (c) => {
+    document.documentElement.style.setProperty('--player-h', c ? '36px' : '60px');
+}, { immediate: true });
 
 function toggleCompact() {
     compact.value = !compact.value;
-    applyPlayerHeight();
-    try { localStorage.setItem(COMPACT_KEY, compact.value ? '1' : '0'); } catch (e) { /* storage unavailable */ }
 }
 
 function fmt(ms: number): string {

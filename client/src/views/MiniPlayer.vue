@@ -42,7 +42,8 @@
 </template>
 
 <script lang='ts' setup>
-import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { computed, onMounted, ref } from 'vue';
+import { useEventListener, useIntervalFn } from '@vueuse/core';
 import { get1t } from '../scripts/onetagger';
 import { diag } from '../scripts/diag';
 import { getTagStore } from '../scripts/tagstore';
@@ -67,7 +68,7 @@ const art = computed(() => np.value?.path
 
 // Position interpolates between snapshots while playing
 const clock = ref(Date.now());
-let timer: number | undefined;
+useIntervalFn(() => { clock.value = Date.now(); }, 500);
 const displayPos = computed(() => {
     const n = np.value;
     if (!n) return 0;
@@ -138,15 +139,11 @@ function onKey(e: KeyboardEvent) {
     if (handled) e.preventDefault();
 }
 
+useEventListener(window, 'keydown', onKey);
+
 onMounted(() => {
     diag('miniOpen');
     if (!store.loaded.value) store.load();
-    window.addEventListener('keydown', onKey);
-    timer = window.setInterval(() => { clock.value = Date.now(); }, 500);
-});
-onUnmounted(() => {
-    window.removeEventListener('keydown', onKey);
-    if (timer !== undefined) window.clearInterval(timer);
 });
 </script>
 

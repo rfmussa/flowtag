@@ -116,6 +116,7 @@
 
 <script lang='ts' setup>
 import { computed, ref } from 'vue';
+import { useLocalStorage } from '@vueuse/core';
 import { Dialog, Notify } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
@@ -132,15 +133,11 @@ const editing = ref<{ kind: 'playlist' | 'source'; id: number } | undefined>(und
 const vFocus = { mounted: (el: HTMLInputElement) => { el.focus(); el.select(); } };
 
 // Collapsible sections, remembered per machine
-function readSection(key: string): boolean {
-    try { return localStorage.getItem('flowtag-sec-' + key) !== 'false'; } catch { return true; }
-}
-const sourcesOpen = ref(readSection('sources'));
-const playlistsOpen = ref(readSection('playlists'));
+const sourcesOpen = useLocalStorage('flowtag-sec-sources', true);
+const playlistsOpen = useLocalStorage('flowtag-sec-playlists', true);
 function toggleSection(key: 'sources' | 'playlists') {
     const target = key === 'sources' ? sourcesOpen : playlistsOpen;
     target.value = !target.value;
-    try { localStorage.setItem('flowtag-sec-' + key, String(target.value)); } catch { /* in-memory only */ }
 }
 
 // Same flow as the header's Folders menu: native picker -> tagFolderAdd

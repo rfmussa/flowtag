@@ -41,7 +41,8 @@
 
 <script lang='ts' setup>
 import { useQuasar } from 'quasar';
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useEventListener } from '@vueuse/core';
 import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
@@ -86,14 +87,10 @@ onMounted(() => {
     initDiag();
     setWaveformWidth();
     if (!isMini.value) initMediaSync();
-    window.addEventListener("resize", onResize);
-    window.addEventListener('flowtag-open-settings', openSettings);
 });
 
-onUnmounted(() => {
-    window.removeEventListener("resize", onResize);
-    window.removeEventListener('flowtag-open-settings', openSettings);
-});
+useEventListener(window, 'resize', onResize);
+useEventListener(window, 'flowtag-open-settings', openSettings);
 </script>
 
 <style lang='scss'>

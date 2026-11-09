@@ -57,6 +57,7 @@
 
 <script lang='ts' setup>
 import { computed, nextTick, ref, watch } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { Notify } from 'quasar';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTrack, getTagStore, TrackMeta } from '../../scripts/tagstore';
@@ -143,10 +144,8 @@ function onKey(e: KeyboardEvent) {
         save();
     }
 }
-watch(open, (v) => {
-    if (v) document.addEventListener('keydown', onKey);
-    else document.removeEventListener('keydown', onKey);
-});
+// Attached only while the inspector is open; detached on unmount too
+useEventListener(() => (open.value ? document : null), 'keydown', onKey);
 </script>
 
 <style lang='scss'>

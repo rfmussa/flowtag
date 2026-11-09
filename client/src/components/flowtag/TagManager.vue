@@ -37,7 +37,8 @@
 </template>
 
 <script lang='ts' setup>
-import { computed, onBeforeUnmount, ref } from 'vue';
+import { computed, ref } from 'vue';
+import { useEventListener } from '@vueuse/core';
 import { getTagStore } from '../../scripts/tagstore';
 import TagManagerRow from './TagManagerRow.vue';
 import GroupManager from './GroupManager.vue';
@@ -61,9 +62,11 @@ const shown = computed(() => {
 function swallowKeys(e: KeyboardEvent) {
     if (e.key !== 'Escape') e.stopPropagation();
 }
-function listen() { document.body.addEventListener('keydown', swallowKeys); }
-function unlisten() { document.body.removeEventListener('keydown', swallowKeys); }
-onBeforeUnmount(unlisten);
+const listening = ref(false);
+function listen() { listening.value = true; }
+function unlisten() { listening.value = false; }
+// Attached while the dialog is shown; detached on hide and on unmount
+useEventListener(() => (listening.value ? document.body : null), 'keydown', swallowKeys);
 </script>
 
 <style lang='scss'>

@@ -126,6 +126,7 @@
 
 <script lang='ts' setup>
 import { computed, onMounted, ref, watch } from 'vue';
+import { useLocalStorage, watchDebounced } from '@vueuse/core';
 import { Dialog, Notify } from 'quasar';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../scripts/tagstore';
@@ -161,11 +162,7 @@ const progressPct = computed(() => {
 
 // Debounced filter binding (the old q-input had debounce built in)
 const filterInput = ref(store.filter.value);
-let filterTimer: any;
-watch(filterInput, (v) => {
-    clearTimeout(filterTimer);
-    filterTimer = setTimeout(() => { store.filter.value = v ?? ''; }, 60);
-});
+watchDebounced(filterInput, (v) => { store.filter.value = v ?? ''; }, { debounce: 60 });
 // The store can set the filter too (selecting a smart playlist): mirror back
 watch(store.filter, (v) => {
     if (v !== filterInput.value) filterInput.value = v;
@@ -179,7 +176,7 @@ function blurFilter() {
 }
 
 const managerOpen = ref(false);
-const paletteOpen = ref(readPaletteOpen());
+const paletteOpen = useLocalStorage(PALETTE_KEY, true);
 
 const sortOptions = [
     { label: 'Path', value: 'path' },
@@ -191,13 +188,6 @@ const sortOptions = [
     { label: 'Added', value: 'added' },
 ];
 
-function readPaletteOpen(): boolean {
-    try {
-        return localStorage.getItem(PALETTE_KEY) !== 'false';
-    } catch {
-        return true;
-    }
-}
 
 function blurTarget(e: Event) {
     (e.currentTarget as HTMLElement | null)?.blur();
@@ -225,14 +215,9 @@ function confirmExport(e: Event) {
 const exportOpen = ref(false);
 
 // Playlists sidebar: persisted like the palette, toggled by the B action
-const SIDEBAR_KEY = 'flowtag-sidebar';
-const sidebarOpen = ref(readSidebarOpen());
-function readSidebarOpen(): boolean {
-    try { return localStorage.getItem(SIDEBAR_KEY) === 'true'; } catch { return false; }
-}
+const sidebarOpen = useLocalStorage('flowtag-sidebar', false);
 watch(store.sidebarSignal, () => {
     sidebarOpen.value = !sidebarOpen.value;
-    try { localStorage.setItem(SIDEBAR_KEY, String(sidebarOpen.value)); } catch { /* in-memory only */ }
 });
 
 // Remove the selection from the active (manual) playlist
@@ -287,11 +272,6 @@ function onManualTagExit() {
 function togglePalette(e: Event) {
     blurTarget(e);
     paletteOpen.value = !paletteOpen.value;
-    try {
-        localStorage.setItem(PALETTE_KEY, String(paletteOpen.value));
-    } catch {
-        // Storage unavailable: keep the in-memory state only
-    }
 }
 
 // Selection is pure by default: browsing never starts or switches playback.
