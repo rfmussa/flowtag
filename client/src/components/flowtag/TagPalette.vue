@@ -1,5 +1,5 @@
 <template>
-<div class='tag-palette scroll'>
+<div class='tag-palette overflow-auto'>
     <div v-if='sections.length === 0' class='palette-empty'>
         No tags yet. Press <span class='ft-kbd'>T</span> and type to create one.
     </div>

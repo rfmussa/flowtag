@@ -1,7 +1,7 @@
 <template>
 <div>
-    <div class='row items-center justify-between q-pr-lg'>
-        <span class='q-pr-sm monospace q-pb-xs'>{{time}}</span>
+    <div class='flex items-center justify-between pr-6'>
+        <span class='pr-2 monospace pb-1'>{{time}}</span>
 
         <div 
             ref='waveform' 
@@ -23,7 +23,7 @@
             </div>
         </div>
 
-        <span class='q-pl-sm monospace q-pb-xs'>{{duration($1t.player.value.duration)}}</span>
+        <span class='pl-2 monospace pb-1'>{{duration($1t.player.value.duration)}}</span>
 
     </div>
 </div>

@@ -17,14 +17,14 @@
         <div
             v-for='(tag, i) in suggestions'
             :key='tag.id ?? "new"'
-            class='suggestion row items-center q-px-sm'
+            class='suggestion flex items-center px-2'
             :class='{highlighted: i === highlighted}'
             @mousedown.prevent='apply(i)'
             @mousemove='highlighted = i'
         >
-            <span class='dot q-mr-sm' :style='{background: tag.color}'></span>
-            <span class='name ellipsis'>{{ tag.id === undefined ? `Create "${tag.name}"` : tag.name }}</span>
-            <span v-if='tag.id !== undefined' class='count text-grey-6 q-ml-sm'>{{ tag.count }}</span>
+            <span class='dot mr-2' :style='{background: tag.color}'></span>
+            <span class='name truncate'>{{ tag.id === undefined ? `Create "${tag.name}"` : tag.name }}</span>
+            <span v-if='tag.id !== undefined' class='count text-ft-text-3 ml-2'>{{ tag.count }}</span>
         </div>
     </div>
 </div>

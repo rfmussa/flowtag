@@ -7,12 +7,11 @@ import { diag } from './diag';
 import { FlowTagAction } from './settings';
 
 /**
- * Any open overlay that owns the keyboard: Quasar dialogs (still used by the
- * inherited lookup screen) and the shadcn / Reka overlays, which render with
- * ARIA roles (dialog, alert dialog, menu, select listbox). While one is open,
- * FlowTag's shortcuts must not act on the list behind it.
+ * Any open overlay that owns the keyboard. The shadcn / Reka overlays render
+ * with ARIA roles (dialog, alert dialog, menu, select listbox); while one is
+ * open, FlowTag's shortcuts must not act on the list behind it.
  */
-const OPEN_OVERLAY_SELECTOR = '.q-dialog, [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+const OPEN_OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
 
 /** Default key (KeyboardEvent.code) per remappable action */
 export const FLOWTAG_ACTION_DEFAULTS: Record<FlowTagAction, string> = {

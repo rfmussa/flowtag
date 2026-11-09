@@ -1,15 +1,7 @@
 /*
  * Tailwind v4 + shadcn-vue, mapped onto FlowTag's design system.
- *
- * Preflight (Tailwind's global reset) is deliberately not imported while
- * Quasar still draws the inherited lookup screen: it would restyle every
- * plain button, heading and list on the page. It lands when Quasar leaves.
  */
-/* Cascade order, lowest first. Quasar (layered in vite.config.ts) sits under
-   everything Tailwind emits; unlayered app styles beat all of it. */
-@layer quasar, theme, base, components, utilities;
-@import "tailwindcss/theme.css" layer(theme);
-@import "tailwindcss/utilities.css" layer(utilities);
+@import "tailwindcss";
 @import "tw-animate-css";
 
 /* shadcn-vue's semantic tokens, pointed at FlowTag's --ft-* tokens (dark only) */
@@ -95,27 +87,10 @@
 }
 
 @layer base {
-    /* Interim preflight, until Quasar leaves and the real one lands. Only the
-       parts the new components rely on, kept off Quasar's own elements. */
-
-    /* shadcn parts: borders start at 0 solid so `border` alone draws a hairline */
-    [data-slot],
-    [data-slot]::before,
-    [data-slot]::after {
-        box-sizing: border-box;
-        border: 0 solid var(--color-border);
-    }
-
-    /* Native button chrome off: utilities and FlowTag's .ft-* styles paint them */
-    button:not(.q-btn),
-    input[data-slot] {
-        font: inherit;
-        letter-spacing: inherit;
-        color: inherit;
-        background-color: transparent;
-        border: 0 solid var(--color-border);
-        border-radius: 0;
-        padding: 0;
-        margin: 0;
+    /* shadcn's base: hairlines take the border token unless a utility says otherwise */
+    *,
+    ::before,
+    ::after {
+        border-color: var(--color-border);
     }
 }

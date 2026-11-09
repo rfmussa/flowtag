@@ -1,6 +1,6 @@
-@import 'quasar.scss';
 @import 'flowtag.scss';
 
+// Player waveform glyphs
 @font-face {
     font-family: wavefont;
     src: url('./fonts/wavefont.woff2') format('woff2');
@@ -16,163 +16,38 @@
     --waveform-wave: 40;
 }
 
-* {
-    // System UI stack app-wide (FlowTag's register); .wavefont wins by specificity
+html, body {
+    background: var(--ft-bg);
+    color: var(--ft-text);
     font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'Segoe UI', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+// A desktop app: chrome text isn't selectable, fields and .select-text are
+* {
     user-select: none;
 }
-
-.text-h5 {
-    padding-bottom: 6px;
+input, textarea {
+    -webkit-user-select: text;
+    user-select: text;
 }
-
-.bg-darker {
-    background: #181818;
-}
-
-.bg-highlight {
-    background: #303030;
-}
-
-.bg-onetagger-icon {
-    background: #1A1A1A;
-}
-
-.q-tab__indicator {
-    color: var(--q-color-primary);
-}
-
-.q-field__control {
-    background-color: #99999910 !important;
-}
-
-// Checkbox fix
-.checkbox svg {
-    color: #000;
-}
-
-// Input fix
-.input input {
-    color: #fff !important;
-}
-
-// Select fix
-.select span {
-    color: #fff !important;
-}
-
-// Tooltip fix
-.q-slider__pin-text {
-    color: #fff;
-}
-
-.q-tooltip {
-    font-size: 13px !important;
-}
-
-// Card shadow fix
-.q-card {
-    box-shadow: none !important;
-}
-
-// https://medium.com/cloud-native-the-gathering/how-to-fix-your-angular-material-input-field-from-being-broken-in-safari-1419b12007ee
-input {
-    -webkit-user-select: text !important;
-}
-
-// Fix the input fields on Webkit
 input[type="search"] {
     -webkit-appearance: textfield;
 }
 
-.selectable {
-    user-select: text !important;
-    cursor: text;
-}
-
-.clickable {
-    cursor: pointer;
-}
-
 .monospace {
-    font-family: monospace !important;
+    font-family: 'SF Mono', ui-monospace, 'Cascadia Mono', Menlo, monospace;
+    font-variant-numeric: tabular-nums;
 }
 
-.dotted-underline { 
-    border-bottom: 1px dotted;
-}
-.dotted-underline:hover { 
-    border-bottom: 1px dotted white;    
-}
-
-
-/* Renamer syntax higlighting colors */
-.__renamer_syntax_text {
-    color: #9e9e9e;
-    font-family: monospace !important;
-}
-.__renamer_syntax_operator {
-    color: #78909c;
-    font-family: monospace !important;
-}
-.__renamer_syntax_string {
-    color: #4caf50;
-    font-family: monospace !important;
-}
-.__renamer_syntax_number {
-    color: #ff5722;
-    font-family: monospace !important;
-}
-.__renamer_syntax_function {
-    color: #2196f3;
-    font-family: monospace !important;
-}
-.__renamer_syntax_property {
-    color: #cfd8dc;
-    font-family: monospace !important;
-}
-.__renamer_syntax_variable {
-    color: #cfd8dc;
-    font-family: monospace !important;
-}
-
-code {
-    font-family: monospace !important;
-    font-size: 85%;
-}
-
-
-// Scrollbar
-::-webkit-scrollbar {
-    width: 10px;
-}
-
-::-webkit-scrollbar:horizontal {
-    height: 10px;
-}
-
-::-webkit-scrollbar-track {
-    background-color: #10101044;
-    border-radius: 5px;
-}
-
+// Scrollbars outside the themed surface (overlays carry .flowtag-theme's own)
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
     border-radius: 5px;
-    background-color: #363636;
+    background-color: rgba(255, 255, 255, 0.12);
+    border: 2px solid transparent;
+    background-clip: content-box;
 }
-
-::-webkit-scrollbar-thumb:hover {
-    background-color: #404040;
-}
-
-::-webkit-scrollbar-thumb:horizontal {
-    background-color: #36363690;
-}
-
-::-webkit-scrollbar-thumb:horizontal:hover {
-    background-color: #404040;
-}
-
-::-webkit-scrollbar-corner {
-    background-color: transparent !important;
-}
+::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.22); }
+::-webkit-scrollbar-corner { background-color: transparent; }
