@@ -1,11 +1,12 @@
 <template>
-<div ref='viewport' class='track-scroll' @scroll.passive='onScroll'>
-    <div class='track-spacer' :style='{ height: visible.length * ROW_H + "px" }'>
+<div ref='viewport' class='track-scroll'>
+    <div class='track-spacer' :style='{ height: virtualizer.getTotalSize() + "px" }'>
         <TrackRow
             v-for='row in rows'
+            v-show='!row.hidden'
             :key='row.slot'
             class='track-pooled'
-            :style='{ transform: "translateY(" + row.index * ROW_H + "px)" }'
+            :style='{ transform: "translateY(" + row.start + "px)" }'
             :track='row.track'
             :selected='store.isSelected(row.track.id)'
             :anchor='row.track.id === store.selectedId.value'
@@ -19,12 +20,13 @@
 </template>
 
 <script lang='ts' setup>
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
+import { useVirtualizer } from '@tanstack/vue-virtual';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../../scripts/tagstore';
 import TrackRow from './TrackRow.vue';
 
-/** Fixed row height: every position is index * ROW_H */
+/** Fixed row height (TanStack takes it as the exact size, no measuring) */
 const ROW_H = 40;
 /** Rows rendered beyond each edge of the viewport */
 const OVERSCAN = 8;
@@ -34,8 +36,6 @@ const store = getTagStore();
 const emit = defineEmits<{ (e: 'play', track: FlowTrack): void }>();
 
 const viewport = ref<HTMLElement>();
-const scrollTop = ref(0);
-const viewportH = ref(800);
 
 // The actively playing file (may differ from the anchor with continue-playback)
 const playerPath = computed(() => $1t.player.value.path);
@@ -48,66 +48,51 @@ const visible = computed(() => {
     return store.visibleTracks();
 });
 
-interface PooledRow { slot: number; index: number; track: FlowTrack }
+// TanStack Virtual owns the scroll math: range, overscan, resize and
+// scroll-element observation, scrollToIndex
+// (used as-is: the adapter signals updates by re-triggering this same ref,
+// which a computed wrapper would swallow)
+const virtualizer = useVirtualizer(computed(() => ({
+    count: visible.value.length,
+    getScrollElement: () => viewport.value ?? null,
+    estimateSize: () => ROW_H,
+    overscan: OVERSCAN,
+})));
+
+/** Pool size: enough slots for the tallest possible viewport plus overscan.
+ *  Fixed for the session, so slot assignment never reshuffles. */
+const POOL = Math.ceil((window.screen?.availHeight || 1200) / ROW_H) + OVERSCAN * 2 + 2;
+
+interface SlotRow { slot: number; index: number; start: number; track: FlowTrack; live: boolean; hidden: boolean }
 
 /**
- * The rendered window, ordered by pool slot. Row i always lives in slot
- * i % poolSize, and the slot order never changes, so scrolling reuses the
- * same components in place: no mounts, no unmounts, no DOM moves, only the
- * props of slots whose track changed are patched.
+ * TanStack decides which rows are in the window and where they sit; this
+ * layer only maps them onto a fixed pool of TrackRow components. Row i lives
+ * in slot i % POOL, slots keep their order, and slots outside the window keep
+ * their last track where they are (off screen) rather than being destroyed. Scrolling
+ * therefore never creates or destroys a row component: keying by track would
+ * mount a fresh row (chips, icons) for every row entering the viewport,
+ * which measured ~39ms per step on a hard flick versus ~5ms pooled.
  */
-const rows = computed<PooledRow[]>(() => {
+const rows = computed<SlotRow[]>((previous) => {
     const list = visible.value;
-    const poolSize = Math.ceil(viewportH.value / ROW_H) + OVERSCAN * 2;
-    // Bounded by the list so a stale scroll position can never render nothing
-    const first = Math.min(
-        Math.max(0, Math.floor(scrollTop.value / ROW_H) - OVERSCAN),
-        Math.max(0, list.length - poolSize),
-    );
-    const last = Math.min(list.length, first + poolSize);
-    const bySlot: (PooledRow | undefined)[] = new Array(poolSize);
-    for (let i = first; i < last; i++) {
-        bySlot[i % poolSize] = { slot: i % poolSize, index: i, track: list[i] };
+    const bySlot: (SlotRow | undefined)[] = new Array(POOL);
+    // Carry every slot that has ever rendered. A slot outside TanStack's
+    // window always sits outside the viewport (its row is beyond overscan),
+    // so it stays visible where it is: toggling display on every slot that
+    // leaves the window forced style + layout of ~28 rows per flick step.
+    // Only rows past the end of a shrunk list are hidden, so they can't
+    // extend the scroll height or show below the content.
+    for (const row of previous ?? []) {
+        bySlot[row.slot] = { ...row, live: false, hidden: row.index >= list.length };
     }
-    return bySlot.filter((r): r is PooledRow => r !== undefined);
-});
-
-// Scroll events already fire at most once per frame; the re-render is
-// batched before paint, so the window never lags the scroll position
-function onScroll() {
-    scrollTop.value = viewport.value?.scrollTop ?? 0;
-}
-
-let resizeObserver: ResizeObserver | undefined;
-onMounted(() => {
-    const el = viewport.value;
-    if (!el) return;
-    viewportH.value = el.clientHeight || viewportH.value;
-    resizeObserver = new ResizeObserver(() => {
-        viewportH.value = el.clientHeight || viewportH.value;
-    });
-    resizeObserver.observe(el);
-});
-onUnmounted(() => resizeObserver?.disconnect());
-
-// A shrinking list leaves scrollTop past the end; the browser doesn't always
-// clamp it, so clamp explicitly once the spacer has its new height
-watch(() => visible.value.length, (len) => {
-    nextTick(() => {
-        const el = viewport.value;
-        if (!el) return;
-        const max = Math.max(0, len * ROW_H - el.clientHeight);
-        if (el.scrollTop > max) el.scrollTop = max;
-        scrollTop.value = Math.min(el.scrollTop, max);
-    });
-});
-
-// Switching scope (playlist / source / collection) starts at the top
-watch([store.activePlaylistId, store.activeSourceId], () => {
-    nextTick(() => {
-        if (viewport.value) viewport.value.scrollTop = 0;
-        scrollTop.value = 0;
-    });
+    for (const item of virtualizer.value.getVirtualItems()) {
+        const track = list[item.index];
+        if (!track) continue;
+        const slot = item.index % POOL;
+        bySlot[slot] = { slot, index: item.index, start: item.start, track, live: true, hidden: false };
+    }
+    return bySlot.filter((r): r is SlotRow => r !== undefined);
 });
 
 function select(track: FlowTrack, ev: MouseEvent) {
@@ -117,23 +102,14 @@ function select(track: FlowTrack, ev: MouseEvent) {
     });
 }
 
-function scrollToIndex(idx: number, align: 'start' | 'end' | 'center') {
-    const el = viewport.value;
-    if (!el) return;
-    const top = idx * ROW_H;
-    const target = align === 'start'
-        ? top
-        : align === 'end'
-            ? top + ROW_H - el.clientHeight
-            : top - (el.clientHeight - ROW_H) / 2;
-    el.scrollTop = Math.max(0, target);
-    scrollTop.value = el.scrollTop;
-}
+// Switching scope (playlist / source / collection) starts at the top
+watch([store.activePlaylistId, store.activeSourceId], () => {
+    nextTick(() => virtualizer.value.scrollToOffset(0));
+});
 
-// Keep the keyboard-selected row in view with the minimal scroll: already
-// visible does nothing, one step off the edge nudges by a row (native-list
-// cruise while holding J/K), and only a far jump (D to next untagged,
-// filter change) recenters.
+// Keep the keyboard-selected row in view: 'auto' scrolls only when the row
+// is off screen and by the minimum (one row per J/K press while cruising);
+// a far jump (D to next untagged) recenters instead.
 watch(store.selectedId, (id) => {
     if (id === undefined) return;
     const idx = visible.value.findIndex((t) => t.id === id);
@@ -141,17 +117,14 @@ watch(store.selectedId, (id) => {
     const el = viewport.value;
     if (!el) return;
     const top = idx * ROW_H;
-    const bottom = top + ROW_H;
-    const viewTop = el.scrollTop;
-    const viewBottom = viewTop + el.clientHeight;
-    if (top >= viewTop && bottom <= viewBottom) return;
-    const far = bottom < viewTop - el.clientHeight || top > viewBottom + el.clientHeight;
-    scrollToIndex(idx, far ? 'center' : (top < viewTop ? 'start' : 'end'));
+    const far = top + ROW_H < el.scrollTop - el.clientHeight
+        || top > el.scrollTop + 2 * el.clientHeight;
+    virtualizer.value.scrollToIndex(idx, { align: far ? 'center' : 'auto' });
 });
 </script>
 
 <style lang='scss'>
-// Unscoped: the pooled class lands on TrackRow's root element
+// Unscoped: this class lands on TrackRow's root element
 .track-scroll {
     height: 100%;
     overflow-y: auto;

@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "@quasar/extras": "1.16.16",
+    "@tanstack/vue-virtual": "^3.13.52",
     "axios": "1.8.2",
     "compare-versions": "6.1.1",
     "quasar": "2.17.7",
