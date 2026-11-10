@@ -142,6 +142,31 @@ pub fn migrations() -> Migrations<'static> {
         "),
         // v8: source folders carry a display name (defaults to the path basename)
         M::up_with_hook("", add_folder_name),
+        // v9: Tangle tag sync bookkeeping (no FKs on tag ids on purpose)
+        M::up("
+            CREATE TABLE IF NOT EXISTS tangle_tags (
+                tag_id INTEGER PRIMARY KEY,          -- FlowTag tags.id (may no longer exist)
+                list_id TEXT NOT NULL UNIQUE,        -- Tangle lst_…
+                sent_name TEXT NOT NULL,
+                sent_color TEXT,
+                sent_group TEXT,
+                unlinked INTEGER NOT NULL DEFAULT 0  -- deleted in Tangle: stop syncing it
+            );
+            CREATE TABLE IF NOT EXISTS tangle_items (
+                track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+                item_id TEXT,                        -- NULL: not found in Tangle (yet)
+                checked_at INTEGER NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS tangle_sources (
+                folder_id INTEGER PRIMARY KEY REFERENCES folders(id) ON DELETE CASCADE,
+                source_id TEXT NOT NULL              -- Tangle src_… (platform local)
+            );
+            CREATE TABLE IF NOT EXISTS tangle_sent (
+                tag_id INTEGER NOT NULL,
+                item_id TEXT NOT NULL,
+                PRIMARY KEY (tag_id, item_id)
+            );
+        "),
     ])
 }
 
@@ -225,6 +250,31 @@ mod tests {
             .prepare("SELECT 1 FROM sqlite_master WHERE name = 'first_step'").unwrap()
             .exists([]).unwrap();
         assert!(!first_exists, "an earlier step of the failed batch must be rolled back");
+    }
+
+    /// v9 creates the Tangle sync tables. Their tag ids carry no FK, so a
+    /// bookkeeping row survives its FlowTag tag being deleted.
+    #[test]
+    fn v9_creates_tangle_tables() {
+        let (_dir, db) = crate::testutil::test_db();
+        let conn = db.conn();
+        for table in ["tangle_tags", "tangle_items", "tangle_sources", "tangle_sent"] {
+            let exists = conn
+                .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1").unwrap()
+                .exists([table]).unwrap();
+            assert!(exists, "{table} missing after v9");
+        }
+        conn.execute("INSERT INTO tags (name) VALUES ('dark')", []).unwrap();
+        let tag_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO tangle_tags (tag_id, list_id, sent_name) VALUES (?1, 'lst_1', 'dark')",
+            [tag_id],
+        ).unwrap();
+        conn.execute("DELETE FROM tags WHERE id = ?1", [tag_id]).unwrap();
+        let remaining: i64 = conn
+            .query_row("SELECT COUNT(*) FROM tangle_tags WHERE tag_id = ?1", [tag_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(remaining, 1, "tangle_tags row must survive tag deletion");
     }
 
     #[test]
