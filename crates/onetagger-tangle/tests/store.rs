@@ -138,23 +138,47 @@ fn unlinked_tag_is_skipped() {
     let t = TestDb::new();
     let c = t.db.conn();
     let tr = add_track(&c, "a");
+    let tr2 = add_track(&c, "b");
     set_item(&c, tr, Some("itm_1"));
+    set_item(&c, tr2, Some("itm_2"));
     let tag = add_tag(&c, "dark", "#111111", None);
     tag_track(&c, tr, tag);
     link_tag(&c, &tag_row(&c, tag), "lst_1").unwrap();
     record_sent(&c, tag, &[s("itm_1")]).unwrap();
     mark_unlinked(&c, tag).unwrap();
-    untag_track(&c, tr, tag);
+    // Still tagged (itm_1) plus a newly tagged track (itm_2), with leftover sent rows.
+    tag_track(&c, tr2, tag);
+    c.execute("INSERT INTO tangle_sent (tag_id, item_id) VALUES (?1, 'itm_gone')", [tag]).unwrap();
     c.execute("UPDATE tags SET name = 'x' WHERE id = ?1", [tag]).unwrap();
     assert!(entries_to_add(&c).unwrap().is_empty());
     assert!(entries_to_remove(&c).unwrap().is_empty());
     assert!(tags_to_update(&c).unwrap().is_empty());
+    assert!(tags_to_create(&c).unwrap().is_empty());
+    // Pressing Send again: resend_tag forgets the link; the tag is creatable afresh.
+    resend_tag(&c, tag).unwrap();
+    assert_eq!(tags_to_create(&c).unwrap().len(), 1);
     let sent: i64 = c.query_row("SELECT COUNT(*) FROM tangle_sent", [], |r| r.get(0)).unwrap();
     assert_eq!(sent, 0);
-    // Pressing Send again: resend_tag forgets the link; the tag is created afresh.
-    resend_tag(&c, tag).unwrap();
+}
+
+#[test]
+fn case_only_rename_yields_update() {
+    let t = TestDb::new();
+    let c = t.db.conn();
+    let tr = add_track(&c, "a");
+    set_item(&c, tr, Some("itm_1"));
+    let g = add_group(&c, "mood");
+    let tag = add_tag(&c, "dark", "#111111", Some(g));
     tag_track(&c, tr, tag);
-    assert_eq!(tags_to_create(&c).unwrap().len(), 1);
+    link_tag(&c, &tag_row(&c, tag), "lst_1").unwrap();
+    c.execute("UPDATE tags SET name = 'Dark' WHERE id = ?1", [tag]).unwrap();
+    let u = tags_to_update(&c).unwrap();
+    assert_eq!(u.len(), 1);
+    assert_eq!(u[0].1.name, "Dark");
+    mark_updated(&c, &u[0].1).unwrap();
+    assert!(tags_to_update(&c).unwrap().is_empty());
+    c.execute("UPDATE groups SET name = 'Mood' WHERE id = ?1", [g]).unwrap();
+    assert_eq!(tags_to_update(&c).unwrap().len(), 1);
 }
 
 #[test]
@@ -173,4 +197,15 @@ fn fingerprint_changes_on_tag_untag_rename() {
     untag_track(&c, tr, tag);
     assert_ne!(f2, fingerprint(&c).unwrap());
     assert_eq!(fingerprint(&c).unwrap(), fingerprint(&c).unwrap());
+}
+
+#[test]
+fn group_rename_changes_fingerprint() {
+    let t = TestDb::new();
+    let c = t.db.conn();
+    let g = add_group(&c, "mood");
+    add_tag(&c, "dark", "#111111", Some(g));
+    let before = fingerprint(&c).unwrap();
+    c.execute("UPDATE groups SET name = 'vibe' WHERE id = ?1", [g]).unwrap();
+    assert_ne!(before, fingerprint(&c).unwrap());
 }

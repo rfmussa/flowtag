@@ -67,7 +67,9 @@ pub fn tags_to_update(c: &Connection) -> Result<Vec<(Linked, TagRow)>> {
          JOIN tags t ON t.id = tt.tag_id
          LEFT JOIN groups g ON g.id = t.group_id
          WHERE tt.unlinked = 0
-           AND (t.name IS NOT tt.sent_name OR t.color IS NOT tt.sent_color OR g.name IS NOT tt.sent_group)
+           AND (t.name COLLATE BINARY IS NOT tt.sent_name
+                OR t.color COLLATE BINARY IS NOT tt.sent_color
+                OR g.name COLLATE BINARY IS NOT tt.sent_group)
          ORDER BY tt.tag_id"
     );
     let mut stmt = c.prepare(&sql)?;
@@ -174,14 +176,23 @@ pub fn record_unsent(c: &Connection, tag_id: i64, items: &[String]) -> Result<()
     Ok(())
 }
 
-/// Cheap change detector: tracks' `tag_version` sum combined with a hash of the tag definitions.
+/// Cheap change detector: tracks' `tag_version` sum combined with a hash of the tag definitions (including group names).
 pub fn fingerprint(c: &Connection) -> Result<i64> {
     let versions: i64 =
         c.query_row("SELECT COALESCE(SUM(tag_version), 0) FROM tracks", [], |r| r.get(0))?;
     let mut hasher = DefaultHasher::new();
-    let mut stmt = c.prepare("SELECT id, name, color, group_id FROM tags ORDER BY id")?;
+    let mut stmt = c.prepare(
+        "SELECT t.id, t.name, t.color, t.group_id, g.name FROM tags t
+         LEFT JOIN groups g ON g.id = t.group_id ORDER BY t.id",
+    )?;
     let rows = stmt.query_map([], |r| {
-        Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?, r.get::<_, Option<i64>>(3)?))
+        Ok((
+            r.get::<_, i64>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, Option<i64>>(3)?,
+            r.get::<_, Option<String>>(4)?,
+        ))
     })?;
     for row in rows {
         row?.hash(&mut hasher);
