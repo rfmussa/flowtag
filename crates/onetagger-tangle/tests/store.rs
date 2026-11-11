@@ -209,3 +209,27 @@ fn group_rename_changes_fingerprint() {
     c.execute("UPDATE groups SET name = 'vibe' WHERE id = ?1", [g]).unwrap();
     assert_ne!(before, fingerprint(&c).unwrap());
 }
+
+#[test]
+fn unlinked_tags_lists_name_or_sent_name() {
+    let t = TestDb::new();
+    let c = t.db.conn();
+    let tr = add_track(&c, "a");
+    set_item(&c, tr, Some("itm_1"));
+    let kept = add_tag(&c, "dark", "#111111", None);
+    let gone = add_tag(&c, "old", "#222222", None);
+    let linked = add_tag(&c, "fine", "#333333", None);
+    for tag in [kept, gone, linked] {
+        tag_track(&c, tr, tag);
+    }
+    for (tag, list) in [(kept, "lst_1"), (gone, "lst_2"), (linked, "lst_3")] {
+        link_tag(&c, &tag_row(&c, tag), list).unwrap();
+    }
+    mark_unlinked(&c, kept).unwrap();
+    mark_unlinked(&c, gone).unwrap();
+    c.execute("DELETE FROM tags WHERE id = ?1", [gone]).unwrap();
+    assert_eq!(
+        unlinked_tags(&c).unwrap(),
+        vec![(kept, "dark".to_string()), (gone, "old".to_string())]
+    );
+}

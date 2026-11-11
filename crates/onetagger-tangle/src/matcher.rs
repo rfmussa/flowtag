@@ -115,7 +115,7 @@ pub fn match_from_collection(
     Ok(summary)
 }
 
-fn db_error(e: rusqlite::Error) -> TangleError {
+pub(crate) fn db_error(e: rusqlite::Error) -> TangleError {
     log::error!("tangle matcher database error: {e}");
     TangleError::Other { status: 0, code: "db_error".into(), request_id: None }
 }

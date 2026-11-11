@@ -199,3 +199,13 @@ pub fn fingerprint(c: &Connection) -> Result<i64> {
     }
     Ok(versions.wrapping_add(hasher.finish() as i64))
 }
+
+/// Tags the user deleted in Tangle (waiting for Send again): (tag id, display name).
+pub fn unlinked_tags(c: &Connection) -> Result<Vec<(i64, String)>> {
+    c.prepare(
+        "SELECT tt.tag_id, COALESCE(t.name, tt.sent_name) FROM tangle_tags tt
+         LEFT JOIN tags t ON t.id = tt.tag_id WHERE tt.unlinked = 1 ORDER BY tt.tag_id",
+    )?
+    .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+    .collect()
+}
