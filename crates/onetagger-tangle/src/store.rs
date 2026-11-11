@@ -209,3 +209,38 @@ pub fn unlinked_tags(c: &Connection) -> Result<Vec<(i64, String)>> {
     .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
     .collect()
 }
+
+/// What a first send would do: (tags to create, distinct (tag, item) pairs for those tags).
+pub fn preview_counts(c: &Connection) -> Result<(usize, usize)> {
+    let tags = tags_to_create(c)?.len();
+    let pairs: i64 = c.query_row(
+        "SELECT COUNT(*) FROM (
+             SELECT DISTINCT tg.tag_id, ti.item_id
+             FROM track_tags tg
+             JOIN tangle_items ti ON ti.track_id = tg.track_id AND ti.item_id IS NOT NULL
+             WHERE tg.tag_id NOT IN (SELECT tag_id FROM tangle_tags))",
+        [],
+        |r| r.get(0),
+    )?;
+    Ok((tags, pairs as usize))
+}
+
+const MAX_UNMATCHED_PATHS: usize = 50;
+
+/// (present tracks with an item id, present tracks, up to 50 paths of unmatched present tracks).
+pub fn match_counts(c: &Connection) -> Result<(usize, usize, Vec<String>)> {
+    let (matched, total): (i64, i64) = c.query_row(
+        "SELECT COALESCE(SUM(ti.item_id IS NOT NULL), 0), COUNT(*) FROM tracks t
+         LEFT JOIN tangle_items ti ON ti.track_id = t.id WHERE t.missing = 0",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )?;
+    let paths = c
+        .prepare(
+            "SELECT t.path FROM tracks t LEFT JOIN tangle_items ti ON ti.track_id = t.id
+             WHERE t.missing = 0 AND ti.item_id IS NULL ORDER BY t.id LIMIT ?1",
+        )?
+        .query_map([MAX_UNMATCHED_PATHS as i64], |r| r.get(0))?
+        .collect::<Result<Vec<String>>>()?;
+    Ok((matched as usize, total as usize, paths))
+}

@@ -233,3 +233,36 @@ fn unlinked_tags_lists_name_or_sent_name() {
         vec![(kept, "dark".to_string()), (gone, "old".to_string())]
     );
 }
+
+#[test]
+fn preview_counts_tags_and_pairs_for_uncreated_tags() {
+    let t = TestDb::new();
+    let c = t.db.conn();
+    let (a, b, d) = (add_track(&c, "a"), add_track(&c, "b"), add_track(&c, "d"));
+    set_item(&c, a, Some("itm_a"));
+    set_item(&c, b, Some("itm_b"));
+    set_item(&c, d, None);
+    let dark = add_tag(&c, "dark", "#111111", None);
+    let warm = add_tag(&c, "warm", "#222222", None);
+    for tr in [a, b, d] {
+        tag_track(&c, tr, dark);
+    }
+    tag_track(&c, a, warm);
+    assert_eq!(preview_counts(&c).unwrap(), (2, 3));
+    link_tag(&c, &tag_row(&c, warm), "lst_1").unwrap();
+    assert_eq!(preview_counts(&c).unwrap(), (1, 2));
+}
+
+#[test]
+fn match_counts_present_tracks_only() {
+    let t = TestDb::new();
+    let c = t.db.conn();
+    let (a, b, gone) = (add_track(&c, "a"), add_track(&c, "b"), add_track(&c, "gone"));
+    set_item(&c, a, Some("itm_a"));
+    set_item(&c, b, None);
+    set_item(&c, gone, None);
+    c.execute("UPDATE tracks SET missing = 1 WHERE id = ?1", [gone]).unwrap();
+    let (matched, total, paths) = match_counts(&c).unwrap();
+    assert_eq!((matched, total), (1, 2));
+    assert_eq!(paths, vec![s("/music/b.mp3")]);
+}
