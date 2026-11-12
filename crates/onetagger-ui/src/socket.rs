@@ -667,17 +667,28 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::PlayerPreload { path } => {
             let duration_ms = known_duration_ms(&context.db, &path);
             let slot = context.preload.clone();
+            // A newer request (or a flush) supersedes this one: stale primes never decode or store
+            let generation = slot.begin(&path);
             tokio::task::spawn_blocking(move || {
+                if slot.holds(&path) {
+                    return;
+                }
                 let start = std::time::Instant::now();
                 let source = match AudioSources::from_path_with_duration(&path, duration_ms) {
                     Ok(source) => source,
                     Err(e) => return debug!("player preload: {path:?} failed: {e}"),
                 };
+                if !slot.is_current(generation) {
+                    return;
+                }
                 // Prime the decode cache (AIFF/ALAC decode once); the result is dropped on purpose
                 if let Err(e) = source.get_source() {
                     return debug!("player preload: {path:?} failed: {e}");
                 }
-                slot.set(path.clone(), source);
+                if !slot.is_current(generation) {
+                    return;
+                }
+                slot.set(generation, path.clone(), source);
                 debug!("player preload: {path:?} ready in {}ms", start.elapsed().as_millis());
             });
         },
