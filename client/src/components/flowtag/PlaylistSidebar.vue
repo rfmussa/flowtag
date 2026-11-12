@@ -1,9 +1,23 @@
 <template>
 <div class='pl-sidebar'>
+    <!-- Stage: pinned while it has tracks -->
+    <div
+        v-if='store.stageTotal.value > 0'
+        class='pl-row pl-stage'
+        :class='{ active: store.scope.value === "stage" }'
+        data-test='stage-entry'
+        @click='store.selectStage()'
+    >
+        <LayersIcon class='pl-icon' />
+        <span class='pl-name'>Stage</span>
+        <span class='pl-count ft-num' data-test='stage-count'>{{ store.stageReady.value }} / {{ store.stageTotal.value }}</span>
+        <div class='stage-bar' aria-hidden='true'><div class='stage-bar-fill' :style='{ width: stagePct + "%" }'></div></div>
+    </div>
+
     <!-- Collection (everything) -->
     <div
         class='pl-row'
-        :class='{ active: store.activePlaylistId.value === undefined && store.activeSourceId.value === undefined }'
+        :class='{ active: store.scope.value !== "stage" && store.activePlaylistId.value === undefined && store.activeSourceId.value === undefined }'
         @click='select(undefined)'
     >
         <LibraryIcon class='pl-icon' />
@@ -29,7 +43,7 @@
             v-for='f in store.folders.value'
             :key='"src" + f.id'
             class='pl-row'
-            :class='{ active: store.activeSourceId.value === f.id }'
+            :class='{ active: store.scope.value !== "stage" && store.activeSourceId.value === f.id }'
             :title='f.path'
             @click='store.selectSource(f.id)'
         >
@@ -75,7 +89,7 @@
             v-for='pl in store.playlists.value'
             :key='pl.id'
             class='pl-row'
-            :class='{ active: store.activePlaylistId.value === pl.id, "drop-target": dropId === pl.id && !pl.filter }'
+            :class='{ active: store.scope.value !== "stage" && store.activePlaylistId.value === pl.id, "drop-target": dropId === pl.id && !pl.filter }'
             @click='select(pl.id)'
             @dragover='onDragOver(pl, $event)'
             @dragleave='dropId = dropId === pl.id ? undefined : dropId'
@@ -94,7 +108,7 @@
             </template>
             <span v-else class='pl-name' :title='pl.name' @dblclick.stop='startRename("playlist", pl.id)'>{{ pl.name }}</span>
             <span class='pl-count ft-num'>{{ playlistCount(pl).toLocaleString() }}</span>
-            <DropdownMenu>
+            <DropdownMenu @update:open='(open: boolean) => open && ensureMembers(pl)'>
                 <DropdownMenuTrigger as-child>
                     <button type='button' class='ft-btn icon-only pl-menu-btn' aria-label='Playlist menu' @click.stop>
                         <EllipsisIcon class='size-[13px]' />
@@ -102,6 +116,9 @@
                 </DropdownMenuTrigger>
                 <!-- Rename focuses its inline field; returning focus to the trigger would blur (commit) it -->
                 <DropdownMenuContent align='end' class='min-w-[140px]' @close-auto-focus.prevent>
+                    <DropdownMenuItem :disabled='stageablePlaylistIds(pl).length === 0' @select='stagePlaylist(pl)'>
+                        Stage its not-done tracks ({{ stageablePlaylistIds(pl).length }})
+                    </DropdownMenuItem>
                     <DropdownMenuItem v-if='pl.filter' @select='rulesFor = pl'>Edit rules</DropdownMenuItem>
                     <DropdownMenuItem @select='startRename("playlist", pl.id)'>Rename</DropdownMenuItem>
                     <DropdownMenuItem variant='destructive' @select='deletePlaylist(pl)'>Delete</DropdownMenuItem>
@@ -122,7 +139,7 @@ import { computed, ref } from 'vue';
 import { notify } from '@/lib/notify';
 import { useLocalStorage } from '@vueuse/core';
 import {
-    ChevronDownIcon, ChevronRightIcon, EllipsisIcon, FolderIcon, LibraryIcon,
+    ChevronDownIcon, ChevronRightIcon, EllipsisIcon, FolderIcon, LayersIcon, LibraryIcon,
     ListFilterIcon, ListFilterPlusIcon, ListMusicIcon, PlusIcon,
 } from '@lucide/vue';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -132,6 +149,8 @@ import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
 import SmartPlaylistEditor from './SmartPlaylistEditor.vue';
 import { diag } from '../../scripts/diag';
 
+/** Tracks staged per "Stage its not-done tracks" action */
+const STAGE_BATCH = 200;
 const $1t = get1t();
 const store = getTagStore();
 const dropId = ref<number | undefined>(undefined);
@@ -191,6 +210,27 @@ const filtersActive = computed(() =>
     store.filter.value.trim().length > 0
     || store.filterTagIds.value.length > 0
     || store.quickFilter.value !== 'all');
+
+const stagePct = computed(() => {
+    const total = store.stageTotal.value;
+    return total === 0 ? 0 : Math.min(100, Math.round((store.stageReady.value / total) * 100));
+});
+
+/** Manual playlists only know their members once loaded; the menu needs them for its count */
+function ensureMembers(pl: FlowPlaylist) {
+    if (!pl.filter && !store.playlistMembers.value.has(pl.id)) $1t.send('playlistTracksLoad', { id: pl.id });
+}
+
+/** First 200 not-done, not-staged tracks of the playlist */
+function stageablePlaylistIds(pl: FlowPlaylist): number[] {
+    return store.notDoneUnstagedIds(store.playlistTrackIds(pl), STAGE_BATCH);
+}
+
+function stagePlaylist(pl: FlowPlaylist) {
+    const ids = stageablePlaylistIds(pl);
+    store.stageTrackIds(ids);
+    diag('stagePlaylist', { id: pl.id, tracks: ids.length });
+}
 
 function select(id?: number) {
     if (id === undefined) store.selectSource(undefined);
@@ -346,6 +386,27 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
     }
     .pl-menu-btn { opacity: 0; padding: 0 3px; height: 20px; flex-shrink: 0; }
     .pl-menu-btn[data-state='open'] { opacity: 1; background: var(--ft-active); }
+}
+.pl-stage {
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 30px;
+    padding-top: 6px;
+    padding-bottom: 6px;
+    margin-bottom: 4px;
+    row-gap: 5px;
+    .stage-bar {
+        flex-basis: 100%;
+        height: 2px;
+        border-radius: 1px;
+        background: var(--ft-line);
+        overflow: hidden;
+    }
+    .stage-bar-fill {
+        height: 100%;
+        background: var(--ft-playing);
+        transition: width 300ms ease-out;
+    }
 }
 .pl-empty {
     font-size: 11.5px;

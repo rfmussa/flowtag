@@ -10,6 +10,21 @@
             <ul v-else class='divide-y divide-ft-line-faint'>
                 <li v-for='folder in store.folders.value' :key='folder.id' class='flex items-center gap-2 h-8 pl-2'>
                     <span class='flex-1 min-w-0 truncate text-xs text-ft-text-2' :title='folder.path'>{{ folder.path }}</span>
+                    <span v-if='counts(folder.id)' class='text-[10.5px] text-ft-text-3 ft-num shrink-0' data-test='folder-counts'>
+                        {{ counts(folder.id)![0].toLocaleString() }}/{{ counts(folder.id)![1].toLocaleString() }}
+                    </span>
+                    <DropdownMenu>
+                        <DropdownMenuTrigger as-child>
+                            <Button size='icon-sm' :aria-label='`Folder menu for ${folder.path}`'>
+                                <EllipsisIcon class='size-3.5' />
+                            </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align='end' class='min-w-[140px]'>
+                            <DropdownMenuItem :disabled='stageableIds(folder.id).length === 0' @select='stageFolder(folder.id)'>
+                                Stage its not-done tracks ({{ stageableIds(folder.id).length }})
+                            </DropdownMenuItem>
+                        </DropdownMenuContent>
+                    </DropdownMenu>
                     <Hint text='Remove folder'>
                         <Button size='icon-sm' variant='destructive' :aria-label='`Remove ${folder.path}`' @click='remove(folder.id)'>
                             <TrashIcon class='size-3.5' />
@@ -30,16 +45,32 @@
 </template>
 
 <script lang='ts' setup>
-import { FolderIcon, FolderPlusIcon, RefreshCwIcon, TrashIcon } from '@lucide/vue';
+import { EllipsisIcon, FolderIcon, FolderPlusIcon, RefreshCwIcon, TrashIcon } from '@lucide/vue';
 import { Button } from '@/components/ui/button';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { confirmDialog } from '@/lib/dialogs';
 import Hint from './Hint.vue';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore } from '../../scripts/tagstore';
 
+/** Tracks staged per "Stage its not-done tracks" action */
+const STAGE_BATCH = 200;
 const store = getTagStore();
 const $1t = get1t();
+
+/** [done, total] for a folder; absent when the server reported none */
+function counts(folderId: number): [number, number] | undefined {
+    return store.folderCounts.value.get(folderId);
+}
+
+function stageableIds(folderId: number): number[] {
+    return store.folderNotDoneUnstagedIds(folderId, STAGE_BATCH);
+}
+
+function stageFolder(folderId: number) {
+    store.stageTrackIds(stageableIds(folderId));
+}
 
 async function remove(id: number) {
     const folder = store.folders.value.find((f) => f.id === id);

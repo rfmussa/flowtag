@@ -12,6 +12,7 @@
     <span class='row-artist' :title='track.artist'>{{ track.artist }}</span>
     <span class='row-spacer'></span>
     <TagChips dense :tagIds='track.tagIds' class='row-chips'></TagChips>
+    <span v-if='statusChip' class='row-status' :class='"row-status-" + statusChip.kind' :data-test='"row-status-" + statusChip.kind'>{{ statusChip.label }}</span>
     <span v-if='track.needsFlush' class='row-pending' title='Not yet written to file'></span>
     <Hint v-if='track.missing' text='File missing'>
         <FileExclamationPointIcon class='row-missing size-[13px]' />
@@ -30,6 +31,7 @@ import Hint from './Hint.vue';
 import { computed } from 'vue';
 import TagChips from './TagChips.vue';
 import { FlowTrack, getTagStore } from '../../scripts/tagstore';
+import { statusOf } from '@/lib/status';
 import { keyColor } from '../../scripts/musickey';
 import { get1t } from '../../scripts/onetagger';
 
@@ -43,6 +45,14 @@ const props = defineProps<{
     playing?: boolean;
 }>();
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void; (e: 'play'): void }>();
+
+/** done ✓ · skip · staged; plain in-progress/untagged rows show nothing (tag chips say enough) */
+const statusChip = computed(() => {
+    if (statusOf(props.track) === 'done') return { kind: 'done', label: '✓' };
+    if (props.track.staged && props.track.skip) return { kind: 'skip', label: 'skip' };
+    if (props.track.staged) return { kind: 'staged', label: 'staged' };
+    return undefined;
+});
 
 const cols = computed(() => get1t().settings.value.flowtag.columns);
 
@@ -111,6 +121,19 @@ const addedDate = computed(() => {
         max-width: 280px;
         overflow: hidden;
     }
+    .row-status {
+        flex-shrink: 0;
+        font-size: 10.5px;
+        font-weight: 500;
+        line-height: 16px;
+        padding: 0 6px;
+        border-radius: 8px;
+        color: var(--ft-text-3);
+        border: 1px solid var(--ft-line);
+    }
+    .row-status-done { color: var(--ft-playing); border-color: transparent; background: transparent; font-size: 12px; padding: 0 2px; }
+    .row-status-skip { color: var(--ft-warn); }
+    .row-status-staged { color: var(--ft-text-2); }
     .row-pending {
         width: 5px;
         height: 5px;

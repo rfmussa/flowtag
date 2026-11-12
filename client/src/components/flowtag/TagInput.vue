@@ -95,6 +95,8 @@ function onKey(e: KeyboardEvent) {
             e.preventDefault();
             break;
         case 'Enter':
+            // ⌘Enter is the commit chord (global handler), not "add tag"
+            if (e.metaKey || e.ctrlKey) break;
             if (text.value.trim() || suggestions.value.length > 0) apply(highlighted.value);
             e.preventDefault();
             break;

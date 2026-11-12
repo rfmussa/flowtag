@@ -9,6 +9,7 @@ import { ManualTag } from './manualtag';
 import router from './router';
 import { getTagStore } from './tagstore';
 import { handleFlowKeys } from './flowkeys';
+import { isCommitChord } from './commitsheet';
 import { TangleStatus } from '@/lib/tangle';
 
 class OneTagger {
@@ -85,7 +86,9 @@ class OneTagger {
         document.addEventListener('keydown', (e) => {
             // Never steal keys from editable elements
             const target = e.target as HTMLElement | null;
-            if (target && (target.nodeName == "INPUT" || target.nodeName == "TEXTAREA" || target.isContentEditable)) return true;
+            // (the commit chord is the exception: it works from the tag input)
+            const editable = target && (target.nodeName == "INPUT" || target.nodeName == "TEXTAREA" || target.isContentEditable);
+            if (editable && !isCommitChord(e)) return true;
 
             // Dev tools
             if (e.key == 'F3') {

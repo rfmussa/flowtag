@@ -5,6 +5,7 @@ import { getTagStore } from './tagstore';
 import { Keybind } from './utils';
 import { diag } from './diag';
 import { FlowTagAction } from './settings';
+import { isCommitChord, openCommitSheet } from './commitsheet';
 
 /**
  * Any open overlay that owns the keyboard. The shadcn / Reka overlays render
@@ -23,6 +24,8 @@ export const FLOWTAG_ACTION_DEFAULTS: Record<FlowTagAction, string> = {
     edit: 'KeyE',
     lookup: 'KeyM',
     sidebar: 'KeyB',
+    stage: 'KeyS',
+    skip: 'KeyX',
 };
 
 /** Labels for the settings page */
@@ -35,6 +38,8 @@ export const FLOWTAG_ACTION_LABELS: Record<FlowTagAction, string> = {
     edit: 'Edit metadata',
     lookup: 'Online lookup',
     sidebar: 'Toggle playlists sidebar',
+    stage: 'Stage / unstage selection',
+    skip: 'Skip current track at commit',
 };
 
 /** Key codes FlowTag always claims, regardless of configuration */
@@ -103,9 +108,10 @@ function navMatches(event: KeyboardEvent, action: 'prev' | 'next'): { extend: bo
  *
  * Fixed:        Space play/pause · ↑/↓ select (shift extends) ·
  *               ←/→ seek -10s/+30s · 1/2/3 seek 25/50/75% · 0 seek start ·
- *               Esc clear multi-select · ⌘Z undo
+ *               Esc clear multi-select · ⌘Z undo · ⌘Enter commit sheet
  * Remappable:   prev J · next K · focus tag input T · focus filter F ·
- *               done D · edit metadata E · online lookup M
+ *               done D · edit metadata E · online lookup M ·
+ *               stage S (toggle selection) · skip X (current track)
  *               (Settings → Keyboard; per-tag hotkeys live in Manage tags)
  */
 export function handleFlowKeys(event: KeyboardEvent): boolean {
@@ -189,6 +195,12 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         return true;
     }
 
+    // Commit sheet (fixed): the commit gesture must work from the tag input too
+    if (isCommitChord(event)) {
+        openCommitSheet();
+        return true;
+    }
+
     // Remappable actions that work without a selection
     const prev = navMatches(event, 'prev');
     if (prev) {
@@ -222,7 +234,17 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         diag('done', { trackId: selected.id, tags: selected.tagIds.length });
         $1t.send('flushHint', { trackId: selected.id });
         player.wasPlaying = true;
-        store.selectNextUntagged();
+        if (store.scope.value === 'stage') store.selectNextStagedNotReady();
+        else store.selectNextUntagged();
+        return true;
+    }
+
+    if (actionMatches(event, 'stage')) {
+        store.toggleStageSelection();
+        return true;
+    }
+    if (actionMatches(event, 'skip')) {
+        store.stageSkipCurrent();
         return true;
     }
 

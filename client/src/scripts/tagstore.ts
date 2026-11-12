@@ -383,6 +383,13 @@ export class TagStore {
         if (id !== undefined) diag('sourceSelect', { id });
     }
 
+    /** Scope the view to the stage */
+    selectStage() {
+        this.activeSourceId.value = undefined;
+        this.scope.value = 'stage';
+        diag('stageSelect');
+    }
+
     selectPlaylist(id?: number) {
         this.activePlaylistId.value = id;
         this.activeSourceId.value = undefined;
@@ -620,6 +627,101 @@ export class TagStore {
         }
     }
 
+    // ---- Staging ----
+
+    /** Rows only learn staged/skip/doneAt from a row load: refetch after our own stage mutations */
+    private refreshRows() {
+        get1t().send('tagTracksLoad');
+    }
+
+    /** First `limit` ids of `ids` that are neither done nor staged, in the given order */
+    notDoneUnstagedIds(ids: number[], limit = 200): number[] {
+        const byId = new Map(this.tracks.value.map((t) => [t.id, t]));
+        const out: number[] = [];
+        for (const id of ids) {
+            const t = byId.get(id);
+            if (!t || (t.doneAt !== undefined && t.doneAt !== null) || t.staged) continue;
+            out.push(id);
+            if (out.length >= limit) break;
+        }
+        return out;
+    }
+
+    stageTrackIds(trackIds: number[]) {
+        if (trackIds.length === 0) return;
+        const $1t = get1t();
+        $1t.send('stageTracks', { trackIds });
+        this.refreshRows();
+    }
+
+    unstageTrackIds(trackIds: number[]) {
+        if (trackIds.length === 0) return;
+        get1t().send('unstageTracks', { trackIds });
+        this.refreshRows();
+    }
+
+    /** Not-done, not-staged track ids of a source folder (library order, capped) */
+    folderNotDoneUnstagedIds(folderId: number, limit = 200): number[] {
+        return this.notDoneUnstagedIds(
+            this.tracks.value.filter((t) => t.folderId === folderId).map((t) => t.id), limit);
+    }
+
+    /** Stage the first 50 not-done, not-staged tracks in the current view order */
+    stageNext50() {
+        this.stageTrackIds(this.notDoneUnstagedIds(this.visibleTracks().map((t) => t.id), 50));
+    }
+
+    /** Every selected track staged -> unstage them; otherwise stage the ones that are not */
+    toggleStageSelection() {
+        const byId = new Map(this.tracks.value.map((t) => [t.id, t]));
+        const selected = this.allSelected().map((id) => byId.get(id)).filter((t): t is FlowTrack => !!t);
+        if (selected.length === 0) return;
+        if (selected.every((t) => t.staged)) {
+            this.unstageTrackIds(selected.map((t) => t.id));
+        } else {
+            this.stageTrackIds(selected.filter((t) => !t.staged).map((t) => t.id));
+        }
+    }
+
+    /** X: toggle skip on the current track (server-side toggle) */
+    stageSkipCurrent() {
+        const id = this.selectedId.value;
+        if (id === undefined) return;
+        get1t().send('stageSkip', { trackId: id });
+        this.refreshRows();
+    }
+
+    /** Stage scope D: jump to the next staged row that is not ready (wraps) */
+    selectNextStagedNotReady() {
+        const notReady = new Set(this.stageRows.value.filter((r) => !r.ready).map((r) => r.trackId));
+        const visible = this.visibleTracks();
+        if (visible.length === 0 || notReady.size === 0) return;
+        const stillVisible = visible.some((t) => t.id === this.selectedId.value);
+        const start = this.anchorIndex(visible);
+        const from = stillVisible ? start : start - 1;
+        for (let i = 1; i <= visible.length; i++) {
+            const t = visible[(from + i + visible.length) % visible.length];
+            if (notReady.has(t.id)) {
+                this.selectedIds.value = [];
+                this.selectedId.value = t.id;
+                this.lastVisibleIndex = visible.indexOf(t);
+                return;
+            }
+        }
+    }
+
+    /** The removed track's neighbour inherits the cursor (wraps, never null while rows remain) */
+    selectNeighbourAfterRemoval(trackId: number) {
+        if (this.selectedId.value !== trackId) return;
+        const visible = this.visibleTracks();
+        if (visible.length === 0 || visible.some((t) => t.id === trackId)) return;
+        // The row after the vanished one now sits at its old index
+        const idx = this.lastVisibleIndex % visible.length;
+        this.selectedIds.value = [];
+        this.selectedId.value = visible[idx].id;
+        this.lastVisibleIndex = idx;
+    }
+
     // ---- Incoming websocket events ----
 
     /** Handle a server message. Returns true when consumed. */
@@ -628,11 +730,19 @@ export class TagStore {
             case 'tagFolders':
                 this.folders.value = json.folders ?? [];
                 return true;
-            case 'tagTracks':
+            case 'tagTracks': {
+                // Remember the cursor's place so a vanished row hands it to its neighbour
+                const current = this.selectedId.value;
+                if (current !== undefined) this.anchorIndex(this.visibleTracks());
                 this.tracks.value = json.tracks ?? [];
+                if (current !== undefined) this.selectNeighbourAfterRemoval(current);
                 this.loaded.value = true;
                 diag('libraryLoaded', { tracks: this.tracks.value.length });
                 return true;
+            }
+            case 'stageCommitted':
+                this.refreshRows();
+                return false;
             case 'stageState':
                 this.stageReady.value = json.ready ?? 0;
                 this.stageTotal.value = json.total ?? 0;

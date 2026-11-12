@@ -1,5 +1,7 @@
 <template>
-<div ref='viewport' class='track-scroll'>
+<ContextMenuRoot>
+<ContextMenuTrigger as-child>
+<div ref='viewport' class='track-scroll' @contextmenu='onContextMenu'>
     <div class='track-spacer' :style='{ height: virtualizer.getTotalSize() + "px" }'>
         <TrackRow
             v-for='row in rows'
@@ -8,6 +10,7 @@
             class='track-pooled'
             :style='{ transform: "translateY(" + row.start + "px)" }'
             :track='row.track'
+            :data-track-id='row.track.id'
             :selected='store.isSelected(row.track.id)'
             :anchor='row.track.id === store.selectedId.value'
             :alt='row.index % 2 === 1'
@@ -17,11 +20,21 @@
         />
     </div>
 </div>
+</ContextMenuTrigger>
+<ContextMenuPortal>
+    <ContextMenuContent class='flowtag-theme ft-ctx' :side-offset='4'>
+        <ContextMenuItem class='ft-ctx-item' :disabled='!menuHasTarget' data-test='ctx-stage-toggle' @select='store.toggleStageSelection()'>
+            {{ menuAllStaged ? 'Unstage' : 'Stage' }}{{ menuCount > 1 ? ` ${menuCount} tracks` : '' }}
+        </ContextMenuItem>
+    </ContextMenuContent>
+</ContextMenuPortal>
+</ContextMenuRoot>
 </template>
 
 <script lang='ts' setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { useVirtualizer } from '@tanstack/vue-virtual';
+import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger } from 'reka-ui';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../../scripts/tagstore';
 import TrackRow from './TrackRow.vue';
@@ -103,6 +116,26 @@ function select(track: FlowTrack, ev: MouseEvent) {
     });
 }
 
+// ---- Right-click: Stage / Unstage on the selection ----
+const menuHasTarget = ref(false);
+const menuCount = computed(() => store.allSelected().length);
+const menuAllStaged = computed(() => {
+    store.tracks.value;
+    const ids = new Set(store.allSelected());
+    const picked = store.tracks.value.filter((t) => ids.has(t.id));
+    return picked.length > 0 && picked.every((t) => t.staged);
+});
+
+/** The row under the cursor joins the selection (unless it is already in it) */
+function onContextMenu(ev: MouseEvent) {
+    const el = (ev.target as HTMLElement | null)?.closest<HTMLElement>('[data-track-id]');
+    const id = el ? Number(el.dataset.trackId) : NaN;
+    menuHasTarget.value = Number.isFinite(id);
+    if (!Number.isFinite(id) || store.isSelected(id)) return;
+    const track = visible.value.find((t) => t.id === id);
+    if (track) store.clickSelect(track);
+}
+
 // Switching scope (playlist / source / collection) starts at the top
 watch([store.scope, store.activeSourceId], () => {
     nextTick(() => virtualizer.value.scrollToOffset(0));
@@ -125,6 +158,30 @@ watch(store.selectedId, (id) => {
 </script>
 
 <style lang='scss'>
+.ft-ctx {
+    z-index: 3100;
+    min-width: 8rem;
+    padding: 4px;
+    border-radius: 8px;
+    border: 1px solid var(--ft-line-strong);
+    background: var(--ft-overlay);
+    color: var(--ft-text);
+    box-shadow: var(--ft-shadow-pop);
+}
+.ft-ctx-item {
+    display: flex;
+    align-items: center;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 6px;
+    font-size: 13px;
+    color: var(--ft-text-2);
+    outline: none;
+    cursor: default;
+    user-select: none;
+    &[data-highlighted] { background: var(--ft-hover); color: var(--ft-text); }
+    &[data-disabled] { opacity: 0.5; pointer-events: none; }
+}
 // Unscoped: this class lands on TrackRow's root element
 .track-scroll {
     height: 100%;

@@ -34,7 +34,9 @@
 
         <div class='flex-1'></div>
 
-        <span class='counts ft-num'>{{ taggedCount.toLocaleString() }} <span class='counts-dim'>/ {{ store.tracks.value.length.toLocaleString() }} tagged</span></span>
+        <button type='button' class='ft-btn ml-2' data-test='stage-next-50' title='Stage the next 50 not-done tracks in view order' @click='stageNext50($event)'>Stage next 50</button>
+        <!-- Library progress; the Journal opens from here later -->
+        <button type='button' class='ft-btn done-chip ft-num ml-2' data-test='done-chip' title='Tracks marked done' @click='blurTarget($event)'>{{ store.libraryDone.value.toLocaleString() }} done</button>
         <FlushIndicator class='ml-4' />
 
         <label class='ft-field search-field ml-4'>
@@ -161,10 +163,9 @@ const selected = computed(() => {
     return store.selectedTrack();
 });
 const multiCount = computed(() => store.allSelected().length);
-const taggedCount = computed(() => store.tracks.value.reduce((n, t) => n + (t.tagIds.length > 0 ? 1 : 0), 0));
 const progressPct = computed(() => {
     const total = store.tracks.value.length;
-    return total === 0 ? 0 : Math.round((taggedCount.value / total) * 1000) / 10;
+    return total === 0 ? 0 : Math.round((store.libraryDone.value / total) * 1000) / 10;
 });
 
 // Debounced filter binding (the old q-input had debounce built in)
@@ -203,6 +204,11 @@ function blurTarget(e: Event) {
 function setQuickFilter(v: QuickFilter, e: Event) {
     blurTarget(e);
     store.quickFilter.value = v;
+}
+
+function stageNext50(e: Event) {
+    blurTarget(e);
+    store.stageNext50();
 }
 
 function toggleSortDir(e: Event) {
@@ -353,10 +359,9 @@ onMounted(() => {
 
 .flowtag .filter-chip { height: 24px; }
 
-.flowtag .counts {
+.flowtag .done-chip {
     font-size: 12px;
-    color: var(--ft-text-2);
-    .counts-dim { color: var(--ft-text-3); }
+    color: var(--ft-playing);
 }
 
 .flowtag .search-field {
