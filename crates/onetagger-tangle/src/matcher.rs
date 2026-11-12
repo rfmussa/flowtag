@@ -121,10 +121,21 @@ pub(crate) fn db_error(e: rusqlite::Error) -> TangleError {
     TangleError::Other { status: 0, code: "db_error".into(), request_id: None }
 }
 
+/// Tangle refused this one lookup for good (a 4xx that is not auth, backup or rate
+/// limiting): retrying it every pass would stall all sync at the same track.
+fn is_rejected_lookup(e: &TangleError) -> bool {
+    match e {
+        TangleError::ItemNotFound => true,
+        TangleError::Other { status, .. } => (400..500).contains(status),
+        _ => false,
+    }
+}
+
 /// Ask Tangle about tracks that have no `tangle_items` row yet, or were not found
 /// more than six hours ago. At most `limit` tracks are handled; returns how many.
 /// Tracks in folders without a Tangle source are marked checked without a request.
-/// Any `TangleError` stops the run immediately (rows written so far are kept).
+/// A lookup Tangle rejects with a 4xx marks that track checked (not found) and moves on;
+/// any other `TangleError` stops the run immediately (rows written so far are kept).
 pub fn lookup_unmatched(
     c: &Connection,
     client: &Client,
@@ -160,7 +171,14 @@ pub fn lookup_unmatched(
                     std::thread::sleep(pace);
                 }
                 requested = true;
-                client.find_item(&src, &r)?
+                match client.find_item(&src, &r) {
+                    Ok(item) => item,
+                    Err(e) if is_rejected_lookup(&e) => {
+                        log::warn!("Tangle lookup of track {track_id} rejected, skipping it: {e}");
+                        None
+                    }
+                    Err(e) => return Err(e),
+                }
             }
             _ => None,
         };

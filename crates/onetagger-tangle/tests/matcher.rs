@@ -123,3 +123,46 @@ fn lookup_paces_consecutive_requests() {
     lookup_unmatched(&c, &client, HOME, 100, 3, Duration::from_millis(80)).unwrap();
     assert!(start.elapsed() >= Duration::from_millis(160), "3 requests need 2 gaps");
 }
+
+#[test]
+fn rejected_lookup_is_marked_checked_and_the_next_track_still_looked_up() {
+    let (t, ids) = setup();
+    let c = t.db.conn();
+    c.execute("INSERT INTO tangle_sources (folder_id, source_id) SELECT id, 'src_local' FROM folders", [])
+        .unwrap();
+    let mut s = Server::new();
+    s.mock("GET", "/items")
+        .match_query(Matcher::UrlEncoded("ref".into(), "~/Music/Swinsian/A/01 One.mp3".into()))
+        .with_status(400)
+        .with_body(r#"{"error":{"code":"invalid_ref","request_id":"req_1"}}"#)
+        .expect(1)
+        .create();
+    let rest = s
+        .mock("GET", "/items")
+        .match_query(Matcher::Regex("Two|Three".into()))
+        .with_body(r#"{"data":[{"id":"trk_x"}]}"#)
+        .expect(2)
+        .create();
+    let client = Client::new(&s.url(), "tok");
+    assert_eq!(lookup_unmatched(&c, &client, HOME, 100, 50, Duration::ZERO).unwrap(), 3);
+    rest.assert();
+    let checked: (Option<String>, i64) = c
+        .query_row("SELECT item_id, checked_at FROM tangle_items WHERE track_id = ?1", [ids[0]], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        })
+        .unwrap();
+    assert_eq!(checked, (None, 100));
+}
+
+#[test]
+fn lookup_still_stops_on_rate_limit() {
+    let (t, _) = setup();
+    let c = t.db.conn();
+    c.execute("INSERT INTO tangle_sources (folder_id, source_id) SELECT id, 'src_local' FROM folders", [])
+        .unwrap();
+    let mut s = Server::new();
+    let m = s.mock("GET", "/items").match_query(Matcher::Any).with_status(429).expect(1).create();
+    let client = Client::new(&s.url(), "tok");
+    assert!(lookup_unmatched(&c, &client, HOME, 100, 50, Duration::ZERO).is_err());
+    m.assert();
+}
