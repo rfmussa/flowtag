@@ -641,7 +641,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 "gainDb": gain_db,
             })).ok();
             context.player.load_file(source);
-            debug!("player source: {log_path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
+            info!("player source: {log_path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
             context.player.volume(context.player_volume * context.player_gain);
             if autoplay {
                 context.player.play();
@@ -676,14 +676,14 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             })).ok();
             // Load
             context.player.load_file(source);
-            debug!("player source: {path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
+            info!("player source: {path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
         },
         // Build the selected track ahead of play. Never touches the player or the
         // flush-protected "currently playing" path; a failure leaves the slot as it was.
         Action::PlayerPreload { path } => {
             let duration_ms = known_duration_ms(&context.db, &path);
             if !should_preload(duration_ms) {
-                debug!("player preload: skipped, track too long");
+                info!("player preload: skipped, track too long");
                 return Ok(());
             }
             let slot = context.preload.clone();
@@ -696,20 +696,20 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 let start = std::time::Instant::now();
                 let source = match AudioSources::from_path_with_duration(&path, duration_ms) {
                     Ok(source) => source,
-                    Err(e) => return debug!("player preload: {path:?} failed: {e}"),
+                    Err(e) => return info!("player preload: {path:?} failed: {e}"),
                 };
                 if !slot.is_current(generation) {
                     return;
                 }
                 // Prime the decode cache (AIFF/ALAC decode once); the result is dropped on purpose
                 if let Err(e) = source.get_source() {
-                    return debug!("player preload: {path:?} failed: {e}");
+                    return info!("player preload: {path:?} failed: {e}");
                 }
                 if !slot.is_current(generation) {
                     return;
                 }
                 slot.set(generation, path.clone(), source);
-                debug!("player preload: {path:?} ready in {}ms", start.elapsed().as_millis());
+                info!("player preload: {path:?} ready in {}ms", start.elapsed().as_millis());
             });
         },
         //  Controls

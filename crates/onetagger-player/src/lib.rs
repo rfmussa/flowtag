@@ -69,7 +69,7 @@ impl AudioPlayer {
                                         _stream = new_stream;
                                         stream_handle = new_handle;
                                         bound_device = Some(current);
-                                        debug!("player output: rebound to default device");
+                                        info!("player output: rebound to default device");
                                     },
                                     Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
                                 }
@@ -85,7 +85,7 @@ impl AudioPlayer {
                         if let Ok(s) = audio_source.get_source() {
                             sink.append(s);
                         }
-                        debug!("player decode: took {}ms", decode_start.elapsed().as_millis());
+                        info!("player decode: took {}ms", decode_start.elapsed().as_millis());
                         // Save source
                         source = Some(audio_source);
                     },
@@ -99,7 +99,7 @@ impl AudioPlayer {
                         // In-place seek: all sources support it (symphonia decoders and
                         // the shared PCM buffer used by AIFF/ALAC), making seeks near-instant
                         if sink.try_seek(std::time::Duration::from_millis(pos)).is_ok() {
-                            debug!("player seek: {pos}ms in_place=true took {}ms", seek_start.elapsed().as_millis());
+                            info!("player seek: {pos}ms in_place=true took {}ms", seek_start.elapsed().as_millis());
                             tx.send(!sink.is_paused()).ok();
                             continue;
                         }
@@ -122,7 +122,7 @@ impl AudioPlayer {
                             }
                             sink.append(s);
                         }
-                        debug!("player seek: {pos}ms in_place=false took {}ms", seek_start.elapsed().as_millis());
+                        info!("player seek: {pos}ms in_place=false took {}ms", seek_start.elapsed().as_millis());
                         // Sync
                         tx.send(!sink.is_paused()).ok();
                     }
