@@ -32,6 +32,7 @@ pub mod sender;
 pub mod browser;
 pub mod tageditor;
 pub mod tagflow;
+pub mod tangle;
 pub mod precompute;
 
 static CLIENT_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../client/dist");
@@ -55,6 +56,8 @@ struct WsState {
     events: tokio::sync::broadcast::Sender<String>,
     /// Wakes the flush worker (e.g. after a flushHint)
     flush_wake: std::sync::mpsc::Sender<()>,
+    /// Tangle sync worker; `None` if it could not start
+    tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
 }
 
 fn start_async_runtime(context: StartContext) -> Result<(), Error> {
@@ -73,7 +76,7 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
     media::set_media_broadcast(events.clone());
     let events_tx = events.clone();
     let flush_wake = onetagger_db::flush::FlushWorker::spawn(
-        db_path,
+        db_path.clone(),
         move |event| {
             let message = serde_json::json!({
                 "action": "trackFlushed",
@@ -86,9 +89,11 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
         |path| socket::is_currently_playing(path),
     )?;
 
+    let tangle = tangle::spawn_worker(db_path, events.clone());
+
     let db = Arc::new(db);
     precompute::spawn_waveform_precompute(db.clone());
-    let state = WsState { context, db, events, flush_wake };
+    let state = WsState { context, db, events, flush_wake, tangle };
     Builder::new_multi_thread().enable_all().build()?.block_on(async move {
         // Register routes
         let app = Router::new()
@@ -189,7 +194,7 @@ async fn get_ws(ws: WebSocketUpgrade, State(state): State<WsState>) -> impl Into
     ws.on_upgrade(move |socket| {
         debug!("WS Connected!");
         async move {
-            match socket::handle_ws_connection(socket, state.context, state.db, state.events, state.flush_wake).await {
+            match socket::handle_ws_connection(socket, state.context, state.db, state.events, state.flush_wake, state.tangle).await {
                 Ok(_) => {},
                 Err(e) => warn!("WS connection error: {e}"),
             }

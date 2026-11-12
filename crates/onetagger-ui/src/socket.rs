@@ -24,6 +24,8 @@ use futures_util::StreamExt;
 use crate::StartContext;
 use crate::sender::MessageSender;
 use crate::tagflow;
+use crate::tangle;
+use onetagger_tangle::worker::Command;
 use crate::tageditor::TagEditor;
 use crate::browser::{FileBrowser, FolderBrowser};
 
@@ -112,6 +114,13 @@ enum Action {
     FlushHint { track_id: Option<i64> },
     FlushStatusGet,
     FlushRetry,
+    TangleConnect { token: String },
+    TangleDisconnect,
+    TangleStatus,
+    TangleSetEnabled { enabled: bool },
+    TanglePreview,
+    #[serde(rename_all = "camelCase")]
+    TangleResendTag { tag_id: i64 },
     #[serde(rename_all = "camelCase")]
     RekordboxExport { mode: String, #[serde(default)] track_ids: Option<Vec<i64>> },
     PlaylistList,
@@ -193,6 +202,8 @@ pub(crate) struct SocketContext {
     pub(crate) sender: MessageSender,
     pub(crate) db: Arc<onetagger_db::Db>,
     pub(crate) flush_wake: std::sync::mpsc::Sender<()>,
+    /// Tangle sync worker; `None` when it failed to start
+    pub(crate) tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
     pub(crate) events: tokio::sync::broadcast::Sender<String>,
     /// Auto-gain (experimental analysis): linear factor applied on top of the
     /// user's volume, set per started track from its LUFS
@@ -206,6 +217,7 @@ impl SocketContext {
         sender: MessageSender,
         db: Arc<onetagger_db::Db>,
         flush_wake: std::sync::mpsc::Sender<()>,
+        tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
         events: tokio::sync::broadcast::Sender<String>,
     ) -> SocketContext {
         SocketContext {
@@ -215,6 +227,7 @@ impl SocketContext {
             sender,
             db,
             flush_wake,
+            tangle,
             events,
             player_gain: 1.0,
             player_volume: 1.0,
@@ -275,6 +288,7 @@ pub(crate) async fn handle_ws_connection(
     db: Arc<onetagger_db::Db>,
     events: tokio::sync::broadcast::Sender<String>,
     flush_wake: std::sync::mpsc::Sender<()>,
+    tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
 ) -> Result<(), Error> {
     // Split the socket: all writes go through a dedicated writer task, so handlers
     // and background jobs can push messages concurrently with the read loop.
@@ -299,7 +313,7 @@ pub(crate) async fn handle_ws_connection(
         }
     });
 
-    let mut context = SocketContext::new(context, sender, db, flush_wake, events);
+    let mut context = SocketContext::new(context, sender, db, flush_wake, tangle, events);
 
     // Bring a late-joining window (miniplayer) up to date with the player
     if let Some(np) = crate::media::snapshot_now_playing() {
@@ -870,6 +884,12 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 _ => warn!("Ignoring unknown remote command: {key}"),
             }
         },
+        Action::TangleConnect { token } => tangle::connect(context.sender.clone(), context.tangle.clone(), token).await?,
+        Action::TangleDisconnect => tangle::disconnect(context.sender.clone(), context.tangle.clone()).await?,
+        Action::TangleStatus => tangle::command(context, Command::Status)?,
+        Action::TangleSetEnabled { enabled } => tangle::command(context, Command::SetEnabled(enabled))?,
+        Action::TanglePreview => tangle::command(context, Command::Preview)?,
+        Action::TangleResendTag { tag_id } => tangle::command(context, Command::ResendTag(tag_id))?,
         Action::FlushStatusGet => tagflow::flush_status_get(context)?,
         Action::FlushRetry => tagflow::flush_retry(context)?,
         Action::RekordboxExport { mode, track_ids } => tagflow::rekordbox_export(context, &mode, track_ids)?,
@@ -884,4 +904,20 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
     }
    
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn tangle_actions_deserialize() {
+        let parse = |s: &str| serde_json::from_str::<Action>(s).unwrap();
+        assert!(matches!(parse(r#"{"action":"tangleConnect","token":"x"}"#), Action::TangleConnect { token } if token == "x"));
+        assert!(matches!(parse(r#"{"action":"tangleDisconnect"}"#), Action::TangleDisconnect));
+        assert!(matches!(parse(r#"{"action":"tangleStatus"}"#), Action::TangleStatus));
+        assert!(matches!(parse(r#"{"action":"tangleSetEnabled","enabled":true}"#), Action::TangleSetEnabled { enabled: true }));
+        assert!(matches!(parse(r#"{"action":"tanglePreview"}"#), Action::TanglePreview));
+        assert!(matches!(parse(r#"{"action":"tangleResendTag","tagId":3}"#), Action::TangleResendTag { tag_id: 3 }));
+    }
 }

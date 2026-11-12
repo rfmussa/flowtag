@@ -3876,6 +3876,7 @@ dependencies = [
  "onetagger-shared",
  "onetagger-tag",
  "onetagger-tagger",
+ "onetagger-tangle",
  "opener",
  "serde",
  "serde_json",

@@ -6,6 +6,8 @@ use serde_json::{json, Value};
 
 use crate::error::TangleError;
 
+/// Production Tangle (MIX Access) API base URL.
+pub const DEFAULT_BASE: &str = "https://api.tangle.music/omc/v1";
 const USER_AGENT: &str = concat!("FlowTag/", env!("CARGO_PKG_VERSION"));
 const EXT_KEY: &str = "com.github.rfmussa.flowtag";
 const DEFAULT_RETRY_AFTER_S: u64 = 60;
