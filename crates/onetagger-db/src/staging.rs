@@ -4,10 +4,31 @@
 //! touches files, `needs_flush` or Tangle.
 
 use anyhow::Error;
-use rusqlite::params;
+use rusqlite::{params, Connection};
 use serde::Serialize;
+use serde_json::{json, Value};
 
 use crate::{now, Db};
+
+/// Append one row to the edit log. Every kind is a QuickTag user edit; scan,
+/// flush, comment export and Tangle sync never log. Callers log inside the
+/// transaction/lock that performs the mutation so log order matches mutation order.
+/// Kinds: tag_added, tag_removed, skip_set, skip_cleared, staged, unstaged,
+/// committed, commit_reverted, tag_created, tag_renamed, tag_deleted.
+pub fn log_event(c: &Connection, track_id: Option<i64>, kind: &str, data: &Value) -> rusqlite::Result<()> {
+    c.execute(
+        "INSERT INTO edit_log (at, track_id, kind, data) VALUES (?1, ?2, ?3, ?4)",
+        params![now(), track_id, kind, data.to_string()],
+    )?;
+    Ok(())
+}
+
+/// Log without letting a log failure fail the mutation it describes
+pub(crate) fn log_or_warn(c: &Connection, track_id: Option<i64>, kind: &str, data: &Value) {
+    if let Err(e) = log_event(c, track_id, kind, data) {
+        log::warn!("edit_log write failed ({kind}): {e}");
+    }
+}
 
 /// One staged track with its readiness (ready = skipped or has at least one tag)
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -30,7 +51,11 @@ pub fn stage_tracks(db: &Db, ids: &[i64]) -> Result<usize, Error> {
              SELECT id, ?2 FROM tracks WHERE id = ?1",
         )?;
         for id in ids {
-            added += stmt.execute(params![id, at])?;
+            let n = stmt.execute(params![id, at])?;
+            if n > 0 {
+                log_or_warn(&tx, Some(*id), "staged", &json!({}));
+            }
+            added += n;
         }
     }
     tx.commit()?;
@@ -45,7 +70,11 @@ pub fn unstage_tracks(db: &Db, ids: &[i64]) -> Result<usize, Error> {
     {
         let mut stmt = tx.prepare("DELETE FROM staged WHERE track_id = ?1")?;
         for id in ids {
-            removed += stmt.execute([id])?;
+            let n = stmt.execute([id])?;
+            if n > 0 {
+                log_or_warn(&tx, Some(*id), "unstaged", &json!({}));
+            }
+            removed += n;
         }
     }
     tx.commit()?;
@@ -56,15 +85,19 @@ pub fn unstage_tracks(db: &Db, ids: &[i64]) -> Result<usize, Error> {
 pub fn toggle_skip(db: &Db, track_id: i64) -> Result<bool, Error> {
     let mut conn = db.conn();
     let tx = conn.transaction()?;
-    tx.execute(
+    let auto_staged = tx.execute(
         "INSERT OR IGNORE INTO staged (track_id, staged_at)
          SELECT id, ?2 FROM tracks WHERE id = ?1",
         params![track_id, now()],
     )?;
+    if auto_staged > 0 {
+        log_or_warn(&tx, Some(track_id), "staged", &json!({}));
+    }
     tx.execute("UPDATE staged SET skip = 1 - skip WHERE track_id = ?1", [track_id])?;
     let skip: i64 = tx
         .query_row("SELECT skip FROM staged WHERE track_id = ?1", [track_id], |r| r.get(0))
         .map_err(|_| anyhow::anyhow!("Track {track_id} not found"))?;
+    log_or_warn(&tx, Some(track_id), if skip != 0 { "skip_set" } else { "skip_cleared" }, &json!({}));
     tx.commit()?;
     Ok(skip != 0)
 }
@@ -142,6 +175,7 @@ pub fn commit_stage(db: &Db, track_ids: &[i64], message: &str) -> Result<CommitR
         for id in track_ids {
             if unstage.execute([id])? > 0 {
                 mark.execute(params![id, at, commit_id])?;
+                log_or_warn(&tx, Some(*id), "committed", &json!({ "commitId": commit_id }));
                 committed += 1;
             }
         }
@@ -170,7 +204,10 @@ pub fn revert_commit(db: &Db, commit_id: i64) -> Result<usize, Error> {
         "UPDATE tracks SET done_at = NULL, done_commit = NULL WHERE done_commit = ?1",
         [commit_id],
     )?;
-    tx.execute("DELETE FROM commits WHERE id = ?1", [commit_id])?;
+    let deleted = tx.execute("DELETE FROM commits WHERE id = ?1", [commit_id])?;
+    if deleted > 0 {
+        log_or_warn(&tx, None, "commit_reverted", &json!({ "commitId": commit_id, "count": restaged }));
+    }
     tx.commit()?;
     Ok(restaged)
 }
@@ -184,6 +221,85 @@ pub fn list_commits(db: &Db, limit: usize) -> Result<Vec<CommitRow>, Error> {
     let rows = stmt
         .query_map([limit as i64], |r| {
             Ok(CommitRow { id: r.get(0)?, created_at: r.get(1)?, message: r.get(2)?, track_count: r.get(3)? })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Journal numbers for one day
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TodayStats {
+    pub committed: usize,
+    pub tags_created: usize,
+    pub active_secs: i64,
+}
+
+/// Longest gap between two edits that still counts as continuous work
+const ACTIVE_GAP_CAP_SECS: i64 = 300;
+
+/// Stats over edit_log entries with `day_start <= at <= now`. Active time is
+/// the sum of min(gap, 300s) between consecutive entries (0 for fewer than two).
+pub fn today_stats(db: &Db, day_start: i64, now: i64) -> Result<TodayStats, Error> {
+    let conn = db.conn();
+    let count = |kind: &str| -> Result<usize, Error> {
+        let n: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM edit_log WHERE kind = ?1 AND at >= ?2 AND at <= ?3",
+            params![kind, day_start, now],
+            |r| r.get(0),
+        )?;
+        Ok(n as usize)
+    };
+    let mut stmt = conn.prepare("SELECT at FROM edit_log WHERE at >= ?1 AND at <= ?2 ORDER BY at, id")?;
+    let times = stmt.query_map([day_start, now], |r| r.get::<_, i64>(0))?.collect::<Result<Vec<_>, _>>()?;
+    let active_secs = times.windows(2).map(|w| (w[1] - w[0]).min(ACTIVE_GAP_CAP_SECS)).sum();
+    Ok(TodayStats { committed: count("committed")?, tags_created: count("tag_created")?, active_secs })
+}
+
+/// (local YYYY-MM-DD, tracks committed) for days that have commits, newest first
+pub fn commit_days(db: &Db, limit: usize) -> Result<Vec<(String, usize)>, Error> {
+    let conn = db.conn();
+    let mut stmt = conn.prepare(
+        "SELECT date(created_at, 'unixepoch', 'localtime') AS day, SUM(track_count)
+         FROM commits GROUP BY day ORDER BY day DESC LIMIT ?1",
+    )?;
+    let rows = stmt
+        .query_map([limit as i64], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)? as usize)))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// One edit_log entry for the Journal trail
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct TrailRow {
+    pub id: i64,
+    pub at: i64,
+    pub track_id: Option<i64>,
+    pub track_title: Option<String>,
+    pub kind: String,
+    pub data: String,
+}
+
+/// Edit log newest first; pass the last row's id as `before_id` for the next page
+pub fn trail(db: &Db, before_id: Option<i64>, limit: usize) -> Result<Vec<TrailRow>, Error> {
+    let conn = db.conn();
+    let mut stmt = conn.prepare(
+        "SELECT e.id, e.at, e.track_id, t.title, e.kind, e.data
+         FROM edit_log e LEFT JOIN tracks t ON t.id = e.track_id
+         WHERE (?1 IS NULL OR e.id < ?1)
+         ORDER BY e.id DESC LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![before_id, limit as i64], |r| {
+            Ok(TrailRow {
+                id: r.get(0)?,
+                at: r.get(1)?,
+                track_id: r.get(2)?,
+                track_title: r.get(3)?,
+                kind: r.get(4)?,
+                data: r.get(5)?,
+            })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
@@ -390,5 +506,142 @@ mod tests {
         let ids: Vec<i64> = list_commits(&db, 10).unwrap().iter().map(|c| c.id).collect();
         assert_eq!(ids, vec![c2.id, c1.id]);
         assert_eq!(list_commits(&db, 1).unwrap().len(), 1);
+    }
+
+    fn log_kinds(db: &Db) -> Vec<String> {
+        let conn = db.conn();
+        let mut stmt = conn.prepare("SELECT kind FROM edit_log ORDER BY id").unwrap();
+        let rows = stmt.query_map([], |r| r.get(0)).unwrap().collect::<Result<_, _>>().unwrap();
+        rows
+    }
+
+    fn clear_log(db: &Db) {
+        db.conn().execute("DELETE FROM edit_log", []).unwrap();
+    }
+
+    fn insert_log(db: &Db, at: i64, track_id: Option<i64>, kind: &str) {
+        db.conn()
+            .execute("INSERT INTO edit_log (at, track_id, kind) VALUES (?1, ?2, ?3)", params![at, track_id, kind])
+            .unwrap();
+    }
+
+    #[test]
+    fn stage_ops_write_log() {
+        let (_dir, db) = test_db();
+        let a = insert_track(&db, "/test-root/a.mp3");
+        let b = insert_track(&db, "/test-root/b.mp3");
+        stage_tracks(&db, &[a, b]).unwrap();
+        stage_tracks(&db, &[a]).unwrap(); // already staged: no row
+        assert_eq!(log_kinds(&db), vec!["staged", "staged"]);
+        clear_log(&db);
+        unstage_tracks(&db, &[a, 999]).unwrap(); // 999 not staged: no row
+        assert_eq!(log_kinds(&db), vec!["unstaged"]);
+        clear_log(&db);
+        toggle_skip(&db, a).unwrap(); // auto-stages, then skip set
+        toggle_skip(&db, a).unwrap();
+        assert_eq!(log_kinds(&db), vec!["staged", "skip_set", "skip_cleared"]);
+    }
+
+    #[test]
+    fn commit_and_revert_write_log() {
+        let (_dir, db) = test_db();
+        let a = insert_track(&db, "/test-root/a.mp3");
+        let b = insert_track(&db, "/test-root/b.mp3");
+        stage_tracks(&db, &[a, b]).unwrap();
+        clear_log(&db);
+        let commit = commit_stage(&db, &[a, b], "m").unwrap();
+        assert_eq!(log_kinds(&db), vec!["committed", "committed"]);
+        let data: String = db.conn().query_row("SELECT data FROM edit_log WHERE track_id = ?1", [a], |r| r.get(0)).unwrap();
+        assert_eq!(serde_json::from_str::<serde_json::Value>(&data).unwrap(), serde_json::json!({"commitId": commit.id}));
+        clear_log(&db);
+        revert_commit(&db, commit.id).unwrap();
+        assert_eq!(log_kinds(&db), vec!["commit_reverted"]);
+        let (track_id, data): (Option<i64>, String) = db
+            .conn()
+            .query_row("SELECT track_id, data FROM edit_log", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!(track_id, None);
+        assert_eq!(
+            serde_json::from_str::<serde_json::Value>(&data).unwrap(),
+            serde_json::json!({"commitId": commit.id, "count": 2})
+        );
+        // failed / no-op operations log nothing
+        clear_log(&db);
+        assert!(commit_stage(&db, &[], "x").is_err());
+        revert_commit(&db, 999).unwrap();
+        assert!(log_kinds(&db).is_empty());
+    }
+
+    #[test]
+    fn active_time_gap_cap_and_day_bounds() {
+        let (_dir, db) = test_db();
+        let t = 1_000_000;
+        insert_log(&db, t - 86_400, None, "tag_added"); // yesterday: outside the window
+        insert_log(&db, t, None, "tag_added");
+        insert_log(&db, t + 100, None, "tag_added");
+        insert_log(&db, t + 10_000, None, "tag_added");
+        let stats = today_stats(&db, t - 10, t + 20_000).unwrap();
+        assert_eq!(stats.active_secs, 100 + 300);
+        // fewer than two entries in the window: nothing to measure
+        assert_eq!(today_stats(&db, t + 5_000, t + 20_000).unwrap().active_secs, 0);
+        assert_eq!(today_stats(&db, t + 20_000, t + 30_000).unwrap().active_secs, 0);
+    }
+
+    #[test]
+    fn today_stats_counts_commits_and_created_tags() {
+        let (_dir, db) = test_db();
+        let a = insert_track(&db, "/test-root/a.mp3");
+        let b = insert_track(&db, "/test-root/b.mp3");
+        stage_tracks(&db, &[a, b]).unwrap();
+        commit_stage(&db, &[a, b], "m").unwrap();
+        crate::tags::get_or_create_tag(&db, "dark", None).unwrap();
+        let stats = today_stats(&db, 0, now() + 10).unwrap();
+        assert_eq!(stats.committed, 2);
+        assert_eq!(stats.tags_created, 1);
+        assert_eq!(today_stats(&db, now() + 100, now() + 200).unwrap().committed, 0);
+    }
+
+    #[test]
+    fn commit_days_buckets_only_commit_days() {
+        let (_dir, db) = test_db();
+        {
+            let conn = db.conn();
+            // 2023-11-15 12:00 UTC: same calendar day in any timezone for +1h
+            const NOON: i64 = 1_700_049_600;
+            for (id, at, n) in [(1, NOON, 3), (2, NOON + 3_600, 2), (3, NOON + 3 * 86_400, 4)] {
+                conn.execute(
+                    "INSERT INTO commits (id, created_at, message, track_count) VALUES (?1, ?2, '', ?3)",
+                    params![id, at, n],
+                )
+                .unwrap();
+            }
+        }
+        let days = commit_days(&db, 10).unwrap();
+        assert_eq!(days.len(), 2, "days without commits are absent: {days:?}");
+        assert!(days[0].0 > days[1].0, "newest first");
+        assert_eq!(days[0].1, 4);
+        assert_eq!(days[1].1, 5);
+        assert_eq!(days[0].0.len(), 10);
+        assert_eq!(commit_days(&db, 1).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn trail_pages_newest_first_with_titles() {
+        let (_dir, db) = test_db();
+        let a = insert_track(&db, "/test-root/a.mp3");
+        db.conn().execute("UPDATE tracks SET title = 'Alpha' WHERE id = ?1", [a]).unwrap();
+        for i in 0..5 {
+            insert_log(&db, 100 + i, if i % 2 == 0 { Some(a) } else { None }, "tag_added");
+        }
+        let first = trail(&db, None, 2).unwrap();
+        assert_eq!(first.len(), 2);
+        assert!(first[0].id > first[1].id);
+        assert_eq!(first[0].track_title.as_deref(), Some("Alpha"));
+        assert_eq!(first[1].track_title, None);
+        let second = trail(&db, Some(first[1].id), 10).unwrap();
+        assert_eq!(second.len(), 3);
+        assert!(second[0].id < first[1].id);
+        assert_eq!(second[0].kind, "tag_added");
+        assert_eq!(second[0].data, "{}");
     }
 }

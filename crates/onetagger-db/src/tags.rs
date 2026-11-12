@@ -1,8 +1,9 @@
 use anyhow::{bail, Error};
 use rusqlite::{params, Connection, OptionalExtension};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 use crate::models::{DbGroup, DbTag};
+use crate::staging::log_or_warn;
 use crate::validate::{validate_color, validate_tag_name};
 use crate::{now, Db};
 
@@ -99,12 +100,25 @@ pub(crate) fn get_or_create_tag_conn(conn: &Connection, name: &str, color: Optio
     Ok((conn.last_insert_rowid(), true))
 }
 
+fn tag_name(conn: &Connection, id: i64) -> Option<String> {
+    conn.query_row("SELECT name FROM tags WHERE id = ?1", [id], |r| r.get(0)).ok()
+}
+
+/// Log a tag-level event (tag_created / tag_deleted) or a per-track one when `track_id` is set
+fn log_tag_event(conn: &Connection, track_id: Option<i64>, kind: &str, tag_id: i64, name: &str) {
+    log_or_warn(conn, track_id, kind, &json!({ "tagId": tag_id, "tagName": name }));
+}
+
 /// Create a tag, or return the existing one with the same (case-insensitive) name.
 /// Returns (tag, created).
 pub fn get_or_create_tag(db: &Db, name: &str, color: Option<&str>) -> Result<(DbTag, bool), Error> {
     let conn = db.conn();
     let (id, created) = get_or_create_tag_conn(&conn, name, color)?;
-    Ok((get_tag_inner(&conn, id)?, created))
+    let tag = get_tag_inner(&conn, id)?;
+    if created {
+        log_tag_event(&conn, None, "tag_created", id, &tag.name);
+    }
+    Ok((tag, created))
 }
 
 /// Update a tag's name/color/group/keybind. Renaming to an existing (case-insensitive)
@@ -125,6 +139,7 @@ pub fn update_tag(
         match find_tag_by_name(&conn, &name)? {
             // Rename onto another existing tag: merge into it
             Some(other) if other != id => {
+                let merged_name = tag_name(&conn, id);
                 mark_tag_tracks_dirty(&conn, id)?;
                 mark_tag_tracks_dirty(&conn, other)?;
                 conn.execute(
@@ -133,12 +148,19 @@ pub fn update_tag(
                     params![id, other],
                 )?;
                 conn.execute("DELETE FROM tags WHERE id = ?1", [id])?;
+                if let Some(merged_name) = merged_name {
+                    log_tag_event(&conn, None, "tag_deleted", id, &merged_name);
+                }
                 return get_tag_inner(&conn, other);
             }
             // Plain rename (or case change of itself)
             _ => {
+                let from = tag_name(&conn, id);
                 mark_tag_tracks_dirty(&conn, id)?;
                 conn.execute("UPDATE tags SET name = ?2 WHERE id = ?1", params![id, name])?;
+                if let Some(from) = from {
+                    log_or_warn(&conn, None, "tag_renamed", &json!({ "tagId": id, "from": from, "to": name }));
+                }
             }
         }
     }
@@ -165,10 +187,14 @@ pub fn update_tag(
 /// Delete a tag; all tracks that carried it are marked dirty
 pub fn delete_tag(db: &Db, id: i64) -> Result<(), Error> {
     let conn = db.conn();
+    let name = tag_name(&conn, id);
     mark_tag_tracks_dirty(&conn, id)?;
     let n = conn.execute("DELETE FROM tags WHERE id = ?1", [id])?;
     if n == 0 {
         bail!("Tag {id} does not exist");
+    }
+    if let Some(name) = name {
+        log_tag_event(&conn, None, "tag_deleted", id, &name);
     }
     Ok(())
 }
@@ -208,6 +234,7 @@ pub fn add_tag_to_track(db: &Db, track_id: i64, name: &str) -> Result<(Vec<i64>,
             "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
             params![track_id, now()],
         )?;
+        log_tag_event(&conn, Some(track_id), "tag_added", tag.id, &tag.name);
     }
     Ok((track_tag_ids(&conn, track_id)?, created.then_some(tag)))
 }
@@ -219,6 +246,10 @@ pub fn add_tag_to_tracks(db: &Db, track_ids: &[i64], name: &str) -> Result<(DbTa
     let mut conn = db.conn();
     let tx = conn.transaction()?;
     let (tag_id, created) = get_or_create_tag_conn(&tx, &name, None)?;
+    let tag_label = tag_name(&tx, tag_id).unwrap_or_else(|| name.clone());
+    if created {
+        log_tag_event(&tx, None, "tag_created", tag_id, &tag_label);
+    }
     let now = now();
     for &track_id in track_ids {
         let pos: i64 = tx.query_row(
@@ -235,6 +266,7 @@ pub fn add_tag_to_tracks(db: &Db, track_ids: &[i64], name: &str) -> Result<(DbTa
                 "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
                 params![track_id, now],
             )?;
+            log_tag_event(&tx, Some(track_id), "tag_added", tag_id, &tag_label);
         }
     }
     tx.commit()?;
@@ -246,6 +278,7 @@ pub fn remove_tag_from_tracks(db: &Db, track_ids: &[i64], tag_id: i64) -> Result
     let mut conn = db.conn();
     let tx = conn.transaction()?;
     let now = now();
+    let tag_label = tag_name(&tx, tag_id).unwrap_or_default();
     for &track_id in track_ids {
         let n = tx.execute(
             "DELETE FROM track_tags WHERE track_id = ?1 AND tag_id = ?2",
@@ -256,6 +289,7 @@ pub fn remove_tag_from_tracks(db: &Db, track_ids: &[i64], tag_id: i64) -> Result
                 "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
                 params![track_id, now],
             )?;
+            log_tag_event(&tx, Some(track_id), "tag_removed", tag_id, &tag_label);
         }
     }
     tx.commit()?;
@@ -265,6 +299,7 @@ pub fn remove_tag_from_tracks(db: &Db, track_ids: &[i64], tag_id: i64) -> Result
 /// Remove a tag from a track. Returns the track's remaining tag ids.
 pub fn remove_tag_from_track(db: &Db, track_id: i64, tag_id: i64) -> Result<Vec<i64>, Error> {
     let conn = db.conn();
+    let tag_label = tag_name(&conn, tag_id).unwrap_or_default();
     let n = conn.execute(
         "DELETE FROM track_tags WHERE track_id = ?1 AND tag_id = ?2",
         params![track_id, tag_id],
@@ -274,6 +309,7 @@ pub fn remove_tag_from_track(db: &Db, track_id: i64, tag_id: i64) -> Result<Vec<
             "UPDATE tracks SET needs_flush = 1, tag_updated_at = ?2, tag_version = tag_version + 1 WHERE id = ?1",
             params![track_id, now()],
         )?;
+        log_tag_event(&conn, Some(track_id), "tag_removed", tag_id, &tag_label);
     }
     track_tag_ids(&conn, track_id)
 }
@@ -499,5 +535,71 @@ mod tests {
         assert!(get_or_create_tag(&db, "#bad", None).is_err());
         assert!(get_or_create_tag(&db, "ok", Some("red")).is_err());
         assert!(create_group(&db, "", "#ff0000").is_err());
+    }
+
+    fn log_rows(db: &Db) -> Vec<(String, Option<i64>, Value)> {
+        let conn = db.conn();
+        let mut stmt = conn.prepare("SELECT kind, track_id, data FROM edit_log ORDER BY id").unwrap();
+        let rows = stmt
+            .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get(1)?, r.get::<_, String>(2)?)))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        rows.into_iter().map(|(k, t, d)| (k, t, serde_json::from_str(&d).unwrap())).collect()
+    }
+
+    fn kinds(db: &Db) -> Vec<String> {
+        log_rows(db).into_iter().map(|r| r.0).collect()
+    }
+
+    #[test]
+    fn tag_mutations_write_log() {
+        let (_d, db) = test_db();
+        let t1 = insert_track(&db, "/test-root/a.mp3");
+        let t2 = insert_track(&db, "/test-root/b.mp3");
+        let (ids, _) = add_tag_to_track(&db, t1, "dark").unwrap();
+        let tag = ids[0];
+        let rows = log_rows(&db);
+        assert_eq!(kinds(&db), vec!["tag_created", "tag_added"]);
+        assert_eq!(rows[0].1, None);
+        assert_eq!(rows[0].2, serde_json::json!({"tagId": tag, "tagName": "dark"}));
+        assert_eq!(rows[1].1, Some(t1));
+        assert_eq!(rows[1].2, serde_json::json!({"tagId": tag, "tagName": "dark"}));
+        // duplicate add is a no-op: nothing logged
+        add_tag_to_track(&db, t1, "DARK").unwrap();
+        assert_eq!(log_rows(&db).len(), 2);
+        // bulk add logs per track that actually gained the tag
+        add_tag_to_tracks(&db, &[t1, t2], "dark").unwrap();
+        assert_eq!(kinds(&db), vec!["tag_created", "tag_added", "tag_added"]);
+        // bulk create logs tag_created too
+        add_tag_to_tracks(&db, &[t2], "peak").unwrap();
+        assert_eq!(kinds(&db)[3..], ["tag_created", "tag_added"]);
+        // removes
+        remove_tag_from_track(&db, t1, tag).unwrap();
+        remove_tag_from_track(&db, t1, tag).unwrap(); // no-op
+        remove_tag_from_tracks(&db, &[t1, t2], tag).unwrap(); // only t2 still has it
+        let all = log_rows(&db);
+        let tail: Vec<_> = all[5..].iter().map(|r| (r.0.as_str(), r.1)).collect();
+        assert_eq!(tail, vec![("tag_removed", Some(t1)), ("tag_removed", Some(t2))]);
+        // rename, merge, delete
+        let n = all.len();
+        update_tag(&db, tag, Some("darker"), None, None, None).unwrap();
+        let all = log_rows(&db);
+        assert_eq!(all[n].0, "tag_renamed");
+        assert_eq!(all[n].2, serde_json::json!({"tagId": tag, "from": "dark", "to": "darker"}));
+        let other = get_or_create_tag(&db, "keep", None).unwrap().0;
+        update_tag(&db, tag, Some("keep"), None, None, None).unwrap(); // merge
+        let all = log_rows(&db);
+        assert_eq!(all[n + 1].0, "tag_created");
+        assert_eq!(all[n + 2].0, "tag_deleted");
+        assert_eq!(all[n + 2].2, serde_json::json!({"tagId": tag, "tagName": "darker"}));
+        delete_tag(&db, other.id).unwrap();
+        let all = log_rows(&db);
+        assert_eq!(all.last().unwrap().0, "tag_deleted");
+        assert_eq!(all.last().unwrap().2, serde_json::json!({"tagId": other.id, "tagName": "keep"}));
+        // deleting a missing tag logs nothing
+        let n = all.len();
+        assert!(delete_tag(&db, 9999).is_err());
+        assert_eq!(log_rows(&db).len(), n);
     }
 }
