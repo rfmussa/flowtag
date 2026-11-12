@@ -238,22 +238,26 @@ pub struct TodayStats {
 /// Longest gap between two edits that still counts as continuous work
 const ACTIVE_GAP_CAP_SECS: i64 = 300;
 
-/// Stats over edit_log entries with `day_start <= at <= now`. Active time is
-/// the sum of min(gap, 300s) between consecutive entries (0 for fewer than two).
+/// Stats for `day_start <= at <= now`. Committed sums the surviving commits
+/// (a revert deletes its commit row, so reverted work does not count); tags
+/// created count edit_log entries. Active time is the sum of min(gap, 300s)
+/// between consecutive edit_log entries (0 for fewer than two).
 pub fn today_stats(db: &Db, day_start: i64, now: i64) -> Result<TodayStats, Error> {
     let conn = db.conn();
-    let count = |kind: &str| -> Result<usize, Error> {
-        let n: i64 = conn.query_row(
-            "SELECT COUNT(*) FROM edit_log WHERE kind = ?1 AND at >= ?2 AND at <= ?3",
-            params![kind, day_start, now],
-            |r| r.get(0),
-        )?;
-        Ok(n as usize)
-    };
+    let committed: i64 = conn.query_row(
+        "SELECT COALESCE(SUM(track_count), 0) FROM commits WHERE created_at >= ?1 AND created_at <= ?2",
+        params![day_start, now],
+        |r| r.get(0),
+    )?;
+    let tags_created: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM edit_log WHERE kind = 'tag_created' AND at >= ?1 AND at <= ?2",
+        params![day_start, now],
+        |r| r.get(0),
+    )?;
     let mut stmt = conn.prepare("SELECT at FROM edit_log WHERE at >= ?1 AND at <= ?2 ORDER BY at, id")?;
     let times = stmt.query_map([day_start, now], |r| r.get::<_, i64>(0))?.collect::<Result<Vec<_>, _>>()?;
     let active_secs = times.windows(2).map(|w| (w[1] - w[0]).min(ACTIVE_GAP_CAP_SECS)).sum();
-    Ok(TodayStats { committed: count("committed")?, tags_created: count("tag_created")?, active_secs })
+    Ok(TodayStats { committed: committed as usize, tags_created: tags_created as usize, active_secs })
 }
 
 /// (local YYYY-MM-DD, tracks committed) for days that have commits, newest first
@@ -599,6 +603,18 @@ mod tests {
         assert_eq!(stats.committed, 2);
         assert_eq!(stats.tags_created, 1);
         assert_eq!(today_stats(&db, now() + 100, now() + 200).unwrap().committed, 0);
+    }
+
+    #[test]
+    fn today_committed_ignores_reverted_commits() {
+        let (_dir, db) = test_db();
+        let a = insert_track(&db, "/test-root/a.mp3");
+        let b = insert_track(&db, "/test-root/b.mp3");
+        stage_tracks(&db, &[a, b]).unwrap();
+        let first = commit_stage(&db, &[a, b], "m").unwrap();
+        revert_commit(&db, first.id).unwrap();
+        commit_stage(&db, &[a, b], "again").unwrap();
+        assert_eq!(today_stats(&db, 0, now() + 10).unwrap().committed, 2);
     }
 
     #[test]
