@@ -12,7 +12,8 @@ use crate::alac::ALACSource;
 pub struct MP4Source {
     path: PathBuf,
     duration: u128,
-    alac: bool
+    /// Present when the track is ALAC; keeps its decoded-PCM cache across get_source calls
+    alac: Option<ALACSource>
 }
 
 impl MP4Source {
@@ -22,12 +23,13 @@ impl MP4Source {
         let track = mp4.tracks.first().ok_or(anyhow!("No MP4 tracks"))?;
         let duration = track.duration.ok_or(anyhow!("Missing duration"))?.0 as f32 / track.timescale.ok_or(anyhow!("Missing timescale"))?.0 as f32;
         // Check if alac
-        let mut alac = false;
+        let mut is_alac = false;
         if let SampleEntry::Audio(entry) = track.stsd.as_ref().ok_or(anyhow!("Missing stsd"))?.descriptions.first().ok_or(anyhow!("Missing first stsd"))? {
-            alac = entry.codec_type == CodecType::ALAC
+            is_alac = entry.codec_type == CodecType::ALAC
         }
+        let alac = if is_alac { Some(ALACSource::new(&path)?) } else { None };
 
-        debug!("Creating MP4 source ok, alac: {}", alac);
+        debug!("Creating MP4 source ok, alac: {}", is_alac);
 
         Ok(MP4Source {
             path: path.as_ref().to_owned(),
@@ -44,9 +46,8 @@ impl AudioSource for MP4Source {
 
     fn get_source(&self) -> Result<Box<dyn Source<Item = i16> + Send>, Error> {
         // ALAC MP4
-        if self.alac {
-            let alac = ALACSource::new(&self.path)?;
-            return Ok(Box::new(alac));
+        if let Some(alac) = &self.alac {
+            return alac.get_source();
         }
         
         // Symphonia 

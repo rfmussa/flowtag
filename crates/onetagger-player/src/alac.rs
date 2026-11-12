@@ -1,58 +1,83 @@
 use anyhow::Error;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::fs::File;
 use std::io::BufReader;
-use std::time::Duration;
 use rodio::Source;
-use alac::{Reader, Samples, StreamInfo};
+use alac::{Reader, StreamInfo};
 
+use crate::pcm::{DecodedPcm, PcmPlayback};
+
+/// ALAC stream inside an MP4 container. Duration is reported by `MP4Source`.
 pub struct ALACSource {
-    samples: Samples<BufReader<File>, i32>,
-    stream_info: StreamInfo
+    path: PathBuf,
+    stream_info: StreamInfo,
+    /// Decoded audio, filled on first `get_source` and reused for seeks / replays
+    cache: Mutex<Option<Arc<DecodedPcm>>>,
 }
 
 impl ALACSource {
-    // Read alac from file
+    // Read stream info from file
     pub fn new(path: impl AsRef<Path>) -> Result<ALACSource, Error> {
-        let file = File::open(path)?;
-        let r = BufReader::new(file);
-        let reader = Reader::new(r)?;
-        let stream_info = reader.stream_info().to_owned();
+        let file = File::open(&path)?;
+        let reader = Reader::new(BufReader::new(file))?;
         Ok(ALACSource {
-            samples: reader.into_samples(),
-            stream_info
+            path: path.as_ref().to_owned(),
+            stream_info: reader.stream_info().to_owned(),
+            cache: Mutex::new(None),
+        })
+    }
+
+    // Get rodio source, decoding the whole stream on first call
+    pub fn get_source(&self) -> Result<Box<dyn Source<Item = i16> + Send>, Error> {
+        let mut cache = self.cache.lock().map_err(|_| anyhow!("ALAC cache poisoned"))?;
+        let pcm = match cache.as_ref() {
+            Some(pcm) => pcm.clone(),
+            None => {
+                let pcm = Arc::new(self.decode()?);
+                *cache = Some(pcm.clone());
+                pcm
+            }
+        };
+        Ok(Box::new(PcmPlayback::new(pcm)))
+    }
+
+    /// Decode the whole stream into interleaved i16 PCM. Errors are not cached.
+    fn decode(&self) -> Result<DecodedPcm, Error> {
+        let reader = Reader::new(BufReader::new(File::open(&self.path)?))?;
+        let bit_depth = self.stream_info.bit_depth();
+        let mut samples = Vec::new();
+        for s in reader.into_samples::<i32>() {
+            samples.push(alac_sample_to_i16(s.map_err(|e| anyhow!("Failed decoding ALAC: {e:?}"))?, bit_depth));
+        }
+        Ok(DecodedPcm {
+            channels: self.stream_info.channels() as u16,
+            sample_rate: self.stream_info.sample_rate(),
+            samples,
         })
     }
 }
 
-impl Source for ALACSource {
-    fn current_frame_len(&self) -> Option<usize> {
-        None
-    }
-
-    fn channels(&self) -> u16 {
-        self.stream_info.channels() as u16
-    }
-
-    fn sample_rate(&self) -> u32 {
-        self.stream_info.sample_rate()
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        None
+/// Convert a decoded ALAC sample of the given bit depth to 16-bit
+pub(crate) fn alac_sample_to_i16(s: i32, bit_depth: u8) -> i16 {
+    if bit_depth <= 16 {
+        s as i16
+    } else {
+        (s >> (bit_depth - 16)) as i16
     }
 }
 
-impl Iterator for ALACSource {
-    type Item = i16;
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-    fn next(&mut self) -> Option<Self::Item> {
-        // Wrapper against samples
-        if let Some(r) = self.samples.next() {
-            if let Ok(s) = r {
-                return Some((s >> 16) as i16);
-            }
-        }
-        None
+    #[test]
+    fn converts_16_and_32_bit_depths() {
+        assert_eq!(alac_sample_to_i16(0x1234, 16), 0x1234);
+        assert_eq!(alac_sample_to_i16(-0x1234, 16), -0x1234);
+        assert_eq!(alac_sample_to_i16(0x1234_0000, 32), 0x1234);
+        assert_eq!(alac_sample_to_i16(-0x1234_0000, 32), -0x1234);
+        assert_eq!(alac_sample_to_i16(0x12_3400, 24), 0x1234);
+        assert_eq!(alac_sample_to_i16(-0x12_3400, 24), -0x1234);
     }
 }

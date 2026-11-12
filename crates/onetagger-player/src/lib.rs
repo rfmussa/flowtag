@@ -76,14 +76,14 @@ impl AudioPlayer {
                             tx.send(false).ok();
                             continue;
                         }
-                        // In-place seek: symphonia-backed decoders (mp3/flac/m4a/wav)
-                        // support it, making seeks near-instant
+                        // In-place seek: all sources support it (symphonia decoders and
+                        // the shared PCM buffer used by AIFF/ALAC), making seeks near-instant
                         if sink.try_seek(std::time::Duration::from_millis(pos)).is_ok() {
                             debug!("player seek: {pos}ms in_place=true took {}ms", seek_start.elapsed().as_millis());
                             tx.send(!sink.is_paused()).ok();
                             continue;
                         }
-                        // Fallback for sources without seek support (AIFF, ALAC):
+                        // Safety fallback for any source without seek support:
                         // re-create the source and skip samples from the start
                         let paused = sink.is_paused();
                         sink.stop();

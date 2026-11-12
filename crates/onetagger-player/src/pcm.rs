@@ -45,7 +45,8 @@ impl Source for PcmPlayback {
 
     /// Seek in place; always succeeds, clamping past-EOF to the end
     fn try_seek(&mut self, pos: Duration) -> Result<(), SeekError> {
-        let frame = pos.as_millis() as u64 * self.data.sample_rate as u64 / 1000;
+        let millis = pos.as_millis().min(u64::MAX as u128) as u64;
+        let frame = millis.saturating_mul(self.data.sample_rate as u64) / 1000;
         let index = frame.saturating_mul(self.data.channels as u64);
         self.index = index.min(self.data.samples.len() as u64) as usize;
         Ok(())
