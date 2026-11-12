@@ -632,18 +632,28 @@ export class TagStore {
     /** A stageCommitted arrived and the next stageState has not yet been seen */
     private commitLanded = false;
 
+    /** Bumped on every server error reply */
+    errorSeq: Ref<number> = ref(0);
+
     /** The newest commit the server confirmed */
     lastCommit: Ref<{ id: number; trackCount: number } | undefined> = ref(undefined);
 
-    /** Commit with an empty message and resolve once the server confirms (or after `timeoutMs`) */
+    /** Commit with an empty message; resolves once the server confirms, replies
+     *  with an error, or after `timeoutMs`. Rejects only if the send itself throws. */
     commitStageAndWait(trackIds: number[], timeoutMs: number): Promise<void> {
-        const before = this.lastCommit.value?.id;
-        return new Promise((resolve) => {
-            const stop = watch(this.lastCommit, (c) => {
-                if (c && c.id !== before) { stop(); clearTimeout(timer); resolve(); }
-            });
-            const timer = setTimeout(() => { stop(); resolve(); }, timeoutMs);
-            this.commitStage(trackIds, '');
+        const lastId = this.lastCommit.value?.id;
+        const lastError = this.errorSeq.value;
+        return new Promise((resolve, reject) => {
+            const done = () => { stopCommit(); stopError(); clearTimeout(timer); resolve(); };
+            const stopCommit = watch(this.lastCommit, (c) => { if (c && c.id !== lastId) done(); });
+            const stopError = watch(this.errorSeq, (n) => { if (n !== lastError) done(); });
+            const timer = setTimeout(done, timeoutMs);
+            try {
+                this.commitStage(trackIds, '');
+            } catch (e) {
+                stopCommit(); stopError(); clearTimeout(timer);
+                reject(e);
+            }
         });
     }
 
@@ -957,6 +967,7 @@ export class TagStore {
             case 'rekordboxExportProgress':
                 return true;
             case 'error':
+                this.errorSeq.value++;
                 // A failed tag action leaves optimistic state wrong: resync from
                 // the server (cheap), but let the app still show the error toast
                 if (this.loaded.value && window.location.hash.startsWith('#/quicktag')) {

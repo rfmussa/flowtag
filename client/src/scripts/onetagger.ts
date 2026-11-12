@@ -10,6 +10,7 @@ import router from './router';
 import { getTagStore } from './tagstore';
 import { handleFlowKeys } from './flowkeys';
 import { isCommitChord } from './commitsheet';
+import { runQuitFlow } from '@/lib/quit';
 import { TangleStatus } from '@/lib/tangle';
 
 class OneTagger {
@@ -474,21 +475,20 @@ class OneTagger {
     }
 
     /// Quit flow: offer to commit ready staged tracks first, then the normal exit paths
-    private async exitWithStagePrompt() {
+    private exitWithStagePrompt() {
         const store = getTagStore();
-        const ready = store.stageRows.value.filter((r) => r.ready).map((r) => r.trackId);
-        if (store.stageReady.value > 0 && ready.length > 0) {
-            const ok = await confirmDialog({
+        runQuitFlow({
+            stageReady: store.stageReady.value,
+            readyIds: store.stageRows.value.filter((r) => r.ready).map((r) => r.trackId),
+            taggingRunning: this.lock.value.locked && !this.taggerStatus.value.done,
+            confirm: () => confirmDialog({
                 title: `Commit ${store.stageReady.value} ready staged tracks first?`,
                 okLabel: 'Commit & quit',
-            });
-            if (ok) {
-                await store.commitStageAndWait(ready, 5000);
-                this.forceExit();
-                return;
-            }
-        }
-        this.exitNormally();
+            }),
+            commitAndWait: (ids) => store.commitStageAndWait(ids, 5000),
+            forceExit: () => this.forceExit(),
+            exitNormally: () => this.exitNormally(),
+        }).catch((e) => console.error(e));
     }
 
     /// Exit while the tagger holds the main connection: use a fresh socket

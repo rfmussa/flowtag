@@ -44,12 +44,21 @@ const store = getTagStore();
 const rows = computed(() => store.stageRows.value);
 const ticks = ref<Ticks>({});
 const message = ref('');
-/** Set when this sheet sent a commit, so only its confirmation toasts */
+/** Set when this sheet sent a commit, so only its confirmation toasts. A failed
+ *  commit (the global error dialog is its feedback) must not leave it armed. */
 let awaitingCommit = false;
+let awaitTimer: ReturnType<typeof setTimeout> | undefined;
+const AWAIT_MS = 5000;
+
+function disarm() {
+    awaitingCommit = false;
+    clearTimeout(awaitTimer);
+}
 
 // Fresh ticks and an empty message every time the sheet opens
 watch(commitSheetOpen, (open) => {
     if (!open) return;
+    disarm();
     ticks.value = initialTicks(rows.value);
     message.value = '';
 });
@@ -72,6 +81,8 @@ function onOpenChange(open: boolean) { commitSheetOpen.value = open; }
 function confirm() {
     if (payload.value.trackIds.length === 0) return;
     awaitingCommit = true;
+    clearTimeout(awaitTimer);
+    awaitTimer = setTimeout(disarm, AWAIT_MS);
     store.commitStage(payload.value.trackIds, payload.value.message);
     close();
 }
@@ -85,7 +96,7 @@ function onEnter(e: KeyboardEvent) {
 
 watch(() => store.lastCommit.value, (commit) => {
     if (!commit || !awaitingCommit) return;
-    awaitingCommit = false;
+    disarm();
     notify({ message: `Committed ${commit.trackCount} track${commit.trackCount === 1 ? '' : 's'}`, type: 'positive', timeout: 2000 });
 });
 </script>

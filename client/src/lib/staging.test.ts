@@ -153,3 +153,29 @@ describe('commit fallback', () => {
         expect(s.scope.value).toBe('stage');
     });
 });
+
+describe('commitStageAndWait', () => {
+    it('resolves_when_the_commit_is_confirmed', async () => {
+        const s = storeWith([track(1)]);
+        const p = s.commitStageAndWait([1], 5000);
+        s.handleMessage({ action: 'stageCommitted', commit: { id: 9, createdAt: 0, message: '', trackCount: 1 } });
+        await expect(p).resolves.toBeUndefined();
+    });
+
+    it('resolves_early_on_a_server_error', async () => {
+        const s = storeWith([track(1)]);
+        const p = s.commitStageAndWait([1], 60_000);
+        s.handleMessage({ action: 'error', message: 'nope' });
+        await expect(p).resolves.toBeUndefined();
+    });
+
+    it('resolves_after_the_timeout', async () => {
+        vi.useFakeTimers();
+        try {
+            const s = storeWith([track(1)]);
+            const p = s.commitStageAndWait([1], 5000);
+            vi.advanceTimersByTime(5000);
+            await expect(p).resolves.toBeUndefined();
+        } finally { vi.useRealTimers(); }
+    });
+});
