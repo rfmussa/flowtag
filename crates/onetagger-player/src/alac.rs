@@ -45,10 +45,9 @@ impl ALACSource {
     /// Decode the whole stream into interleaved i16 PCM. Errors are not cached.
     fn decode(&self) -> Result<DecodedPcm, Error> {
         let reader = Reader::new(BufReader::new(File::open(&self.path)?))?;
-        let bit_depth = self.stream_info.bit_depth();
         let mut samples = Vec::new();
         for s in reader.into_samples::<i32>() {
-            samples.push(alac_sample_to_i16(s.map_err(|e| anyhow!("Failed decoding ALAC: {e:?}"))?, bit_depth));
+            samples.push(alac_sample_to_i16(s.map_err(|e| anyhow!("Failed decoding ALAC: {e:?}"))?));
         }
         Ok(DecodedPcm {
             channels: self.stream_info.channels() as u16,
@@ -58,13 +57,10 @@ impl ALACSource {
     }
 }
 
-/// Convert a decoded ALAC sample of the given bit depth to 16-bit
-pub(crate) fn alac_sample_to_i16(s: i32, bit_depth: u8) -> i16 {
-    if bit_depth <= 16 {
-        s as i16
-    } else {
-        (s >> (bit_depth - 16)) as i16
-    }
+/// Convert a decoded ALAC sample to 16-bit.
+/// The alac crate left-aligns samples of every bit depth to the full 32 bits, so always shift down 16.
+pub(crate) fn alac_sample_to_i16(s: i32) -> i16 {
+    (s >> 16) as i16
 }
 
 #[cfg(test)]
@@ -72,12 +68,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn converts_16_and_32_bit_depths() {
-        assert_eq!(alac_sample_to_i16(0x1234, 16), 0x1234);
-        assert_eq!(alac_sample_to_i16(-0x1234, 16), -0x1234);
-        assert_eq!(alac_sample_to_i16(0x1234_0000, 32), 0x1234);
-        assert_eq!(alac_sample_to_i16(-0x1234_0000, 32), -0x1234);
-        assert_eq!(alac_sample_to_i16(0x12_3400, 24), 0x1234);
-        assert_eq!(alac_sample_to_i16(-0x12_3400, 24), -0x1234);
+    fn converts_left_aligned_samples() {
+        // alac crate left-aligns every bit depth to 32 bits, so a 16-bit 0x1234 arrives as 0x1234_0000
+        assert_eq!(alac_sample_to_i16(0x1234 << 16), 0x1234);
+        assert_eq!(alac_sample_to_i16(-0x1234 << 16), -0x1234);
+        assert_eq!(alac_sample_to_i16(0x1234 << 16), 0x1234);
+        assert_eq!(alac_sample_to_i16(-0x1234 << 16), -0x1234);
     }
 }
