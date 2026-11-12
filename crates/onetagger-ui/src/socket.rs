@@ -26,6 +26,7 @@ use crate::sender::MessageSender;
 use crate::stage;
 use crate::tagflow;
 use crate::tangle;
+use crate::preload::PreloadSlot;
 use onetagger_tangle::worker::Command;
 use crate::tageditor::TagEditor;
 use crate::browser::{FileBrowser, FolderBrowser};
@@ -64,6 +65,7 @@ enum Action {
     #[serde(rename_all = "camelCase")]
     WaveformGet { track_id: i64 },
     PlayerLoad { path: PathBuf },
+    PlayerPreload { path: PathBuf },
     PlayerPlay, 
     PlayerPause,
     PlayerSeek { pos: u64 },
@@ -226,6 +228,8 @@ pub(crate) struct SocketContext {
     pub(crate) sender: MessageSender,
     pub(crate) db: Arc<onetagger_db::Db>,
     pub(crate) flush_wake: std::sync::mpsc::Sender<()>,
+    /// Preloaded source for the selected track (shared by all connections)
+    pub(crate) preload: PreloadSlot,
     /// Tangle sync worker; `None` when it failed to start
     pub(crate) tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
     pub(crate) events: tokio::sync::broadcast::Sender<String>,
@@ -241,6 +245,7 @@ impl SocketContext {
         sender: MessageSender,
         db: Arc<onetagger_db::Db>,
         flush_wake: std::sync::mpsc::Sender<()>,
+        preload: PreloadSlot,
         tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
         events: tokio::sync::broadcast::Sender<String>,
     ) -> SocketContext {
@@ -251,6 +256,7 @@ impl SocketContext {
             sender,
             db,
             flush_wake,
+            preload,
             tangle,
             events,
             player_gain: 1.0,
@@ -312,6 +318,7 @@ pub(crate) async fn handle_ws_connection(
     db: Arc<onetagger_db::Db>,
     events: tokio::sync::broadcast::Sender<String>,
     flush_wake: std::sync::mpsc::Sender<()>,
+    preload: PreloadSlot,
     tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
 ) -> Result<(), Error> {
     // Split the socket: all writes go through a dedicated writer task, so handlers
@@ -337,7 +344,7 @@ pub(crate) async fn handle_ws_connection(
         }
     });
 
-    let mut context = SocketContext::new(context, sender, db, flush_wake, tangle, events);
+    let mut context = SocketContext::new(context, sender, db, flush_wake, preload, tangle, events);
 
     // Bring a late-joining window (miniplayer) up to date with the player
     if let Some(np) = crate::media::snapshot_now_playing() {
@@ -605,15 +612,20 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             // Decoder open touches the file: keep it off the async threads
             let source_start = std::time::Instant::now();
             let log_path = path.clone();
-            let duration_ms = known_duration_ms(&context.db, &path);
-            let source = tokio::task::spawn_blocking(move || AudioSources::from_path_with_duration(&path, duration_ms)).await??;
+            let (source, preloaded) = match context.preload.take_if(&path) {
+                Some(preloaded) => (preloaded, true),
+                None => {
+                    let duration_ms = known_duration_ms(&context.db, &path);
+                    (tokio::task::spawn_blocking(move || AudioSources::from_path_with_duration(&path, duration_ms)).await??, false)
+                }
+            };
             context.send(json!({
                 "action": "playerStarted",
                 "duration": source.duration() as u64,
                 "gainDb": gain_db,
             })).ok();
             context.player.load_file(source);
-            debug!("player source: {log_path:?} built in {}ms", source_start.elapsed().as_millis());
+            debug!("player source: {log_path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
             context.player.volume(context.player_volume * context.player_gain);
             if autoplay {
                 context.player.play();
@@ -631,7 +643,10 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             // Protect the file from the flush worker while it may be held for playback
             set_currently_playing(&path);
             let source_start = std::time::Instant::now();
-            let source = AudioSources::from_path_with_duration(&path, known_duration_ms(&context.db, &path))?;
+            let (source, preloaded) = match context.preload.take_if(&path) {
+                Some(preloaded) => (preloaded, true),
+                None => (AudioSources::from_path_with_duration(&path, known_duration_ms(&context.db, &path))?, false),
+            };
             // Meta
             let tag = Tag::load_file(&path, false)?;
             let title = tag.tag().get_field(Field::Title).map(|i| i.first().map(String::from)).flatten();
@@ -645,7 +660,26 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             })).ok();
             // Load
             context.player.load_file(source);
-            debug!("player source: {path:?} built in {}ms", source_start.elapsed().as_millis());
+            debug!("player source: {path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
+        },
+        // Build the selected track ahead of play. Never touches the player or the
+        // flush-protected "currently playing" path; a failure leaves the slot as it was.
+        Action::PlayerPreload { path } => {
+            let duration_ms = known_duration_ms(&context.db, &path);
+            let slot = context.preload.clone();
+            tokio::task::spawn_blocking(move || {
+                let start = std::time::Instant::now();
+                let source = match AudioSources::from_path_with_duration(&path, duration_ms) {
+                    Ok(source) => source,
+                    Err(e) => return debug!("player preload: {path:?} failed: {e}"),
+                };
+                // Prime the decode cache (AIFF/ALAC decode once); the result is dropped on purpose
+                if let Err(e) = source.get_source() {
+                    return debug!("player preload: {path:?} failed: {e}");
+                }
+                slot.set(path.clone(), source);
+                debug!("player preload: {path:?} ready in {}ms", start.elapsed().as_millis());
+            });
         },
         //  Controls
         Action::PlayerPlay => context.player.play(),
@@ -978,6 +1012,12 @@ mod tests {
         assert!(matches!(parse(r#"{"action":"tangleSetEnabled","enabled":true}"#), Action::TangleSetEnabled { enabled: true }));
         assert!(matches!(parse(r#"{"action":"tanglePreview"}"#), Action::TanglePreview));
         assert!(matches!(parse(r#"{"action":"tangleResendTag","tagId":3}"#), Action::TangleResendTag { tag_id: 3 }));
+    }
+
+    #[test]
+    fn player_preload_deserializes() {
+        let parse = |s: &str| serde_json::from_str::<Action>(s).unwrap();
+        assert!(matches!(parse(r#"{"action":"playerPreload","path":"/a.mp3"}"#), Action::PlayerPreload { path } if path == PathBuf::from("/a.mp3")));
     }
 
     #[test]

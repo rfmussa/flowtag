@@ -35,6 +35,7 @@ pub mod stage;
 pub mod tagflow;
 pub mod tangle;
 pub mod precompute;
+pub(crate) mod preload;
 
 static CLIENT_DIR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/../../client/dist");
 
@@ -57,6 +58,8 @@ struct WsState {
     events: tokio::sync::broadcast::Sender<String>,
     /// Wakes the flush worker (e.g. after a flushHint)
     flush_wake: std::sync::mpsc::Sender<()>,
+    /// Preloaded source for the selected track
+    preload: preload::PreloadSlot,
     /// Tangle sync worker; `None` if it could not start
     tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
 }
@@ -76,9 +79,13 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
     // OS media keys (play/pause/next from the GUI shell) push into the same channel
     media::set_media_broadcast(events.clone());
     let events_tx = events.clone();
+    let preload = preload::PreloadSlot::new();
+    let preload_for_flush = preload.clone();
     let flush_wake = onetagger_db::flush::FlushWorker::spawn(
         db_path.clone(),
         move |event| {
+            // A flush rewrites the file: any preloaded source may be stale
+            preload_for_flush.clear();
             let message = serde_json::json!({
                 "action": "trackFlushed",
                 "trackId": event.track_id,
@@ -94,7 +101,7 @@ fn start_async_runtime(context: StartContext) -> Result<(), Error> {
 
     let db = Arc::new(db);
     precompute::spawn_waveform_precompute(db.clone());
-    let state = WsState { context, db, events, flush_wake, tangle };
+    let state = WsState { context, db, events, flush_wake, preload, tangle };
     Builder::new_multi_thread().enable_all().build()?.block_on(async move {
         // Register routes
         let app = Router::new()
@@ -195,7 +202,7 @@ async fn get_ws(ws: WebSocketUpgrade, State(state): State<WsState>) -> impl Into
     ws.on_upgrade(move |socket| {
         debug!("WS Connected!");
         async move {
-            match socket::handle_ws_connection(socket, state.context, state.db, state.events, state.flush_wake, state.tangle).await {
+            match socket::handle_ws_connection(socket, state.context, state.db, state.events, state.flush_wake, state.preload, state.tangle).await {
                 Ok(_) => {},
                 Err(e) => warn!("WS connection error: {e}"),
             }

@@ -1,5 +1,6 @@
 import { ref, Ref, computed, watch, WritableComputedRef } from 'vue';
 import { notify } from '@/lib/notify';
+import { shouldPreload } from '@/lib/player';
 
 import { get1t } from './onetagger';
 import { diag, diagError } from './diag';
@@ -267,6 +268,25 @@ export class TagStore {
         }
         this.selectedIds.value = [];
         this.selectedId.value = track.id;
+    }
+
+    /** Ask the backend to build the single selected track ahead of play, once the
+     *  selection has settled for `settleMs`. Returns a stop function. */
+    watchSelectionForPreload(settleMs = PRELOAD_SETTLE_MS): () => void {
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        const stop = watch(
+            () => (this.allSelected().length === 1 ? this.selectedTrack()?.path ?? null : null),
+            (path) => {
+                clearTimeout(timer);
+                if (path === null) return;
+                timer = setTimeout(() => {
+                    const $1t = get1t();
+                    if (shouldPreload(path, $1t.player?.value.path ?? null)) $1t.send('playerPreload', { path });
+                }, settleMs);
+            },
+            { immediate: true },
+        );
+        return () => { clearTimeout(timer); stop(); };
     }
 
     /** Drop the multi-selection, keeping the anchor */
@@ -1160,10 +1180,16 @@ export class TagStore {
     }
 }
 
+/** Selection must rest this long before the backend preloads it */
+const PRELOAD_SETTLE_MS = 150;
+
 let store: TagStore | undefined;
 
 /** FlowTag state singleton (mirrors the get1t() pattern) */
 export function getTagStore(): TagStore {
-    if (!store) store = new TagStore();
+    if (!store) {
+        store = new TagStore();
+        store.watchSelectionForPreload();
+    }
     return store;
 }
