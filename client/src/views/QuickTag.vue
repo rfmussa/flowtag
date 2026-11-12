@@ -88,7 +88,7 @@
     <!-- Tagging panel -->
     <div class='tag-panel flex items-center'>
         <template v-if='selected'>
-            <div class='panel-meta'>
+            <div v-if='!taggingPlayingTrack' class='panel-meta'>
                 <span class='panel-title' :title='selected.title'>{{ selected.title }}</span>
                 <span class='panel-artist' :title='selected.artist'>{{ selected.artist }}</span>
             </div>
@@ -168,6 +168,11 @@ const selected = computed(() => {
     store.tracks.value; // reactive dep
     return store.selectedTrack();
 });
+
+/** The player bar already names the playing track (with artwork); the tag row
+ *  repeats the name only when the tagging target is a DIFFERENT track */
+const taggingPlayingTrack = computed(() =>
+    !!selected.value && $1t.player.value.path === selected.value.path);
 const multiCount = computed(() => store.allSelected().length);
 const progressPct = computed(() => {
     const total = store.tracks.value.length;
