@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { welcomeText, welcomeKey, shouldShowWelcome, resolveViewState } from '@/lib/welcome';
+import { welcomeText, welcomeKey, shouldShowWelcome, resolveViewState, createWelcomeGate } from '@/lib/welcome';
 import type { ViewState } from '@/scripts/settings';
 
 const secs = (y: number, mo: number, d: number, h: number, mi: number) => new Date(y, mo, d, h, mi).getTime() / 1000;
@@ -42,6 +42,31 @@ describe('welcome visibility', () => {
         expect(shouldShowWelcome(text, '4:2', '4:2')).toBe(false);
         expect(shouldShowWelcome(text, '4:1', '4:2')).toBe(true);
         expect(shouldShowWelcome(null, undefined, 'none:0')).toBe(false);
+    });
+});
+
+describe('welcome gate', () => {
+    const commit = { id: 4, createdAt: secs(2026, 10, 12, 1, 5), message: '', trackCount: 1 };
+
+    it('welcome_decided_once_a_later_stage_change_creates_no_card', () => {
+        const gate = createWelcomeGate();
+        // clean session: nothing to welcome back to
+        expect(gate.decide({ lastCommit: null, stageLeft: 0, seen: undefined, now })).toBeNull();
+        // the first S stages a track: still no card
+        expect(gate.decide({ lastCommit: null, stageLeft: 1, seen: undefined, now })).toBeNull();
+        expect(gate.decide({ lastCommit: commit, stageLeft: 5, seen: undefined, now })).toBeNull();
+    });
+
+    it('keeps the first snapshot while the stage changes', () => {
+        const gate = createWelcomeGate();
+        const first = gate.decide({ lastCommit: commit, stageLeft: 2, seen: undefined, now });
+        expect(first).toEqual({ text: 'Today 01:05 · committed 1\nStage: 2 left', key: '4:2' });
+        expect(gate.decide({ lastCommit: commit, stageLeft: 1, seen: undefined, now })).toEqual(first);
+    });
+
+    it('decides no card when the state was already seen', () => {
+        const gate = createWelcomeGate();
+        expect(gate.decide({ lastCommit: commit, stageLeft: 2, seen: '4:2', now })).toBeNull();
     });
 });
 

@@ -66,7 +66,7 @@
     <div class='flex flex-1 list-row'>
         <PlaylistSidebar v-if='sidebarOpen' />
         <div class='flex-1 list-area'>
-            <WelcomeCard v-if='welcomeVisible' :text='welcome.text ?? ""' @dismiss='dismissWelcome' @continue='continueWelcome' />
+            <WelcomeCard v-if='welcome' :text='welcome.text' @dismiss='dismissWelcome' @continue='continueWelcome' />
             <div class='list-body'>
                 <div v-if='store.folders.value.length === 0 && store.loaded.value' class='flex flex-col items-center justify-center h-full empty-state'>
                     <LibraryIcon class='empty-icon size-11' :stroke-width='1.25' />
@@ -156,7 +156,7 @@ import Hint from '../components/flowtag/Hint.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
 import TrackInspector from '../components/flowtag/TrackInspector.vue';
 import ManualTag from '../components/ManualTag.vue';
-import { welcomeText, welcomeKey, shouldShowWelcome, resolveViewState } from '@/lib/welcome';
+import { createWelcomeGate, resolveViewState, WelcomeSnapshot } from '@/lib/welcome';
 import { openJournal } from '@/scripts/journalsheet';
 
 const PALETTE_KEY = 'flowtag.paletteOpen';
@@ -354,20 +354,30 @@ watchDebounced(
     { debounce: VIEW_SAVE_DEBOUNCE_MS },
 );
 
-const welcomeDismissed = ref(false);
-const welcome = computed(() => {
-    const last = store.journal.value?.commits[0] ?? null;
-    const stageLeft = store.stageTotal.value;
-    const text = welcomeText(last, stageLeft, Date.now());
-    return { text, key: welcomeKey(last?.id, stageLeft) };
-});
-const welcomeVisible = computed(() =>
-    viewRestored.value && !welcomeDismissed.value && store.journal.value !== undefined
-    && shouldShowWelcome(welcome.value.text, $1t.settings.value.flowtag.welcomeSeen, welcome.value.key));
+// Decided once, when the restore completed and the journal arrived; only that snapshot renders
+const welcomeGate = createWelcomeGate();
+const welcome = ref<WelcomeSnapshot | null>(null);
+const stopWelcomeWatch = watch(
+    () => viewRestored.value && store.journal.value !== undefined,
+    (ready) => {
+        if (!ready) return;
+        welcome.value = welcomeGate.decide({
+            lastCommit: store.journal.value?.commits[0] ?? null,
+            stageLeft: store.stageTotal.value,
+            seen: $1t.settings.value.flowtag.welcomeSeen,
+            now: Date.now(),
+        });
+        // the decision is final: stop watching (deferred, the watcher may not be assigned yet)
+        queueMicrotask(() => stopWelcomeWatch());
+    },
+    { immediate: true },
+);
 
 function dismissWelcome() {
-    welcomeDismissed.value = true;
-    $1t.settings.value.flowtag.welcomeSeen = welcome.value.key;
+    const card = welcome.value;
+    welcome.value = null;
+    if (!card) return;
+    $1t.settings.value.flowtag.welcomeSeen = card.key;
     $1t.saveSettings(false);
 }
 

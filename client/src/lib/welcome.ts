@@ -39,6 +39,39 @@ export function shouldShowWelcome(text: string | null, seen: string | undefined,
     return text !== null && seen !== key;
 }
 
+export interface WelcomeSnapshot {
+    readonly text: string;
+    readonly key: string;
+}
+
+export interface WelcomeInputs {
+    readonly lastCommit: CommitRow | null;
+    readonly stageLeft: number;
+    readonly seen: string | undefined;
+    readonly now: number;
+}
+
+export interface WelcomeGate {
+    /** The card to show: decided on the first call, every later call returns that decision */
+    decide(inputs: WelcomeInputs): WelcomeSnapshot | null;
+}
+
+/** The welcome card is decided once per open (when the view restore completes),
+ *  so staging mid-session never summons or re-shows it */
+export function createWelcomeGate(): WelcomeGate {
+    let decision: { readonly card: WelcomeSnapshot | null } | undefined;
+    return {
+        decide(i) {
+            if (decision === undefined) {
+                const text = welcomeText(i.lastCommit, i.stageLeft, i.now);
+                const key = welcomeKey(i.lastCommit?.id, i.stageLeft);
+                decision = { card: text !== null && shouldShowWelcome(text, i.seen, key) ? { text, key } : null };
+            }
+            return decision.card;
+        },
+    };
+}
+
 export interface RestoreContext {
     playlistIds: readonly number[];
     stageTotal: number;
