@@ -592,6 +592,8 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             };
             context.player_gain = 10f32.powf(gain_db as f32 / 20.0);
             // Decoder open touches the file: keep it off the async threads
+            let source_start = std::time::Instant::now();
+            let log_path = path.clone();
             let source = tokio::task::spawn_blocking(move || AudioSources::from_path(&path)).await??;
             context.send(json!({
                 "action": "playerStarted",
@@ -599,6 +601,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 "gainDb": gain_db,
             })).ok();
             context.player.load_file(source);
+            debug!("player source: {log_path:?} built in {}ms", source_start.elapsed().as_millis());
             context.player.volume(context.player_volume * context.player_gain);
             if autoplay {
                 context.player.play();
@@ -615,6 +618,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::PlayerLoad { path } => {
             // Protect the file from the flush worker while it may be held for playback
             set_currently_playing(&path);
+            let source_start = std::time::Instant::now();
             let source = AudioSources::from_path(&path)?;
             // Meta
             let tag = Tag::load_file(&path, false)?;
@@ -629,6 +633,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             })).ok();
             // Load
             context.player.load_file(source);
+            debug!("player source: {path:?} built in {}ms", source_start.elapsed().as_millis());
         },
         //  Controls
         Action::PlayerPlay => context.player.play(),

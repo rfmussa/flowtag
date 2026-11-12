@@ -6,6 +6,7 @@ use std::io::Cursor;
 use std::path::Path;
 use std::sync::mpsc::{Sender, Receiver, channel};
 use std::thread;
+use std::time::Instant;
 use hound::{WavSpec, SampleFormat, WavWriter};
 use rodio::{Sink, Source};
 
@@ -59,13 +60,16 @@ impl AudioPlayer {
                         sink.set_volume(volume);
                         sink.pause();
                         // Append source
+                        let decode_start = Instant::now();
                         if let Ok(s) = audio_source.get_source() {
                             sink.append(s);
                         }
+                        debug!("player decode: took {}ms", decode_start.elapsed().as_millis());
                         // Save source
                         source = Some(audio_source);
                     },
                     PlayerAction::Seek(pos) => {
+                        let seek_start = Instant::now();
                         if source.is_none() {
                             // Always reply, or AudioPlayer::seek would block forever
                             tx.send(false).ok();
@@ -74,6 +78,7 @@ impl AudioPlayer {
                         // In-place seek: symphonia-backed decoders (mp3/flac/m4a/wav)
                         // support it, making seeks near-instant
                         if sink.try_seek(std::time::Duration::from_millis(pos)).is_ok() {
+                            debug!("player seek: {pos}ms in_place=true took {}ms", seek_start.elapsed().as_millis());
                             tx.send(!sink.is_paused()).ok();
                             continue;
                         }
@@ -96,6 +101,7 @@ impl AudioPlayer {
                             }
                             sink.append(s);
                         }
+                        debug!("player seek: {pos}ms in_place=false took {}ms", seek_start.elapsed().as_millis());
                         // Sync
                         tx.send(!sink.is_paused()).ok();
                     }
