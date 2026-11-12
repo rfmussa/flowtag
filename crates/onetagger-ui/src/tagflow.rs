@@ -123,13 +123,15 @@ pub(crate) fn tag_update(context: &SocketContext, id: i64, patch: TagPatch) -> R
     let tag = tags::update_tag(
         &context.db, id, patch.name.as_deref(), patch.color.as_deref(), group_id, keybind
     )?;
-    context.broadcast(json!({ "action": "tagUpdated", "tag": tag }))
+    context.broadcast(json!({ "action": "tagUpdated", "tag": tag }))?;
+    crate::stage::broadcast_state(context)
 }
 
 pub(crate) fn tag_delete(context: &SocketContext, id: i64) -> Result<(), Error> {
     tags::delete_tag(&context.db, id)?;
     context.broadcast(json!({ "action": "tagDeleted", "id": id }))?;
-    pool_load(context)
+    pool_load(context)?;
+    crate::stage::broadcast_state(context)
 }
 
 pub(crate) fn group_create(context: &SocketContext, name: &str, color: &str) -> Result<(), Error> {
@@ -156,7 +158,8 @@ pub(crate) fn track_add_tag(context: &SocketContext, track_id: i64, name: &str) 
         "trackId": track_id,
         "tagIds": tag_ids,
         "newTag": new_tag
-    }))
+    }))?;
+    crate::stage::broadcast_state(context)
 }
 
 pub(crate) fn track_remove_tag(context: &SocketContext, track_id: i64, tag_id: i64) -> Result<(), Error> {
@@ -165,7 +168,8 @@ pub(crate) fn track_remove_tag(context: &SocketContext, track_id: i64, tag_id: i
         "action": "trackTagsChanged",
         "trackId": track_id,
         "tagIds": tag_ids
-    }))
+    }))?;
+    crate::stage::broadcast_state(context)
 }
 
 /// Bulk tag add (multi-select): one transaction, one compact echo
@@ -177,7 +181,8 @@ pub(crate) fn tracks_add_tag(context: &SocketContext, track_ids: &[i64], name: &
         "tagId": tag.id,
         "op": "add",
         "newTag": created.then_some(tag)
-    }))
+    }))?;
+    crate::stage::broadcast_state(context)
 }
 
 /// Bulk tag remove (multi-select)
@@ -188,7 +193,8 @@ pub(crate) fn tracks_remove_tag(context: &SocketContext, track_ids: &[i64], tag_
         "trackIds": track_ids,
         "tagId": tag_id,
         "op": "remove"
-    }))
+    }))?;
+    crate::stage::broadcast_state(context)
 }
 
 /// Track inspector: current metadata, read fresh from the file

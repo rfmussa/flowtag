@@ -71,7 +71,9 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at, folder_id
+        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at, folder_id, done_at,
+                EXISTS (SELECT 1 FROM staged s WHERE s.track_id = tracks.id),
+                COALESCE((SELECT s.skip FROM staged s WHERE s.track_id = tracks.id), 0)
          FROM tracks ORDER BY path",
     )?;
     let tracks = stmt
@@ -90,6 +92,9 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
                 year: r.get(10)?,
                 added_at: r.get(11)?,
                 folder_id: r.get(12)?,
+                done_at: r.get(13)?,
+                staged: r.get::<_, i64>(14)? != 0,
+                skip: r.get::<_, i64>(15)? != 0,
                 tag_ids: vec![],
             })
         })?

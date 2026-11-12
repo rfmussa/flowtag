@@ -31,6 +31,7 @@ pub mod socket;
 pub mod sender;
 pub mod browser;
 pub mod tageditor;
+pub mod stage;
 pub mod tagflow;
 pub mod tangle;
 pub mod precompute;

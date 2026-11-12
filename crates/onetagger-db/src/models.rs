@@ -30,6 +30,13 @@ pub struct DbTrack {
     pub missing: bool,
     pub needs_flush: bool,
     pub tag_ids: Vec<i64>,
+    /// Unix seconds when the track was committed as done
+    #[serde(default)]
+    pub done_at: Option<i64>,
+    #[serde(default)]
+    pub staged: bool,
+    #[serde(default)]
+    pub skip: bool,
 }
 
 /// A tag in the pool

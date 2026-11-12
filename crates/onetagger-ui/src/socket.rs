@@ -23,6 +23,7 @@ use futures_util::StreamExt;
 
 use crate::StartContext;
 use crate::sender::MessageSender;
+use crate::stage;
 use crate::tagflow;
 use crate::tangle;
 use onetagger_tangle::worker::Command;
@@ -133,6 +134,18 @@ enum Action {
     #[serde(rename_all = "camelCase")]
     PlaylistRemoveTracks { id: i64, track_ids: Vec<i64> },
     PlaylistTracksLoad { id: i64 },
+    #[serde(rename_all = "camelCase")]
+    StageTracks { track_ids: Vec<i64> },
+    #[serde(rename_all = "camelCase")]
+    UnstageTracks { track_ids: Vec<i64> },
+    #[serde(rename_all = "camelCase")]
+    StageSkip { track_id: i64 },
+    #[serde(rename_all = "camelCase")]
+    StageCommit { track_ids: Vec<i64>, message: String },
+    #[serde(rename_all = "camelCase")]
+    StageRevert { commit_id: i64 },
+    #[serde(rename_all = "camelCase")]
+    JournalGet { #[serde(default)] before_id: Option<i64> },
     #[serde(rename_all = "camelCase")]
     TrackMetaGet { track_id: i64 },
     #[serde(rename_all = "camelCase")]
@@ -911,6 +924,12 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::PlaylistAddTracks { id, track_ids } => tagflow::playlist_add_tracks(context, id, &track_ids)?,
         Action::PlaylistRemoveTracks { id, track_ids } => tagflow::playlist_remove_tracks(context, id, &track_ids)?,
         Action::PlaylistTracksLoad { id } => tagflow::playlist_tracks_load(context, id)?,
+        Action::StageTracks { track_ids } => stage::stage_tracks(context, &track_ids)?,
+        Action::UnstageTracks { track_ids } => stage::unstage_tracks(context, &track_ids)?,
+        Action::StageSkip { track_id } => stage::stage_skip(context, track_id)?,
+        Action::StageCommit { track_ids, message } => stage::stage_commit(context, &track_ids, &message)?,
+        Action::StageRevert { commit_id } => stage::stage_revert(context, commit_id)?,
+        Action::JournalGet { before_id } => stage::journal_get(context, before_id)?,
     }
    
     Ok(())
@@ -942,5 +961,18 @@ mod tests {
         assert!(matches!(parse(r#"{"action":"tangleSetEnabled","enabled":true}"#), Action::TangleSetEnabled { enabled: true }));
         assert!(matches!(parse(r#"{"action":"tanglePreview"}"#), Action::TanglePreview));
         assert!(matches!(parse(r#"{"action":"tangleResendTag","tagId":3}"#), Action::TangleResendTag { tag_id: 3 }));
+    }
+
+    #[test]
+    fn staging_actions_deserialize() {
+        let parse = |s: &str| serde_json::from_str::<Action>(s).unwrap();
+        assert!(matches!(parse(r#"{"action":"stageTracks","trackIds":[1,2]}"#), Action::StageTracks { track_ids } if track_ids == vec![1, 2]));
+        assert!(matches!(parse(r#"{"action":"unstageTracks","trackIds":[3]}"#), Action::UnstageTracks { track_ids } if track_ids == vec![3]));
+        assert!(matches!(parse(r#"{"action":"stageSkip","trackId":4}"#), Action::StageSkip { track_id: 4 }));
+        assert!(matches!(parse(r#"{"action":"stageCommit","trackIds":[5],"message":"m"}"#), Action::StageCommit { track_ids, message } if track_ids == vec![5] && message == "m"));
+        assert!(matches!(parse(r#"{"action":"stageRevert","commitId":6}"#), Action::StageRevert { commit_id: 6 }));
+        assert!(matches!(parse(r#"{"action":"journalGet","beforeId":7}"#), Action::JournalGet { before_id: Some(7) }));
+        assert!(matches!(parse(r#"{"action":"journalGet","beforeId":null}"#), Action::JournalGet { before_id: None }));
+        assert!(matches!(parse(r#"{"action":"journalGet"}"#), Action::JournalGet { before_id: None }));
     }
 }
