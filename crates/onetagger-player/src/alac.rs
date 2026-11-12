@@ -54,11 +54,24 @@ fn decode(path: &Path, stream_info: &StreamInfo) -> Result<DecodedPcm, Error> {
     })
 }
 
-/// Convert decoded samples to i16; any packet error fails the decode
+/// Convert decoded samples to i16. A mid-stream packet error (truncated / damaged file)
+/// keeps the audio decoded so far; only a stream that yields no samples at all fails.
 fn collect_samples<E: Debug>(stream: impl IntoIterator<Item = Result<i32, E>>) -> Result<Vec<i16>, Error> {
-    stream.into_iter()
-        .map(|s| s.map(alac_sample_to_i16).map_err(|e| anyhow!("Failed decoding ALAC: {e:?}")))
-        .collect()
+    let mut samples = Vec::new();
+    for s in stream {
+        match s {
+            Ok(s) => samples.push(alac_sample_to_i16(s)),
+            Err(e) if samples.is_empty() => return Err(anyhow!("Failed decoding ALAC: {e:?}")),
+            Err(e) => {
+                warn!("ALAC decode stopped at a bad packet, keeping {} decoded samples: {e:?}", samples.len());
+                break;
+            }
+        }
+    }
+    if samples.is_empty() {
+        return Err(anyhow!("Failed decoding ALAC: no samples"));
+    }
+    Ok(samples)
 }
 
 /// Streaming ALAC decoder, used until the PCM cache is filled. Not seekable in place:
@@ -111,5 +124,23 @@ mod tests {
         assert_eq!(alac_sample_to_i16(-0x1234 << 16), -0x1234);
         assert_eq!(alac_sample_to_i16(0x1234 << 16), 0x1234);
         assert_eq!(alac_sample_to_i16(-0x1234 << 16), -0x1234);
+    }
+
+    #[test]
+    fn truncated_stream_keeps_decoded_samples() {
+        let stream = vec![Ok(1 << 16), Ok(2 << 16), Err("bad packet"), Ok(3 << 16)];
+        assert_eq!(collect_samples(stream).unwrap(), vec![1, 2]);
+    }
+
+    #[test]
+    fn stream_failing_before_any_sample_errors() {
+        let stream: Vec<Result<i32, &str>> = vec![Err("bad packet")];
+        assert!(collect_samples(stream).is_err());
+    }
+
+    #[test]
+    fn empty_stream_errors() {
+        let stream: Vec<Result<i32, &str>> = vec![];
+        assert!(collect_samples(stream).is_err());
     }
 }
