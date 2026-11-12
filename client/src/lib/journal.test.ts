@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { chartBars, formatActive, trailLine, TrailRow } from '@/lib/journal';
+import { chartBars, formatActive, groupTrail, trailLine, TrailRow } from '@/lib/journal';
 
 const row = (kind: string, data: unknown = {}, extra: Partial<TrailRow> = {}): TrailRow => ({
     id: 1, at: 0, trackId: 7, trackTitle: 'Tonight', kind,
@@ -53,5 +53,34 @@ describe('journal', () => {
         expect(chartBars([['2026-11-10', 0]])).toEqual([0]);
         expect(chartBars([])).toEqual([]);
         expect(chartBars([['2026-11-10', 5]], 20)).toEqual([0.25]);
+    });
+});
+
+describe('groupTrail', () => {
+    const dayOf = (secs: number) => (secs < 1000 ? 'Mon' : 'Tue');
+    const commits = [{ id: 4, createdAt: 0, message: 'late set', trackCount: 27 }];
+
+    it('trail_collapses_one_commit_into_one_line', () => {
+        const trail = Array.from({ length: 27 }, (_, i) =>
+            row('committed', { commitId: 4 }, { id: 100 - i, at: 10, trackId: i, trackTitle: `T${i}` }));
+        const groups = groupTrail(trail, commits, dayOf);
+        expect(groups).toHaveLength(1);
+        expect(groups[0].lines).toHaveLength(1);
+        expect(groups[0].lines[0]).toMatchObject({ id: 100, at: 10, line: { text: 'Committed 27 tracks · "late set"' } });
+    });
+
+    it('keeps other rows and separate commits apart, grouped by day', () => {
+        const trail = [
+            row('committed', { commitId: 5 }, { id: 9, at: 2000 }),
+            row('committed', { commitId: 5 }, { id: 8, at: 2000 }),
+            row('tag_added', { tagId: 3, tagName: 'dark' }, { id: 7, at: 1500 }),
+            row('committed', { commitId: 4 }, { id: 6, at: 10 }),
+            row('committed', { commitId: 4 }, { id: 5, at: 10 }),
+            row('committed', { commitId: 3 }, { id: 4, at: 10 }),
+        ];
+        const groups = groupTrail(trail, commits, dayOf);
+        expect(groups.map((g) => g.day)).toEqual(['Tue', 'Mon']);
+        expect(groups[0].lines.map((l) => l.line.text)).toEqual(['Committed 2 tracks', '+dark · Tonight']);
+        expect(groups[1].lines.map((l) => l.line.text)).toEqual(['Committed 2 tracks · "late set"', 'committed · Tonight']);
     });
 });

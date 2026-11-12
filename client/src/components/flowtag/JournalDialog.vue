@@ -55,7 +55,7 @@ import { computed } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { confirmDialog } from '@/lib/dialogs';
-import { chartBars, CommitRow, formatActive, TrailLine, trailLine, TrailRow } from '@/lib/journal';
+import { chartBars, CommitRow, DayGroup, formatActive, groupTrail } from '@/lib/journal';
 import { get1t } from '@/scripts/onetagger';
 import { journalOpen } from '@/scripts/journalsheet';
 import { getTagStore } from '@/scripts/tagstore';
@@ -72,21 +72,9 @@ const canLoadMore = computed(() => {
 const dayOf = (secs: number) => new Date(secs * 1000).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 const timeOf = (secs: number) => new Date(secs * 1000).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
 
-interface DayGroup { day: string; lines: { id: number; at: number; line: TrailLine }[] }
+const groups = computed<DayGroup[]>(() => groupTrail(journal.value?.trail ?? [], journal.value?.commits ?? [], dayOf));
 
-/** Trail rows are newest first, so consecutive rows of one day stay together */
-const groups = computed<DayGroup[]>(() => {
-    const out: DayGroup[] = [];
-    for (const row of journal.value?.trail ?? []) {
-        const day = dayOf(row.at);
-        const entry = { id: row.id, at: row.at, line: trailLine(row as TrailRow, journal.value?.commits) };
-        const last = out[out.length - 1];
-        if (last && last.day === day) out[out.length - 1] = { day, lines: [...last.lines, entry] };
-        else out.push({ day, lines: [entry] });
-    }
-    return out;
-});
-
+/** The server's broadcasts (stageState, trackTagsChanged) patch the rows; only the trail refreshes */
 function undo(op: { action: string; data: any }) {
     get1t().send(op.action, op.data);
     store.requestJournal();

@@ -64,11 +64,14 @@ describe('toggleStageSelection', () => {
         expect(sentIds('unstageTracks').map((ids) => [...ids].sort())).toEqual([[1, 2]]);
     });
 
-    it('refetches_rows_after_the_mutation', () => {
+    it('sends_only_the_mutation_the_broadcast_carries_the_rows', () => {
         const s = storeWith([track(1)]);
         s.selectedId.value = 1;
         s.toggleStageSelection();
-        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks', 'tagTracksLoad']);
+        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks']);
+        send.mockClear();
+        s.stageSkipCurrent();
+        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageSkip']);
     });
 });
 
@@ -212,11 +215,16 @@ describe('startup stage counts', () => {
                 track(3, { staged: true, skip: true }),
                 track(4, { doneAt: 9 }),
                 track(5),
+                track(6, { folderId: 2, doneAt: 9 }),
+                track(7, { folderId: 2, doneAt: 9, missing: true }),
+                track(8, { folderId: 2, missing: true }),
             ],
         });
         expect(s.stageTotal.value).toBe(3);
         expect(s.stageReady.value).toBe(2);
-        expect(s.libraryDone.value).toBe(1);
+        // missing tracks never count as done (the server excludes them too)
+        expect(s.libraryDone.value).toBe(2);
+        expect([...s.folderCounts.value.entries()]).toEqual([[1, [1, 5]], [2, [1, 1]]]);
         expect(s.stageRows.value).toEqual([
             { trackId: 1, skip: false, ready: true },
             { trackId: 2, skip: false, ready: false },
@@ -236,6 +244,38 @@ describe('stageState events', () => {
         });
         expect([s.stageReady.value, s.stageTotal.value, s.libraryDone.value]).toEqual([4, 9, 7]);
         expect(s.stageRows.value).toEqual([{ trackId: 1, skip: false, ready: true }]);
+    });
+});
+
+describe('stageState patches loaded rows', () => {
+    it('stage_state_patches_staged_and_skip_on_loaded_rows', () => {
+        const s = new TagStore();
+        s.handleMessage({
+            action: 'tagTracks',
+            tracks: [track(1, { staged: true, skip: true }), track(2), track(3, { doneAt: 4 }), track(4, { staged: true })],
+        });
+        send.mockClear();
+        s.handleMessage({
+            action: 'stageState', ready: 1, total: 2, libraryDone: 1,
+            stage: [{ trackId: 2, skip: true, ready: true }, { trackId: 4, skip: false, ready: false }],
+        });
+        const byId = new Map(s.tracks.value.map((t) => [t.id, t]));
+        const flags = (id: number) => [!!byId.get(id)?.staged, !!byId.get(id)?.skip];
+        expect(flags(1)).toEqual([false, false]);
+        expect(flags(2)).toEqual([true, true]);
+        expect(byId.get(3)?.doneAt).toBe(4);
+        expect(flags(4)).toEqual([true, false]);
+        // the broadcast carried everything: no row refetch
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it('hands_the_cursor_to_the_neighbour_when_the_row_leaves_the_stage_scope', () => {
+        const s = new TagStore();
+        s.handleMessage({ action: 'tagTracks', tracks: [track(1, { staged: true }), track(2, { staged: true })] });
+        s.scope.value = 'stage';
+        s.selectedId.value = 1;
+        s.handleMessage({ action: 'stageState', ready: 0, total: 1, libraryDone: 0, stage: [{ trackId: 2, skip: false, ready: false }] });
+        expect(s.selectedId.value).toBe(2);
     });
 });
 

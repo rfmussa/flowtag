@@ -675,9 +675,27 @@ export class TagStore {
         get1t().send('stageCommit', { trackIds, message });
     }
 
-    /** Rows only learn staged/skip/doneAt from a row load: refetch after our own stage mutations */
+    /** doneAt changes (commit / revert) only reach the rows through a row load */
     private refreshRows() {
         get1t().send('tagTracksLoad');
+    }
+
+    /** Patch loaded rows' staged/skip from a stageState stage list (doneAt untouched);
+     *  a row leaving the visible list hands the cursor to its neighbour */
+    private applyStageList(stage: readonly StageRow[]) {
+        const byId = new Map(stage.map((r) => [r.trackId, r]));
+        const patched = this.tracks.value.map((t) => {
+            const row = byId.get(t.id);
+            const staged = row !== undefined;
+            const skip = row?.skip ?? false;
+            return !!t.staged === staged && !!t.skip === skip ? t : { ...t, staged, skip };
+        });
+        // most broadcasts (a tag toggle) change no row: skip the list work
+        if (patched.every((t, i) => t === this.tracks.value[i])) return;
+        const current = this.selectedId.value;
+        if (current !== undefined) this.anchorIndex(this.visibleTracks());
+        this.tracks.value = patched;
+        if (current !== undefined) this.selectNeighbourAfterRemoval(current);
     }
 
     /** First `limit` ids of `ids` that are neither done nor staged, in the given order */
@@ -697,13 +715,11 @@ export class TagStore {
         if (trackIds.length === 0) return;
         const $1t = get1t();
         $1t.send('stageTracks', { trackIds });
-        this.refreshRows();
     }
 
     unstageTrackIds(trackIds: number[]) {
         if (trackIds.length === 0) return;
         get1t().send('unstageTracks', { trackIds });
-        this.refreshRows();
     }
 
     /** Not-done, not-staged track ids of a source folder (library order, capped) */
@@ -734,7 +750,6 @@ export class TagStore {
         const id = this.selectedId.value;
         if (id === undefined) return;
         get1t().send('stageSkip', { trackId: id });
-        this.refreshRows();
     }
 
     /** Stage scope D: jump to the next staged row that is not ready (wraps) */
@@ -814,6 +829,7 @@ export class TagStore {
                     ((json.folderCounts ?? []) as [number, number, number][])
                         .map(([id, done, total]): [number, [number, number]] => [id, [done, total]]));
                 this.stageRows.value = json.stage ?? [];
+                this.applyStageList(this.stageRows.value);
                 // A commit that empties the stage leaves nothing to show in its scope
                 if (this.commitLanded && this.stageTotal.value === 0 && this.scope.value === 'stage') this.scope.value = 'all';
                 this.commitLanded = false;
@@ -1040,8 +1056,9 @@ export class TagStore {
             t.id === tagId ? { ...t, count: Math.max(t.count + delta, 0) } : t);
     }
 
-    /** Baseline stage numbers from the loaded rows: `stageState` is only broadcast
-     *  on mutations, so without this the counts would be empty at launch. */
+    /** Baseline stage and folder numbers from the loaded rows: `stageState` is only
+     *  broadcast on mutations, so without this the counts would be empty at launch.
+     *  Missing tracks never count toward done/total (as on the server). */
     private deriveStageCounts() {
         const staged = this.tracks.value.filter((t) => t.staged === true);
         const rows = staged.map((t): StageRow => ({
@@ -1050,7 +1067,15 @@ export class TagStore {
         this.stageRows.value = rows;
         this.stageTotal.value = rows.length;
         this.stageReady.value = rows.filter((r) => r.ready).length;
-        this.libraryDone.value = this.tracks.value.filter((t) => t.doneAt != null).length;
+        const present = this.tracks.value.filter((t) => !t.missing);
+        this.libraryDone.value = present.filter((t) => t.doneAt != null).length;
+        // a fresh map built locally (copying per row would be quadratic on a big library)
+        const counts = new Map<number, [number, number]>();
+        for (const t of present) {
+            const [done, total] = counts.get(t.folderId) ?? [0, 0];
+            counts.set(t.folderId, [done + (t.doneAt != null ? 1 : 0), total + 1]);
+        }
+        this.folderCounts.value = counts;
     }
 
     // ---- View restore ----

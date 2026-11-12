@@ -102,6 +102,54 @@ export function trailLine(row: TrailRow, commits: CommitRow[] = []): TrailLine {
     }
 }
 
+export interface TrailEntry {
+    readonly id: number;
+    readonly at: number;
+    readonly line: TrailLine;
+}
+
+export interface DayGroup {
+    readonly day: string;
+    readonly lines: readonly TrailEntry[];
+}
+
+const commitIdOf = (row: TrailRow): unknown => (row.kind === 'committed' ? parseData(row.data).commitId : undefined);
+
+/** One entry per trail row, except a run of consecutive per-track "committed" rows
+ *  of one commit, which becomes a single "Committed N tracks" line (N = the run) */
+function trailEntries(trail: readonly TrailRow[], commits: CommitRow[]): TrailEntry[] {
+    const out: TrailEntry[] = [];
+    let i = 0;
+    while (i < trail.length) {
+        const row = trail[i];
+        const commitId = commitIdOf(row);
+        let end = i + 1;
+        while (commitId !== undefined && end < trail.length && commitIdOf(trail[end]) === commitId) end++;
+        const n = end - i;
+        if (n === 1) {
+            out.push({ id: row.id, at: row.at, line: trailLine(row, commits) });
+        } else {
+            const commit = commits.find((c) => c.id === commitId);
+            const quote = commit?.message ? ` · "${commit.message}"` : '';
+            out.push({ id: row.id, at: row.at, line: { text: `Committed ${plural(n, 'track')}${quote}` } });
+        }
+        i = end;
+    }
+    return out;
+}
+
+/** Trail rows (newest first) as day groups; consecutive rows of one day stay together */
+export function groupTrail(trail: readonly TrailRow[], commits: CommitRow[], dayOf: (secs: number) => string): DayGroup[] {
+    const out: DayGroup[] = [];
+    for (const entry of trailEntries(trail, commits)) {
+        const day = dayOf(entry.at);
+        const last = out[out.length - 1];
+        if (last && last.day === day) out[out.length - 1] = { day, lines: [...last.lines, entry] };
+        else out.push({ day, lines: [entry] });
+    }
+    return out;
+}
+
 /** Bar heights 0–1, relative to the busiest day (or `max` when given) */
 export function chartBars(days: [string, number][], max?: number): number[] {
     const top = max ?? Math.max(0, ...days.map(([, n]) => n));
