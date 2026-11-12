@@ -23,7 +23,11 @@
             @mousemove='highlighted = i'
         >
             <span class='dot mr-2' :style='{background: tag.color}'></span>
-            <span class='name truncate'>{{ tag.id === undefined ? `Create "${tag.name}"` : tag.name }}</span>
+            <span class='name truncate' :class='{"remove-row": tag.remove}'>{{
+                tag.remove ? `Remove "${tag.name}"`
+                : tag.id === undefined ? `Create "${tag.name}"`
+                : tag.name
+            }}</span>
             <span v-if='tag.id !== undefined' class='count text-ft-text-3 ml-2'>{{ tag.count }}</span>
         </div>
     </div>
@@ -34,6 +38,7 @@
 import { tagInputOwnsKey } from '../../scripts/commitsheet';
 import { computed, ref, watch } from 'vue';
 import { getTagStore } from '../../scripts/tagstore';
+import { buildSuggestions, type TagSuggestion } from '../../lib/taginput';
 
 const props = defineProps<{ trackId?: number }>();
 const store = getTagStore();
@@ -43,24 +48,21 @@ const text = ref('');
 const highlighted = ref(0);
 const open = ref(false);
 
-interface Suggestion { id?: number; name: string; color: string; count?: number }
-
-// Pool matches minus tags the track already carries, plus a "create" row
-// when the text matches nothing exactly
-const suggestions = computed<Suggestion[]>(() => {
+// Pool matches minus tags the track already carries, plus a "create" row when
+// the text matches nothing exactly and a "remove" row when it exactly names an
+// applied tag (the keyboard path to untag a specific chip)
+const suggestions = computed<TagSuggestion[]>(() => {
     const q = text.value.trim();
     // Resolve by the prop, not the selection: the miniplayer tags the playing
     // track, which may differ from this window's selected row
     const track = store.tracks.value.find((t) => t.id === props.trackId);
     const applied = track ? new Set(track.tagIds) : new Set<number>();
-    const matches: Suggestion[] = store
-        .suggest(q, 8 + applied.size)
-        .filter((t) => !applied.has(t.id))
-        .slice(0, 8);
-    if (q && !store.tagByName(q)) {
-        matches.push({ name: q, color: 'var(--ft-text-3)' });
-    }
-    return matches;
+    return buildSuggestions({
+        query: q,
+        matches: store.suggest(q, 8 + applied.size),
+        appliedIds: applied,
+        exactTag: store.tagByName(q),
+    });
 });
 
 // Keep highlight valid when the list shrinks
@@ -79,7 +81,8 @@ function apply(index: number) {
     if (props.trackId === undefined) return;
     const s = suggestions.value[index];
     if (!s) return;
-    store.addTag(props.trackId, s.name);
+    if (s.remove && s.id !== undefined) store.removeTag(props.trackId, s.id);
+    else store.addTag(props.trackId, s.name);
     text.value = '';
     highlighted.value = 0;
     inputEl.value?.focus();
@@ -111,8 +114,14 @@ function onKey(e: KeyboardEvent) {
                 e.preventDefault();
             }
             break;
-        case 'Escape':
         case 'Tab':
+            // Completes the highlighted suggestion while typing; an empty
+            // input tabs out like Escape
+            if (text.value.trim() && suggestions.value.length > 0) apply(highlighted.value);
+            else inputEl.value?.blur();
+            e.preventDefault();
+            break;
+        case 'Escape':
             inputEl.value?.blur();
             e.preventDefault();
             break;
@@ -184,6 +193,8 @@ function onBlur() {
         flex: 1;
         min-width: 0;
         font-weight: 500;
+
+        &.remove-row { color: var(--ft-danger); }
     }
     .count {
         font-size: 10.5px;
