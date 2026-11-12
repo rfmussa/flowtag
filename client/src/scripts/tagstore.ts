@@ -1,8 +1,9 @@
-import { ref, Ref } from 'vue';
+import { ref, Ref, computed, WritableComputedRef } from 'vue';
 import { notify } from '@/lib/notify';
 
 import { get1t } from './onetagger';
 import { diag, diagError } from './diag';
+import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
 
 // Types mirroring onetagger-db models (serde camelCase)
 
@@ -22,7 +23,23 @@ export interface FlowTrack {
     missing: boolean;
     needsFlush: boolean;
     tagIds: number[];
+    /** Unix seconds when marked done (local only), null/absent = not done */
+    doneAt?: number | null;
+    /** Member of the stage */
+    staged?: boolean;
+    /** Stage member flagged to skip at commit */
+    skip?: boolean;
 }
+
+/** One row of the stage as the server reports it */
+export interface StageRow {
+    trackId: number;
+    skip: boolean;
+    ready: boolean;
+}
+
+/** View scope: whole library, the stage, or a playlist id */
+export type Scope = 'all' | 'stage' | number;
 
 export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year' | 'added';
 
@@ -44,6 +61,8 @@ export interface SavedFilter {
     tagMode?: 'all' | 'any';
     excludeTagIds?: number[];
     untaggedOnly?: boolean;
+    /** Status rule: `is` must match, `isNot` must not (values per StatusValue) */
+    status?: { is?: string; isNot?: string };
     bpmMin?: number;
     bpmMax?: number;
     /** Uppercased key strings as they appear on tracks ('7A', 'AM', ...) */
@@ -140,8 +159,20 @@ export class TagStore {
     /** Latest trackMeta reply (inspector fills its form from this) */
     inspectorMeta: Ref<{ trackId: number; meta: TrackMeta } | undefined> = ref(undefined);
     playlists: Ref<FlowPlaylist[]> = ref([]);
-    /** undefined = whole library */
-    activePlaylistId: Ref<number | undefined> = ref(undefined);
+    /** 'all' = whole library, 'stage' = staged tracks, number = playlist id */
+    scope: Ref<Scope> = ref('all');
+    /** The playlist id of the scope (undefined when scoped to all/stage) */
+    activePlaylistId: WritableComputedRef<number | undefined> = computed({
+        get: () => (typeof this.scope.value === 'number' ? this.scope.value : undefined),
+        set: (id) => { this.scope.value = id === undefined ? 'all' : id; },
+    });
+    /** Stage summary from the server's stageState broadcast */
+    stageReady: Ref<number> = ref(0);
+    stageTotal: Ref<number> = ref(0);
+    libraryDone: Ref<number> = ref(0);
+    /** folder id -> [done, total] */
+    folderCounts: Ref<Map<number, [number, number]>> = ref(new Map());
+    stageRows: Ref<StageRow[]> = ref([]);
     /** Source-folder scope (mutually exclusive with a playlist scope) */
     activeSourceId: Ref<number | undefined> = ref(undefined);
     /** Manual membership cache: playlist id -> track ids */
@@ -162,8 +193,8 @@ export class TagStore {
     metaSavedSignal: Ref<number> = ref(0);
     /** Filter text typed in the header */
     filter: Ref<string> = ref('');
-    /** Show only untagged tracks */
-    untaggedOnly: Ref<boolean> = ref(false);
+    /** Header quick filter: everything, hide done tracks, or untagged only */
+    quickFilter: Ref<QuickFilter> = ref('all');
     /** List ordering */
     sortBy: Ref<SortField> = ref('path');
     sortDesc: Ref<boolean> = ref(false);
@@ -276,8 +307,8 @@ export class TagStore {
     }
 
     /** One filter predicate for live controls and saved (smart) filters alike */
-    private passes(t: FlowTrack, text: string, tagFilters: number[], untaggedOnly: boolean): boolean {
-        if (untaggedOnly && t.tagIds.length > 0) return false;
+    private passes(t: FlowTrack, text: string, tagFilters: number[], quick: QuickFilter): boolean {
+        if (!passesQuickFilter(t, quick)) return false;
         if (tagFilters.length > 0 && !tagFilters.every((id) => t.tagIds.includes(id))) return false;
         return !text || this.haystack(t).includes(text);
     }
@@ -285,6 +316,7 @@ export class TagStore {
     /** Does the track satisfy a smart playlist's saved rules? */
     passesSaved(t: FlowTrack, f: SavedFilter, now: number): boolean {
         if (f.untaggedOnly && t.tagIds.length > 0) return false;
+        if (!this.passesStatusRule(t, f)) return false;
         const include = f.tagIds ?? [];
         if (include.length > 0) {
             const hit = (f.tagMode ?? 'all') === 'any'
@@ -305,12 +337,21 @@ export class TagStore {
         return !text || this.haystack(t).includes(text);
     }
 
+    /** Optional Status rule of a saved filter; unknown values are ignored */
+    private passesStatusRule(t: FlowTrack, f: SavedFilter): boolean {
+        const { is, isNot } = f.status ?? {};
+        if (isStatusValue(is) && !matchesStatus(t, { status: is })) return false;
+        if (isStatusValue(isNot) && !matchesStatus(t, { status: isNot, negate: true })) return false;
+        return true;
+    }
+
     /** The list as currently shown: playlist scope + filter + untagged + sort.
      *  A manual playlist scopes by membership, a smart one by its rules; the
      *  live controls filter within that scope. */
     visibleTracks(): FlowTrack[] {
         const f = this.filter.value.trim().toLowerCase();
         const tagFilters = this.filterTagIds.value;
+        const stageOnly = this.scope.value === 'stage';
         const active = this.activePlaylist();
         const members = active && !active.filter
             ? new Set(this.playlistMembers.value.get(active.id) ?? [])
@@ -320,9 +361,10 @@ export class TagStore {
         const sourceId = this.activeSourceId.value;
         const filtered = this.tracks.value.filter((t) => {
             if (sourceId !== undefined && t.folderId !== sourceId) return false;
+            if (stageOnly && t.staged !== true) return false;
             if (members && !members.has(t.id)) return false;
             if (saved && !this.passesSaved(t, saved, now)) return false;
-            return this.passes(t, f, tagFilters, this.untaggedOnly.value);
+            return this.passes(t, f, tagFilters, this.quickFilter.value);
         });
         return this.sortTracks(filtered);
     }
@@ -590,6 +632,15 @@ export class TagStore {
                 this.tracks.value = json.tracks ?? [];
                 this.loaded.value = true;
                 diag('libraryLoaded', { tracks: this.tracks.value.length });
+                return true;
+            case 'stageState':
+                this.stageReady.value = json.ready ?? 0;
+                this.stageTotal.value = json.total ?? 0;
+                this.libraryDone.value = json.libraryDone ?? 0;
+                this.folderCounts.value = new Map(
+                    ((json.folderCounts ?? []) as [number, number, number][])
+                        .map(([id, done, total]): [number, [number, number]] => [id, [done, total]]));
+                this.stageRows.value = json.stage ?? [];
                 return true;
             case 'tagPool':
                 this.tags.value = json.tags ?? [];

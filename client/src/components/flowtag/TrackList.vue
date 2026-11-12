@@ -44,7 +44,8 @@ const playerPath = computed(() => $1t.player.value.path);
 const visible = computed(() => {
     // Touch reactive deps explicitly so the computed tracks them
     store.filter.value;
-    store.untaggedOnly.value;
+    store.quickFilter.value;
+    store.scope.value;
     return store.visibleTracks();
 });
 
@@ -103,7 +104,7 @@ function select(track: FlowTrack, ev: MouseEvent) {
 }
 
 // Switching scope (playlist / source / collection) starts at the top
-watch([store.activePlaylistId, store.activeSourceId], () => {
+watch([store.scope, store.activeSourceId], () => {
     nextTick(() => virtualizer.value.scrollToOffset(0));
 });
 

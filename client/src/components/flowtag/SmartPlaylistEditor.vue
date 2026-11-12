@@ -52,6 +52,15 @@
             </div>
 
             <div class='spe-row'>
+                <span class='spe-label'>Status</span>
+                <div class='seg' role='group' aria-label='Status operator'>
+                    <button type='button' class='seg-btn' :class='{ on: !draft.statusNegate }' @click='draft.statusNegate = false'>is</button>
+                    <button type='button' class='seg-btn' :class='{ on: draft.statusNegate }' @click='draft.statusNegate = true'>is not</button>
+                </div>
+                <OptionSelect v-model='draft.statusValue' :options='statusOptions' label='Status' trigger-class='flex-1 min-w-0' />
+            </div>
+
+            <div class='spe-row'>
                 <span class='spe-label'>Untagged only</span>
                 <Switch v-model='draft.untaggedOnly' aria-label='Untagged only' />
             </div>
@@ -75,6 +84,8 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Switch } from '@/components/ui/switch';
 import { get1t } from '../../scripts/onetagger';
 import MultiOptionSelect from './MultiOptionSelect.vue';
+import OptionSelect from './OptionSelect.vue';
+import { isStatusValue } from '@/lib/status';
 import { getTagStore, FlowPlaylist, SavedFilter, parseSavedFilter } from '../../scripts/tagstore';
 import { diag } from '../../scripts/diag';
 
@@ -95,6 +106,9 @@ const draft = reactive({
     yearMin: '', yearMax: '',
     addedDays: '',
     untaggedOnly: false,
+    /** 'any' = no status rule */
+    statusValue: 'any',
+    statusNegate: false,
 });
 
 watch(() => props.playlist, (pl) => {
@@ -110,7 +124,20 @@ watch(() => props.playlist, (pl) => {
     draft.yearMax = f.yearMax?.toString() ?? '';
     draft.addedDays = f.addedDays?.toString() ?? '';
     draft.untaggedOnly = !!f.untaggedOnly;
+    const isRule = isStatusValue(f.status?.is) ? f.status?.is : undefined;
+    const isNotRule = isStatusValue(f.status?.isNot) ? f.status?.isNot : undefined;
+    draft.statusNegate = !isRule && !!isNotRule;
+    draft.statusValue = isRule ?? isNotRule ?? 'any';
 }, { immediate: true });
+
+const statusOptions = [
+    { label: 'Any', value: 'any' },
+    { label: 'Done', value: 'done' },
+    { label: 'Staged', value: 'staged' },
+    { label: 'In progress', value: 'inProgress' },
+    { label: 'Untagged', value: 'untagged' },
+    { label: 'Not done', value: 'notDone' },
+];
 
 const tagOptions = computed(() =>
     [...store.tags.value].sort((a, b) => b.count - a.count).map((t) => ({ label: t.name, value: t.id, color: t.color })));
@@ -141,6 +168,9 @@ const asFilter = computed<SavedFilter>(() => ({
     yearMax: num(draft.yearMax),
     addedDays: num(draft.addedDays),
     untaggedOnly: draft.untaggedOnly || undefined,
+    status: draft.statusValue !== 'any'
+        ? (draft.statusNegate ? { isNot: draft.statusValue } : { is: draft.statusValue })
+        : undefined,
 }));
 
 const matchCount = computed(() => {

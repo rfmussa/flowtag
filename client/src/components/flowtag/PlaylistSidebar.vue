@@ -190,7 +190,7 @@ function sourceCount(id: number): number {
 const filtersActive = computed(() =>
     store.filter.value.trim().length > 0
     || store.filterTagIds.value.length > 0
-    || store.untaggedOnly.value);
+    || store.quickFilter.value !== 'all');
 
 function select(id?: number) {
     if (id === undefined) store.selectSource(undefined);
@@ -228,7 +228,8 @@ function saveFilterAsPlaylist() {
     const saved = {
         text: store.filter.value.trim() || undefined,
         tagIds: store.filterTagIds.value.length ? [...store.filterTagIds.value] : undefined,
-        untaggedOnly: store.untaggedOnly.value || undefined,
+        untaggedOnly: store.quickFilter.value === 'untagged' || undefined,
+        status: store.quickFilter.value === 'notdone' ? { is: 'notDone' } : undefined,
     };
     namePrompt('Save filter as playlist', '', (name) => {
         $1t.send('playlistCreate', { name, filter: JSON.stringify(saved) });

@@ -7,8 +7,9 @@
         <ScanStatus class='ml-2' />
 
         <div class='seg ml-4' role='group' aria-label='Scope'>
-            <button type='button' class='seg-btn' :class='{on: !store.untaggedOnly.value}' @click='setUntagged(false, $event)'>All</button>
-            <button type='button' class='seg-btn' :class='{on: store.untaggedOnly.value}' @click='setUntagged(true, $event)'>Untagged</button>
+            <button type='button' class='seg-btn' :class='{on: store.quickFilter.value === "all"}' @click='setQuickFilter("all", $event)'>All</button>
+            <button type='button' class='seg-btn' :class='{on: store.quickFilter.value === "notdone"}' @click='setQuickFilter("notdone", $event)'>Not done</button>
+            <button type='button' class='seg-btn' :class='{on: store.quickFilter.value === "untagged"}' @click='setQuickFilter("untagged", $event)'>Untagged</button>
         </div>
 
         <OptionSelect
@@ -133,6 +134,7 @@ import {
 } from '@lucide/vue';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore, FlowTrack, SortField } from '../scripts/tagstore';
+import type { QuickFilter } from '@/lib/status';
 import { diag } from '../scripts/diag';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
@@ -198,9 +200,9 @@ function blurTarget(e: Event) {
     (e.currentTarget as HTMLElement | null)?.blur();
 }
 
-function setUntagged(v: boolean, e: Event) {
+function setQuickFilter(v: QuickFilter, e: Event) {
     blurTarget(e);
-    store.untaggedOnly.value = v;
+    store.quickFilter.value = v;
 }
 
 function toggleSortDir(e: Event) {
