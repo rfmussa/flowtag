@@ -71,7 +71,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
         }
     }
     let mut stmt = conn.prepare(
-        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at, folder_id, done_at,
+        "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at, folder_id, done_at, done_commit,
                 EXISTS (SELECT 1 FROM staged s WHERE s.track_id = tracks.id),
                 COALESCE((SELECT s.skip FROM staged s WHERE s.track_id = tracks.id), 0)
          FROM tracks ORDER BY path",
@@ -93,8 +93,9 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
                 added_at: r.get(11)?,
                 folder_id: r.get(12)?,
                 done_at: r.get(13)?,
-                staged: r.get::<_, i64>(14)? != 0,
-                skip: r.get::<_, i64>(15)? != 0,
+                done_commit: r.get(14)?,
+                staged: r.get::<_, i64>(15)? != 0,
+                skip: r.get::<_, i64>(16)? != 0,
                 tag_ids: vec![],
             })
         })?
@@ -413,6 +414,16 @@ mod tests {
         assert!(get_waveform(&db, id).unwrap().is_none());
         set_waveform(&db, id, &[1, 2, 3]).unwrap();
         assert_eq!(get_waveform(&db, id).unwrap().unwrap(), vec![1, 2, 3]);
+    }
+
+    #[test]
+    fn list_tracks_carries_done_commit() {
+        let (_dir, db) = test_db();
+        let id = insert_track(&db, "/test-root/a.mp3");
+        crate::staging::stage_tracks(&db, &[id]).unwrap();
+        let commit = crate::staging::commit_stage(&db, &[id], "batch").unwrap();
+        let t = list_tracks(&db).unwrap().into_iter().find(|t| t.id == id).unwrap();
+        assert_eq!(t.done_commit, Some(commit.id));
     }
 
     #[test]

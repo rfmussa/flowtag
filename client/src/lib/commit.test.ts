@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { commitPayload, initialTicks, stageCountLabel, toggleTick, withLoadedReady } from '@/lib/commit';
+import { commitLabel, commitPayload, commitScope, commitScopeId, initialTicks, stageCountLabel, toggleTick, withLoadedReady } from '@/lib/commit';
 
 const rows = [
     { trackId: 1, skip: false, ready: true },
@@ -56,5 +56,24 @@ describe('stage count label', () => {
         expect(stageCountLabel(6, 10)).toBe('4 left');
         expect(stageCountLabel(10, 10)).toBe('0 left');
         expect(stageCountLabel(0, 0)).toBe('0 / 0');
+    });
+});
+
+describe('commit scope', () => {
+    it('round_trips_a_commit_scope_id', () => {
+        expect(commitScopeId(commitScope(42))).toBe(42);
+    });
+
+    it('rejects_non_commit_scopes', () => {
+        expect(commitScopeId('all')).toBeUndefined();
+        expect(commitScopeId('stage')).toBeUndefined();
+        expect(commitScopeId(7)).toBeUndefined();
+        expect(commitScopeId('commit:x')).toBeUndefined();
+    });
+
+    it('labels_a_commit_by_date_plus_message', () => {
+        const secs = Date.UTC(2026, 10, 12, 12) / 1000; // Nov 12 2026, noon UTC
+        expect(commitLabel({ createdAt: secs, message: 'deep house session' }, 'en-US')).toBe('Nov 12 · deep house session');
+        expect(commitLabel({ createdAt: secs, message: '  ' }, 'en-US')).toBe('Nov 12');
     });
 });

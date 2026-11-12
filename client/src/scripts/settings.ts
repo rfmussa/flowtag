@@ -2,6 +2,7 @@ import { AutotaggerConfig, AutotaggerProfile } from "./autotagger";
 import { Keybind } from "./utils";
 import type { Scope, SortField } from "./tagstore";
 import type { QuickFilter } from "@/lib/status";
+import { commitScopeId } from "@/lib/commit";
 
 /** Remappable FlowTag actions (letter keys; Space/arrows/digits/Esc/⌘Z stay fixed) */
 const FLOWTAG_ACTIONS = ['prev', 'next', 'focusTag', 'focusFilter', 'done', 'edit', 'lookup', 'sidebar', 'stage', 'skip'] as const;
@@ -33,7 +34,8 @@ const QUICK_FILTERS: QuickFilter[] = ['all', 'notdone', 'untagged'];
 /** Tolerant parse: anything malformed yields undefined, individual bad fields fall back to defaults */
 function viewStateFromJson(data: any): ViewState | undefined {
     if (!data || typeof data !== 'object') return undefined;
-    const scope: Scope = (data.scope === 'stage' || typeof data.scope === 'number') ? data.scope : 'all';
+    const scope: Scope = (data.scope === 'stage' || typeof data.scope === 'number' || commitScopeId(data.scope) !== undefined)
+        ? data.scope : 'all';
     const sort = (data.sort && typeof data.sort === 'object') ? data.sort : {};
     return {
         scope,

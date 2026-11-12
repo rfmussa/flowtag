@@ -18,7 +18,7 @@
     <!-- Collection (everything) -->
     <div
         class='pl-row'
-        :class='{ active: store.scope.value !== "stage" && store.activePlaylistId.value === undefined && store.activeSourceId.value === undefined }'
+        :class='{ active: store.scope.value === "all" && store.activeSourceId.value === undefined }'
         @click='select(undefined)'
     >
         <LibraryIcon class='pl-icon' />
@@ -131,6 +131,30 @@
         </div>
     </div>
 
+    <!-- Committed batches: one dated playlist per commit, for practicing -->
+    <template v-if='commits.length > 0'>
+        <div class='pl-head pl-head-toggle' @click='toggleSection("commits")'>
+            <span class='ft-label head-label'>
+                <ChevronDownIcon v-if='commitsOpen' class='head-chevron' /><ChevronRightIcon v-else class='head-chevron' />
+                Commits
+            </span>
+        </div>
+        <div v-if='commitsOpen' class='pl-list'>
+            <div
+                v-for='c in commits'
+                :key='"c" + c.id'
+                class='pl-row'
+                :class='{ active: store.scope.value === commitScope(c.id) }'
+                :title='commitTitle(c)'
+                @click='store.selectCommit(c.id)'
+            >
+                <GitCommitHorizontalIcon class='pl-icon' />
+                <span class='pl-name'>{{ commitLabel(c) }}</span>
+                <span class='pl-count ft-num'>{{ c.trackCount.toLocaleString() }}</span>
+            </div>
+        </div>
+    </template>
+
     <SmartPlaylistEditor :playlist='rulesFor' @close='rulesFor = undefined' />
 </div>
 </template>
@@ -140,13 +164,14 @@ import { computed, ref } from 'vue';
 import { notify } from '@/lib/notify';
 import { useLocalStorage } from '@vueuse/core';
 import {
-    ChevronDownIcon, ChevronRightIcon, EllipsisIcon, FolderIcon, LayersIcon, LibraryIcon,
-    ListFilterIcon, ListFilterPlusIcon, ListMusicIcon, PlusIcon,
+    ChevronDownIcon, ChevronRightIcon, EllipsisIcon, FolderIcon, GitCommitHorizontalIcon,
+    LayersIcon, LibraryIcon, ListFilterIcon, ListFilterPlusIcon, ListMusicIcon, PlusIcon,
 } from '@lucide/vue';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
-import { stageCountLabel } from '@/lib/commit';
+import { commitLabel, commitScope, stageCountLabel } from '@/lib/commit';
+import type { CommitRow } from '@/lib/journal';
 import { openCommitSheet } from '../../scripts/commitsheet';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
@@ -167,9 +192,19 @@ const vFocus = { mounted: (el: HTMLInputElement) => { el.focus(); el.select(); }
 // Collapsible sections, remembered per machine
 const sourcesOpen = useLocalStorage('flowtag-sec-sources', true);
 const playlistsOpen = useLocalStorage('flowtag-sec-playlists', true);
-function toggleSection(key: 'sources' | 'playlists') {
-    const target = key === 'sources' ? sourcesOpen : playlistsOpen;
+const commitsOpen = useLocalStorage('flowtag-sec-commits', true);
+function toggleSection(key: 'sources' | 'playlists' | 'commits') {
+    const target = key === 'sources' ? sourcesOpen : key === 'playlists' ? playlistsOpen : commitsOpen;
     target.value = !target.value;
+}
+
+/** Committed batches, newest first (the journal loads on QuickTag mount) */
+const commits = computed(() => store.journal.value?.commits ?? []);
+
+function commitTitle(c: CommitRow): string {
+    const when = new Date(c.createdAt * 1000).toLocaleString();
+    const message = c.message.trim();
+    return message ? `${when} — ${message}` : when;
 }
 
 // Same flow as the header's Folders menu (native or in-app picker) -> tagFolderAdd

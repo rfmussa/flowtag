@@ -28,6 +28,27 @@ export function withLoadedReady(rows: readonly StageRow[], tracks: readonly Read
     });
 }
 
+/** A commit-scoped view, carried inside the store's `Scope` union */
+export type CommitScope = `commit:${number}`;
+
+export function commitScope(id: number): CommitScope {
+    return `commit:${id}`;
+}
+
+/** The commit id of a commit scope; undefined for every other scope */
+export function commitScopeId(scope: unknown): number | undefined {
+    if (typeof scope !== 'string' || !scope.startsWith('commit:')) return undefined;
+    const id = Number(scope.slice('commit:'.length));
+    return Number.isInteger(id) ? id : undefined;
+}
+
+/** Sidebar row label: the commit's date, with its message when it has one */
+export function commitLabel(c: { createdAt: number; message: string }, locale?: string): string {
+    const date = new Date(c.createdAt * 1000).toLocaleDateString(locale, { month: 'short', day: 'numeric' });
+    const message = c.message.trim();
+    return message ? `${date} · ${message}` : date;
+}
+
 /** The Stage entry's count: "ready / total", flipping to "N left" once more than half is ready */
 export function stageCountLabel(ready: number, total: number): string {
     return ready > total / 2 ? `${total - ready} left` : `${ready} / ${total}`;

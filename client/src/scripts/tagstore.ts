@@ -5,6 +5,7 @@ import { shouldPreload } from '@/lib/player';
 import { get1t } from './onetagger';
 import { diag, diagError } from './diag';
 import { JournalState } from '@/lib/journal';
+import { CommitScope, commitScope, commitScopeId } from '@/lib/commit';
 import type { ViewState } from './settings';
 import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
 
@@ -28,6 +29,8 @@ export interface FlowTrack {
     tagIds: number[];
     /** Unix seconds when marked done (local only), null/absent = not done */
     doneAt?: number | null;
+    /** The commit that marked it done (cleared on revert) */
+    doneCommit?: number | null;
     /** Member of the stage */
     staged?: boolean;
     /** Stage member flagged to skip at commit */
@@ -41,8 +44,8 @@ export interface StageRow {
     ready: boolean;
 }
 
-/** View scope: whole library, the stage, or a playlist id */
-export type Scope = 'all' | 'stage' | number;
+/** View scope: whole library, the stage, a playlist id, or one commit's tracks */
+export type Scope = 'all' | 'stage' | number | CommitScope;
 
 export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year' | 'added';
 
@@ -374,6 +377,7 @@ export class TagStore {
         const f = this.filter.value.trim().toLowerCase();
         const tagFilters = this.filterTagIds.value;
         const stageOnly = this.scope.value === 'stage';
+        const commitId = commitScopeId(this.scope.value);
         const active = this.activePlaylist();
         const members = active && !active.filter
             ? new Set(this.playlistMembers.value.get(active.id) ?? [])
@@ -384,6 +388,7 @@ export class TagStore {
         const filtered = this.tracks.value.filter((t) => {
             if (sourceId !== undefined && t.folderId !== sourceId) return false;
             if (stageOnly && t.staged !== true) return false;
+            if (commitId !== undefined && t.doneCommit !== commitId) return false;
             if (members && !members.has(t.id)) return false;
             if (saved && !this.passesSaved(t, saved, now)) return false;
             return this.passes(t, f, tagFilters, this.quickFilter.value);
@@ -410,6 +415,15 @@ export class TagStore {
         this.activeSourceId.value = undefined;
         this.scope.value = 'stage';
         diag('stageSelect');
+    }
+
+    /** Scope the view to one commit's tracks (a dated practice playlist) */
+    selectCommit(id: number) {
+        this.activeSourceId.value = undefined;
+        this.scope.value = commitScope(id);
+        // Commit tracks are all done: the hide-done quick filter would blank the list
+        if (this.quickFilter.value === 'notdone') this.quickFilter.value = 'all';
+        diag('commitSelect', { id });
     }
 
     selectPlaylist(id?: number) {
@@ -826,6 +840,8 @@ export class TagStore {
                 this.commitLanded = true;
                 if (json.commit) this.lastCommit.value = { id: json.commit.id, trackCount: json.commit.trackCount };
                 this.refreshRows();
+                // The sidebar's Commits section lists from the journal
+                this.requestJournal();
                 return false;
             case 'journal': {
                 const next: JournalState = {
@@ -1117,9 +1133,11 @@ export class TagStore {
 
     /** Switch to a saved scope without touching anything else */
     applyScope(scope: Scope) {
+        const commitId = commitScopeId(scope);
         if (scope === 'stage') this.selectStage();
-        else if (scope === 'all') this.selectPlaylist(undefined);
-        else this.selectPlaylist(scope);
+        else if (commitId !== undefined) this.selectCommit(commitId);
+        else if (typeof scope === 'number') this.selectPlaylist(scope);
+        else this.selectPlaylist(undefined);
     }
 
     /** Calls `onReady` once the library and playlists have loaded, or after

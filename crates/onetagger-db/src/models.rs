@@ -33,6 +33,9 @@ pub struct DbTrack {
     /// Unix seconds when the track was committed as done
     #[serde(default)]
     pub done_at: Option<i64>,
+    /// The commit that marked it done (commits.id), cleared on revert
+    #[serde(default)]
+    pub done_commit: Option<i64>,
     #[serde(default)]
     pub staged: bool,
     #[serde(default)]
