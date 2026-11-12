@@ -66,16 +66,19 @@
     <div class='flex flex-1 list-row'>
         <PlaylistSidebar v-if='sidebarOpen' />
         <div class='flex-1 list-area'>
-            <div v-if='store.folders.value.length === 0 && store.loaded.value' class='flex flex-col items-center justify-center h-full empty-state'>
-                <LibraryIcon class='empty-icon size-11' :stroke-width='1.25' />
-                <div class='empty-title'>No music folders yet</div>
-                <div class='empty-sub'>Add a folder — a 20,000-track library scans in seconds.</div>
-                <FolderManager class='mt-4' />
+            <WelcomeCard v-if='welcomeVisible' :text='welcome.text ?? ""' @dismiss='dismissWelcome' @continue='continueWelcome' />
+            <div class='list-body'>
+                <div v-if='store.folders.value.length === 0 && store.loaded.value' class='flex flex-col items-center justify-center h-full empty-state'>
+                    <LibraryIcon class='empty-icon size-11' :stroke-width='1.25' />
+                    <div class='empty-title'>No music folders yet</div>
+                    <div class='empty-sub'>Add a folder — a 20,000-track library scans in seconds.</div>
+                    <FolderManager class='mt-4' />
+                </div>
+                <div v-else-if='!store.loaded.value' class='flex items-center justify-center h-full'>
+                    <LoaderCircleIcon class='size-7 animate-spin text-ft-text-3' aria-label='Loading library' />
+                </div>
+                <TrackList v-else @play='playTrack' />
             </div>
-            <div v-else-if='!store.loaded.value' class='flex items-center justify-center h-full'>
-                <LoaderCircleIcon class='size-7 animate-spin text-ft-text-3' aria-label='Loading library' />
-            </div>
-            <TrackList v-else @play='playTrack' />
         </div>
         <div v-if='paletteOpen' class='palette-col'>
             <TagPalette />
@@ -141,6 +144,7 @@ import { diag } from '../scripts/diag';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
+import WelcomeCard from '../components/flowtag/WelcomeCard.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
 import PlaylistSidebar from '../components/flowtag/PlaylistSidebar.vue';
 import ExportDialog from '../components/flowtag/ExportDialog.vue';
@@ -152,6 +156,7 @@ import Hint from '../components/flowtag/Hint.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
 import TrackInspector from '../components/flowtag/TrackInspector.vue';
 import ManualTag from '../components/ManualTag.vue';
+import { welcomeText, welcomeKey, shouldShowWelcome, resolveViewState } from '@/lib/welcome';
 import { openJournal } from '@/scripts/journalsheet';
 
 const PALETTE_KEY = 'flowtag.paletteOpen';
@@ -316,8 +321,73 @@ function playTrack(track: FlowTrack) {
     $1t.player.value.startTrack(track.path, track.id, track.title, track.artist, true);
 }
 
+// ---- View restore + welcome back ----
+
+const VIEW_SAVE_DEBOUNCE_MS = 1000;
+const viewRestored = ref(false);
+
+// Restore once, after the library and playlists arrived (so the scope can be validated)
+const stopRestore = watch(
+    () => store.loaded.value && store.playlistsLoaded.value,
+    (ready) => {
+        if (!ready) return;
+        const saved = $1t.settings.value.flowtag.viewState;
+        if (saved) {
+            store.applyViewState(resolveViewState(saved, {
+                playlistIds: store.playlists.value.map((p) => p.id),
+                stageTotal: store.stageTotal.value,
+                trackIds: store.tracks.value.map((t) => t.id),
+            }));
+        }
+        viewRestored.value = true;
+        stopRestore();
+    },
+    { immediate: true },
+);
+
+// Persist the view (never before the restore, or it would overwrite what we are about to read)
+watchDebounced(
+    () => (viewRestored.value ? JSON.stringify(store.viewState()) : undefined),
+    (json) => {
+        if (json === undefined) return;
+        $1t.settings.value.flowtag.viewState = JSON.parse(json);
+        $1t.saveSettings(false);
+    },
+    { debounce: VIEW_SAVE_DEBOUNCE_MS },
+);
+
+const welcomeDismissed = ref(false);
+const welcome = computed(() => {
+    const last = store.journal.value?.commits[0] ?? null;
+    const stageLeft = store.stageTotal.value;
+    const text = welcomeText(last, stageLeft, Date.now());
+    return { text, key: welcomeKey(last?.id, stageLeft) };
+});
+const welcomeVisible = computed(() =>
+    viewRestored.value && !welcomeDismissed.value && store.journal.value !== undefined
+    && shouldShowWelcome(welcome.value.text, $1t.settings.value.flowtag.welcomeSeen, welcome.value.key));
+
+function dismissWelcome() {
+    welcomeDismissed.value = true;
+    $1t.settings.value.flowtag.welcomeSeen = welcome.value.key;
+    $1t.saveSettings(false);
+}
+
+function continueWelcome() {
+    const saved = $1t.settings.value.flowtag.viewState;
+    if (saved) {
+        store.applyScope(resolveViewState(saved, {
+            playlistIds: store.playlists.value.map((p) => p.id),
+            stageTotal: store.stageTotal.value,
+            trackIds: [],
+        }).scope);
+    }
+    dismissWelcome();
+}
+
 onMounted(() => {
     if (!store.loaded.value) store.load();
+    store.requestJournal();
     $1t.send('flushStatusGet');
 });
 </script>
@@ -387,7 +457,8 @@ onMounted(() => {
 }
 
 .flowtag .list-row { min-height: 0; }
-.flowtag .list-area { min-height: 0; min-width: 0; overflow: hidden; }
+.flowtag .list-area { min-height: 0; min-width: 0; overflow: hidden; display: flex; flex-direction: column; }
+.flowtag .list-body { flex: 1; min-height: 0; min-width: 0; }
 
 .flowtag .palette-col {
     width: 240px;

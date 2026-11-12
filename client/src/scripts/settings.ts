@@ -1,5 +1,7 @@
 import { AutotaggerConfig, AutotaggerProfile } from "./autotagger";
 import { Keybind } from "./utils";
+import type { Scope, SortField } from "./tagstore";
+import type { QuickFilter } from "@/lib/status";
 
 /** Remappable FlowTag actions (letter keys; Space/arrows/digits/Esc/⌘Z stay fixed) */
 const FLOWTAG_ACTIONS = ['prev', 'next', 'focusTag', 'focusFilter', 'done', 'edit', 'lookup', 'sidebar', 'stage', 'skip'] as const;
@@ -15,6 +17,38 @@ interface FlowTagColumns {
 }
 const DEFAULT_COLUMNS: FlowTagColumns = { year: true, bpm: true, key: true, path: false, added: false };
 
+/** Where the user left the QuickTag view; restored on the next launch */
+interface ViewState {
+    scope: Scope;
+    filterText: string;
+    quickFilter: QuickFilter;
+    sort: { by: SortField; desc: boolean };
+    selectedTrackId: number | null;
+    firstVisibleIndex: number;
+}
+
+const SORT_FIELDS: SortField[] = ['path', 'title', 'artist', 'bpm', 'key', 'year', 'added'];
+const QUICK_FILTERS: QuickFilter[] = ['all', 'notdone', 'untagged'];
+
+/** Tolerant parse: anything malformed yields undefined, individual bad fields fall back to defaults */
+function viewStateFromJson(data: any): ViewState | undefined {
+    if (!data || typeof data !== 'object') return undefined;
+    const scope: Scope = (data.scope === 'stage' || typeof data.scope === 'number') ? data.scope : 'all';
+    const sort = (data.sort && typeof data.sort === 'object') ? data.sort : {};
+    return {
+        scope,
+        filterText: typeof data.filterText === 'string' ? data.filterText : '',
+        quickFilter: QUICK_FILTERS.includes(data.quickFilter) ? data.quickFilter : 'all',
+        sort: {
+            by: SORT_FIELDS.includes(sort.by) ? sort.by : 'path',
+            desc: sort.desc === true,
+        },
+        selectedTrackId: typeof data.selectedTrackId === 'number' ? data.selectedTrackId : null,
+        firstVisibleIndex: typeof data.firstVisibleIndex === 'number' && data.firstVisibleIndex >= 0
+            ? Math.floor(data.firstVisibleIndex) : 0,
+    };
+}
+
 /** FlowTag-specific settings */
 class FlowTagSettings {
     /** Custom keybind per action; a missing entry means the built-in default key */
@@ -25,6 +59,10 @@ class FlowTagSettings {
     analysisEnabled: boolean = false;
     /** One-way tag sync to Tangle. The backend doesn't persist it; the client resends it. */
     tangleSync: boolean = false;
+    /** The view as the user left it */
+    viewState?: ViewState;
+    /** Key of the welcome-back card the user already dismissed */
+    welcomeSeen?: string;
 
     static fromJson(data: any): FlowTagSettings {
         const s = new FlowTagSettings();
@@ -38,6 +76,8 @@ class FlowTagSettings {
         s.keybinds = keybinds;
         if (typeof safe.analysisEnabled === 'boolean') s.analysisEnabled = safe.analysisEnabled;
         if (typeof safe.tangleSync === 'boolean') s.tangleSync = safe.tangleSync;
+        s.viewState = viewStateFromJson(safe.viewState);
+        if (typeof safe.welcomeSeen === 'string') s.welcomeSeen = safe.welcomeSeen;
         const cols = (safe.columns && typeof safe.columns === 'object') ? safe.columns : {};
         const columns = { ...DEFAULT_COLUMNS };
         for (const key of Object.keys(DEFAULT_COLUMNS) as (keyof FlowTagColumns)[]) {
@@ -117,4 +157,4 @@ class Settings {
 }
 
 export { Settings, FlowTagSettings, FLOWTAG_ACTIONS };
-export type { FlowTagAction };
+export type { FlowTagAction, ViewState };

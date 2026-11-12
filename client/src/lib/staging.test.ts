@@ -3,6 +3,7 @@ import { TagStore, FlowTrack } from '@/scripts/tagstore';
 
 const send = vi.hoisted(() => vi.fn());
 vi.mock('@/scripts/onetagger', () => ({ get1t: () => ({ send }) }));
+vi.mock('@/scripts/diag', () => ({ diag: vi.fn(), diagError: vi.fn() }));
 
 function track(id: number, over: Partial<FlowTrack> = {}): FlowTrack {
     return {
@@ -197,5 +198,29 @@ describe('journal', () => {
         s.requestJournal();
         s.handleMessage(page([6, 5]));
         expect(s.journal.value?.trail.map((r) => r.id)).toEqual([6, 5]);
+    });
+});
+
+describe('startup stage counts', () => {
+    it('derives_stage_counts_from_loaded_rows', () => {
+        const s = new TagStore();
+        s.handleMessage({
+            action: 'tagTracks',
+            tracks: [
+                track(1, { staged: true, tagIds: [5] }),
+                track(2, { staged: true }),
+                track(3, { staged: true, skip: true }),
+                track(4, { doneAt: 9 }),
+                track(5),
+            ],
+        });
+        expect(s.stageTotal.value).toBe(3);
+        expect(s.stageReady.value).toBe(2);
+        expect(s.libraryDone.value).toBe(1);
+        expect(s.stageRows.value).toEqual([
+            { trackId: 1, skip: false, ready: true },
+            { trackId: 2, skip: false, ready: false },
+            { trackId: 3, skip: true, ready: true },
+        ]);
     });
 });

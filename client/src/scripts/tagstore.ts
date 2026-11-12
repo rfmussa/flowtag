@@ -4,6 +4,7 @@ import { notify } from '@/lib/notify';
 import { get1t } from './onetagger';
 import { diag, diagError } from './diag';
 import { JournalState } from '@/lib/journal';
+import type { ViewState } from './settings';
 import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
 
 // Types mirroring onetagger-db models (serde camelCase)
@@ -781,6 +782,7 @@ export class TagStore {
                 if (current !== undefined) this.anchorIndex(this.visibleTracks());
                 this.tracks.value = json.tracks ?? [];
                 if (current !== undefined) this.selectNeighbourAfterRemoval(current);
+                this.deriveStageCounts();
                 this.loaded.value = true;
                 diag('libraryLoaded', { tracks: this.tracks.value.length });
                 return true;
@@ -928,6 +930,7 @@ export class TagStore {
             }
             case 'playlists': {
                 this.playlists.value = json.playlists ?? [];
+                this.playlistsLoaded.value = true;
                 // The active playlist may have been deleted in another window
                 if (this.activePlaylistId.value !== undefined
                     && !this.playlists.value.some((p) => p.id === this.activePlaylistId.value)) {
@@ -1035,6 +1038,55 @@ export class TagStore {
     private bumpCount(tagId: number, delta: number) {
         this.tags.value = this.tags.value.map((t) =>
             t.id === tagId ? { ...t, count: Math.max(t.count + delta, 0) } : t);
+    }
+
+    /** Baseline stage numbers from the loaded rows: `stageState` is only broadcast
+     *  on mutations, so without this the counts would be empty at launch. */
+    private deriveStageCounts() {
+        const staged = this.tracks.value.filter((t) => t.staged === true);
+        const rows = staged.map((t): StageRow => ({
+            trackId: t.id, skip: !!t.skip, ready: !!t.skip || t.tagIds.length > 0,
+        }));
+        this.stageRows.value = rows;
+        this.stageTotal.value = rows.length;
+        this.stageReady.value = rows.filter((r) => r.ready).length;
+        this.libraryDone.value = this.tracks.value.filter((t) => t.doneAt != null).length;
+    }
+
+    // ---- View restore ----
+
+    /** True once the first `playlists` reply arrived (restore needs it to validate the scope) */
+    playlistsLoaded: Ref<boolean> = ref(false);
+
+    /** Where the user is right now, for persisting */
+    viewState(): ViewState {
+        return {
+            scope: this.scope.value,
+            filterText: this.filter.value,
+            quickFilter: this.quickFilter.value,
+            sort: { by: this.sortBy.value, desc: this.sortDesc.value },
+            selectedTrackId: this.selectedId.value ?? null,
+            firstVisibleIndex: this.lastVisibleIndex,
+        };
+    }
+
+    /** Switch to a saved scope without touching anything else */
+    applyScope(scope: Scope) {
+        if (scope === 'stage') this.selectStage();
+        else if (scope === 'all') this.selectPlaylist(undefined);
+        else this.selectPlaylist(scope);
+    }
+
+    /** Re-apply a (already validated) saved view */
+    applyViewState(view: ViewState) {
+        this.applyScope(view.scope);
+        this.filter.value = view.filterText;
+        this.quickFilter.value = view.quickFilter;
+        this.sortBy.value = view.sort.by;
+        this.sortDesc.value = view.sort.desc;
+        this.selectedIds.value = [];
+        this.selectedId.value = view.selectedTrackId ?? undefined;
+        this.lastVisibleIndex = view.firstVisibleIndex;
     }
 
     /** Recompute tag usage counts from track state (cheap: one pass) */
