@@ -17,6 +17,7 @@ pub mod ogg;
 pub mod alac;
 pub mod flac;
 pub mod aiff;
+pub(crate) mod pcm;
 
 /// Re-Export to prevent dependency issues
 pub use rodio;
