@@ -338,7 +338,7 @@ pub(crate) async fn handle_ws_connection(
                             Ok(_) => {},
                             Err(err) => {
                                 // Send error to UI
-                                error!("Websocket: {:?}, Data: {}", err, text);
+                                error!("Websocket: {:?}, Data: {}", err, loggable_frame(text));
                                 context.send(json!({
                                     "action": "error",
                                     "message": &format!("{}", err)
@@ -358,6 +358,16 @@ pub(crate) async fn handle_ws_connection(
     }
 
     Ok(())
+}
+
+/// Frame text that is safe to log: frames carrying the Tangle access token are replaced
+/// by a placeholder (also when they fail to parse), everything else is unchanged.
+fn loggable_frame(text: &str) -> std::borrow::Cow<'_, str> {
+    if text.contains("tangleConnect") {
+        std::borrow::Cow::Borrowed("{\"action\":\"tangleConnect\",\"token\":\"<redacted>\"}")
+    } else {
+        std::borrow::Cow::Borrowed(text)
+    }
 }
 
 async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), Error> {
@@ -909,6 +919,19 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn loggable_frame_redacts_tangle_connect() {
+        let ok = r#"{"action":"tangleConnect","token":"SECRET-PAT"}"#;
+        let malformed = r#"{"action":"tangleConnect","token":"SECRET-PAT""#;
+        for frame in [ok, malformed] {
+            let out = loggable_frame(frame);
+            assert!(!out.contains("SECRET-PAT"), "token leaked: {out}");
+            assert!(out.contains("tangleConnect"));
+        }
+        let plain = r#"{"action":"tangleStatus"}"#;
+        assert_eq!(loggable_frame(plain), plain);
+    }
 
     #[test]
     fn tangle_actions_deserialize() {
