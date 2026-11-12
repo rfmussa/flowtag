@@ -37,7 +37,9 @@ impl AudioPlayer {
             let mut volume = 0.5;
             let mut source = None;
             // Create sink
-            let (_stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
+            // Kept alive for the thread's lifetime; replaced on every Load so playback
+            // follows the current default output device (rodio never follows device changes)
+            let (mut _stream, mut stream_handle) = rodio::OutputStream::try_default().unwrap();
             let mut sink = Sink::try_new(&stream_handle).unwrap();
             sink.set_volume(volume);
             sink.pause();
@@ -55,8 +57,17 @@ impl AudioPlayer {
                     PlayerAction::Pause => sink.pause(),
                     // Play new source
                     PlayerAction::Load(audio_source) => {
-                        // Create new sink
                         sink.stop();
+                        // Rebind to the current default output; on failure keep the old one
+                        match rodio::OutputStream::try_default() {
+                            Ok((new_stream, new_handle)) => {
+                                _stream = new_stream;
+                                stream_handle = new_handle;
+                                debug!("player output: rebound to default device");
+                            },
+                            Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
+                        }
+                        // Create new sink
                         sink = Sink::try_new(&stream_handle).unwrap();
                         sink.set_volume(volume);
                         sink.pause();
