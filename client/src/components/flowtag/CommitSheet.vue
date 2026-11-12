@@ -35,13 +35,14 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { commitPayload, initialTicks, toggleTick, Ticks } from '@/lib/commit';
+import { commitPayload, initialTicks, toggleTick, Ticks, withLoadedReady } from '@/lib/commit';
 import { notify } from '@/lib/notify';
 import { commitSheetOpen } from '@/scripts/commitsheet';
 import { getTagStore, StageRow } from '@/scripts/tagstore';
 
 const store = getTagStore();
-const rows = computed(() => store.stageRows.value);
+/** The server's stage list, with ready re-derived from the loaded tracks */
+const rows = computed(() => withLoadedReady(store.stageRows.value, store.tracks.value));
 const ticks = ref<Ticks>({});
 const message = ref('');
 /** Set when this sheet sent a commit, so only its confirmation toasts. A failed

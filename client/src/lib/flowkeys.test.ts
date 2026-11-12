@@ -1,13 +1,14 @@
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const settings = vi.hoisted(() => ({ keybinds: {} as Record<string, unknown> }));
+const send = vi.hoisted(() => vi.fn());
 vi.mock('@/scripts/onetagger', () => ({
-    get1t: () => ({ send: () => undefined, settings: { value: { flowtag: settings } } }),
+    get1t: () => ({ send, settings: { value: { flowtag: settings } }, player: { value: {} } }),
 }));
 vi.mock('@/lib/notify', () => ({ notify: () => undefined }));
 
 import { getTagStore, FlowTag } from '@/scripts/tagstore';
-import { actionFires } from '@/scripts/flowkeys';
+import { actionFires, handleFlowKeys } from '@/scripts/flowkeys';
 import { isCommitChord, tagInputOwnsKey } from '@/scripts/commitsheet';
 
 function key(code: string, mods: Partial<KeyboardEvent> = {}): KeyboardEvent {
@@ -61,5 +62,32 @@ describe('commit chord in the tag input', () => {
         expect(tagInputOwnsKey(key('Enter'))).toBe(true);
         expect(tagInputOwnsKey(key('Enter', { shiftKey: true }))).toBe(true);
         expect(tagInputOwnsKey(key('KeyS'))).toBe(true);
+    });
+});
+
+describe('key repeat on stage / skip', () => {
+    beforeEach(() => {
+        send.mockClear();
+        vi.stubGlobal('document', { querySelector: () => null });
+        const store = getTagStore();
+        store.tracks.value = [{
+            id: 1, path: '/m/1.mp3', folderId: 1, format: 'mp3', title: 'T', artist: 'A',
+            addedAt: 0, missing: false, needsFlush: false, tagIds: [],
+        }];
+        store.selectedIds.value = [];
+        store.selectedId.value = 1;
+    });
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('held_s_and_x_are_consumed_without_toggling', () => {
+        expect(handleFlowKeys(key('KeyS', { repeat: true }))).toBe(true);
+        expect(handleFlowKeys(key('KeyX', { repeat: true }))).toBe(true);
+        expect(send).not.toHaveBeenCalled();
+    });
+
+    it('a_fresh_press_still_toggles', () => {
+        expect(handleFlowKeys(key('KeyS'))).toBe(true);
+        expect(handleFlowKeys(key('KeyX'))).toBe(true);
+        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks', 'stageSkip']);
     });
 });

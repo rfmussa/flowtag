@@ -10,7 +10,8 @@
     >
         <LayersIcon class='pl-icon' />
         <span class='pl-name'>Stage</span>
-        <span class='pl-count ft-num' data-test='stage-count'>{{ store.stageReady.value }} / {{ store.stageTotal.value }}</span>
+        <span class='pl-count ft-num' data-test='stage-count'>{{ stageCountLabel(store.stageReady.value, store.stageTotal.value) }}</span>
+        <Button size='sm' variant='ghost' class='stage-commit' tabindex='-1' data-test='stage-commit' @click.stop='openCommitSheet()'>Commit…</Button>
         <div class='stage-bar' aria-hidden='true'><div class='stage-bar-fill' :style='{ width: stagePct + "%" }'></div></div>
     </div>
 
@@ -143,7 +144,10 @@ import {
     ListFilterIcon, ListFilterPlusIcon, ListMusicIcon, PlusIcon,
 } from '@lucide/vue';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
+import { stageCountLabel } from '@/lib/commit';
+import { openCommitSheet } from '../../scripts/commitsheet';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
 import SmartPlaylistEditor from './SmartPlaylistEditor.vue';
@@ -395,6 +399,7 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
     padding-bottom: 6px;
     margin-bottom: 4px;
     row-gap: 5px;
+    .stage-commit { height: 20px; padding: 0 6px; font-size: 11px; flex-shrink: 0; }
     .stage-bar {
         flex-basis: 100%;
         height: 2px;

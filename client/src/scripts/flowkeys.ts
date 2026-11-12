@@ -258,12 +258,13 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         return true;
     }
 
+    // Holding S / X must not toggle at key-repeat rate: repeats are consumed, no action
     if (actionFires(event, 'stage')) {
-        store.toggleStageSelection();
+        if (!event.repeat) store.toggleStageSelection();
         return true;
     }
     if (actionFires(event, 'skip')) {
-        store.stageSkipCurrent();
+        if (!event.repeat) store.stageSkipCurrent();
         return true;
     }
 
