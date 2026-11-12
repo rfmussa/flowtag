@@ -1,4 +1,7 @@
-use std::sync::Arc;
+use anyhow::Error;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
+use std::thread::{self, JoinHandle};
 use std::time::Duration;
 use rodio::Source;
 use rodio::source::SeekError;
@@ -53,6 +56,69 @@ impl Source for PcmPlayback {
     }
 }
 
+struct CacheFillInner {
+    cache: Mutex<Option<Arc<DecodedPcm>>>,
+    /// Set while a background fill is decoding; at most one fill runs at a time
+    filling: AtomicBool,
+}
+
+/// Decoded-PCM cache filled once in the background. Cloning shares the same cache,
+/// so a fill outlives the handle that started it and lands for every other clone.
+#[derive(Clone)]
+pub struct CacheFill(Arc<CacheFillInner>);
+
+impl CacheFill {
+    pub fn new() -> CacheFill {
+        CacheFill(Arc::new(CacheFillInner { cache: Mutex::new(None), filling: AtomicBool::new(false) }))
+    }
+
+    fn guard(&self) -> MutexGuard<'_, Option<Arc<DecodedPcm>>> {
+        self.0.cache.lock().unwrap_or_else(|e| {
+            warn!("PCM cache lock was poisoned, recovering");
+            e.into_inner()
+        })
+    }
+
+    /// The decoded audio, once a fill has landed
+    pub fn get(&self) -> Option<Arc<DecodedPcm>> {
+        self.guard().clone()
+    }
+
+    /// Start `decode` on a background thread unless the cache is already filled or a
+    /// fill is running. On success the result is cached; on error it is logged and
+    /// nothing is cached, so a later call can retry. Returns the thread when one started.
+    pub fn spawn_fill<F>(&self, decode: F) -> Option<JoinHandle<()>>
+    where F: FnOnce() -> Result<DecodedPcm, Error> + Send + 'static {
+        if self.get().is_some() {
+            return None;
+        }
+        if self.0.filling.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
+            return None;
+        }
+        // A fill may have landed between the cache check and claiming the flag
+        if self.get().is_some() {
+            self.0.filling.store(false, Ordering::SeqCst);
+            return None;
+        }
+        let fill = self.clone();
+        let spawned = thread::Builder::new().name("pcm-cache-fill".into()).spawn(move || {
+            match decode() {
+                Ok(pcm) => *fill.guard() = Some(Arc::new(pcm)),
+                Err(e) => warn!("PCM cache fill failed: {e}"),
+            }
+            fill.0.filling.store(false, Ordering::SeqCst);
+        });
+        match spawned {
+            Ok(handle) => Some(handle),
+            Err(e) => {
+                warn!("PCM cache fill could not start: {e}");
+                self.0.filling.store(false, Ordering::SeqCst);
+                None
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,6 +142,41 @@ mod tests {
         let mut p = PcmPlayback::new(pcm());
         p.try_seek(Duration::from_secs(10)).unwrap();
         assert_eq!(p.next(), None);
+    }
+
+    fn tiny() -> DecodedPcm {
+        DecodedPcm { channels: 1, sample_rate: 1000, samples: vec![1, 2, 3] }
+    }
+
+    #[test]
+    fn fill_runs_once_concurrently() {
+        let fill = CacheFill::new();
+        let (release_tx, release_rx) = std::sync::mpsc::channel::<()>();
+        let first = fill.spawn_fill(move || {
+            release_rx.recv().ok();
+            Ok(tiny())
+        });
+        assert!(first.is_some(), "first fill must start");
+        // While the first fill is still decoding, a second request is a no-op
+        assert!(fill.spawn_fill(|| panic!("second fill must not run")).is_none());
+        assert!(fill.get().is_none(), "cache stays empty until the fill lands");
+        release_tx.send(()).unwrap();
+        first.unwrap().join().unwrap();
+        assert_eq!(fill.get().map(|p| p.samples.clone()), Some(vec![1, 2, 3]));
+        // Once cached, no further fill starts
+        assert!(fill.spawn_fill(|| panic!("cached: fill must not run")).is_none());
+    }
+
+    #[test]
+    fn failed_fill_clears_flag_without_caching() {
+        let fill = CacheFill::new();
+        fill.spawn_fill(|| Err(anyhow::anyhow!("boom"))).unwrap().join().unwrap();
+        assert!(fill.get().is_none());
+        // The flag was cleared, so a retry can start and succeed
+        let retry = fill.spawn_fill(|| Ok(tiny()));
+        assert!(retry.is_some());
+        retry.unwrap().join().unwrap();
+        assert!(fill.get().is_some());
     }
 
     #[test]
