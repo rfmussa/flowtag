@@ -214,6 +214,15 @@ fn known_duration_ms(db: &onetagger_db::Db, path: &Path) -> Option<u128> {
     }
 }
 
+/// Longest track worth priming: a decoded hour-long AIFF is ~633 MB, too much to hold
+/// beside the playing track
+const PRELOAD_MAX_DURATION_MS: u128 = 20 * 60 * 1000;
+
+/// Whether a track should be primed; unknown durations are primed
+fn should_preload(duration_ms: Option<u128>) -> bool {
+    duration_ms.map_or(true, |ms| ms <= PRELOAD_MAX_DURATION_MS)
+}
+
 fn set_currently_playing(path: &Path) {
     if let Ok(mut p) = CURRENT_PLAYER_PATH.lock() {
         *p = Some(path.to_owned());
@@ -616,7 +625,14 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 Some(preloaded) => (preloaded, true),
                 None => {
                     let duration_ms = known_duration_ms(&context.db, &path);
-                    (tokio::task::spawn_blocking(move || AudioSources::from_path_with_duration(&path, duration_ms)).await??, false)
+                    let slot = context.preload.clone();
+                    (tokio::task::spawn_blocking(move || {
+                        // Invalidate an in-flight prime (it would land as a stale duplicate of
+                        // this track) and free the unrelated entry off the async threads.
+                        // The selection watcher re-primes whatever is selected next.
+                        slot.clear();
+                        AudioSources::from_path_with_duration(&path, duration_ms)
+                    }).await??, false)
                 }
             };
             context.send(json!({
@@ -666,6 +682,10 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         // flush-protected "currently playing" path; a failure leaves the slot as it was.
         Action::PlayerPreload { path } => {
             let duration_ms = known_duration_ms(&context.db, &path);
+            if !should_preload(duration_ms) {
+                debug!("player preload: skipped, track too long");
+                return Ok(());
+            }
             let slot = context.preload.clone();
             // A newer request (or a flush) supersedes this one: stale primes never decode or store
             let generation = slot.begin(&path);
@@ -1023,6 +1043,15 @@ mod tests {
         assert!(matches!(parse(r#"{"action":"tangleSetEnabled","enabled":true}"#), Action::TangleSetEnabled { enabled: true }));
         assert!(matches!(parse(r#"{"action":"tanglePreview"}"#), Action::TanglePreview));
         assert!(matches!(parse(r#"{"action":"tangleResendTag","tagId":3}"#), Action::TangleResendTag { tag_id: 3 }));
+    }
+
+    #[test]
+    fn preload_skips_tracks_over_twenty_minutes() {
+        assert!(should_preload(None), "unknown duration still primes");
+        assert!(should_preload(Some(6 * 60 * 1000)));
+        assert!(should_preload(Some(20 * 60 * 1000)));
+        assert!(!should_preload(Some(20 * 60 * 1000 + 1)));
+        assert!(!should_preload(Some(60 * 60 * 1000)));
     }
 
     #[test]

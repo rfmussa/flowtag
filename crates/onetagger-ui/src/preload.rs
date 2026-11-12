@@ -166,6 +166,22 @@ mod tests {
     }
 
     #[test]
+    fn start_miss_clear_drops_late_same_path_prime() {
+        let slot = PreloadSlot::new();
+        // Prime for /a.mp3 is still building when PlayerStart for /a.mp3 arrives
+        let generation = slot.begin(Path::new("/a.mp3"));
+        assert!(slot.take_if(Path::new("/a.mp3")).is_none());
+        // Miss path: PlayerStart clears the slot before building its own source
+        slot.clear();
+        // The prime lands late: dropped, never a stale duplicate beside the playing track
+        slot.set(generation, PathBuf::from("/a.mp3"), Box::new(Fake(1)));
+        assert!(is_empty(&slot));
+        // The selection watcher's next prime still works
+        slot.set(slot.begin(Path::new("/b.mp3")), PathBuf::from("/b.mp3"), Box::new(Fake(2)));
+        assert!(slot.holds(Path::new("/b.mp3")));
+    }
+
+    #[test]
     fn prime_skipped_when_path_already_cached() {
         let slot = PreloadSlot::new();
         assert!(!slot.holds(Path::new("/a.mp3")));
