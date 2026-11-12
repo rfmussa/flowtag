@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::client::Client;
 use crate::error::TangleError;
-use crate::matcher::{lookup_unmatched, match_from_collection};
+use crate::matcher::{db_error, lookup_unmatched, match_from_collection};
 use crate::store;
 use crate::sync::run_pass;
 use crate::token::TokenStore;
@@ -81,6 +81,8 @@ pub struct Timing {
     pub debounce: Duration,
     pub full_every: Duration,
     pub pace: Duration,
+    /// Fetch the collection again at most this often to map folders that have no Tangle source.
+    pub rematch_every: Duration,
 }
 
 impl Default for Timing {
@@ -90,6 +92,7 @@ impl Default for Timing {
             debounce: Duration::from_secs(3),
             full_every: Duration::from_secs(300),
             pace: Duration::from_millis(500),
+            rematch_every: Duration::from_secs(6 * 3600),
         }
     }
 }
@@ -136,6 +139,7 @@ pub fn spawn_with(
     let mut worker = Worker::new(db, base, tokens, enabled, home, timing, Box::new(on_event));
     std::thread::Builder::new().name("tangle-worker".to_string()).spawn(move || {
         log::info!("Tangle worker started");
+        worker.reload_token();
         loop {
             match rx.recv_timeout(timing.tick) {
                 Ok(cmd) => worker.command(cmd),
@@ -158,7 +162,9 @@ struct Worker {
     timing: Timing,
     emit: Box<dyn Fn(Value) + Send>,
     status: TangleStatus,
-    /// TokenInvalid / BackupRequired: no requests until `TokenChanged`.
+    /// Read from `tokens` at start and on `TokenChanged` only: every Keychain read may prompt.
+    token: Option<String>,
+    /// TokenInvalid: no requests until `TokenChanged`.
     paused: Option<SyncState>,
     /// `me()` must be called before the next pass (start, or token changed).
     needs_me: bool,
@@ -171,6 +177,8 @@ struct Worker {
     seen_fp_since: Instant,
     synced_fp: Option<i64>,
     last_full: Option<Instant>,
+    /// Last collection fetch made to map folders without a Tangle source.
+    last_rematch: Option<Instant>,
 }
 
 impl Worker {
@@ -193,6 +201,7 @@ impl Worker {
             timing,
             emit,
             status: TangleStatus::new(state),
+            token: None,
             paused: None,
             needs_me: true,
             force: true,
@@ -202,6 +211,7 @@ impl Worker {
             seen_fp_since: Instant::now(),
             synced_fp: None,
             last_full: None,
+            last_rematch: None,
         }
     }
 
@@ -225,11 +235,14 @@ impl Worker {
             Command::SetEnabled(on) => {
                 self.enabled = on;
                 self.force = true;
-                if !on {
+                if on {
+                    self.recheck_backup();
+                } else {
                     self.set_state(SyncState::Disabled);
                 }
             }
             Command::TokenChanged => {
+                self.reload_token();
                 self.paused = None;
                 self.needs_me = true;
                 self.force = true;
@@ -244,46 +257,75 @@ impl Worker {
                 }
                 self.force = true;
             }
-            Command::Status => self.emit_status(),
+            Command::Status => {
+                self.emit_status();
+                self.recheck_backup();
+            }
             Command::Preview => self.preview(),
         }
     }
 
+    fn reload_token(&mut self) {
+        self.token = self.tokens.get();
+    }
+
     fn token(&mut self) -> Option<String> {
-        let token = self.tokens.get();
+        let token = self.token.clone();
         if token.is_none() {
             self.set_state(SyncState::NoToken);
         }
         token
     }
 
-    fn preview(&mut self) {
-        let Some(token) = self.token() else { return };
-        if self.paused.is_some() {
-            self.emit_status();
-            return;
-        }
-        let client = Client::new(&self.base, &token);
-        match self.ensure_matched(&client) {
-            Ok(()) => {
-                let counts = store::preview_counts(&self.db.conn());
-                match counts {
-                    Ok((tags, entries)) => {
-                        (self.emit)(json!({ "action": "tanglePreview", "tags": tags, "entries": entries }));
-                    }
-                    Err(e) => log::error!("tangle preview failed: {e}"),
-                }
-                self.refresh_counts();
-                self.emit_status();
-            }
-            Err(e) => self.fail(e),
+    /// Backup and restore may have been turned on in Tangle: ask again on the next tick.
+    fn recheck_backup(&mut self) {
+        if matches!(self.retry, Some((_, SyncState::BackupRequired, _))) {
+            self.retry = None;
         }
     }
 
+    fn retry_pending(&self) -> bool {
+        self.retry.is_some_and(|(until, _, _)| Instant::now() < until)
+    }
+
+    fn emit_error(&self, code: &str) {
+        (self.emit)(json!({ "action": "tangleError", "code": code }));
+    }
+
+    /// Every failure answers with `tangleError` so the UI never waits out its timeout.
+    fn preview(&mut self) {
+        let Some(token) = self.token() else { return self.emit_error("no_token") };
+        if self.paused.is_some() {
+            self.emit_status();
+            return self.emit_error(TangleError::InvalidToken.code());
+        }
+        let client = Client::new(&self.base, &token);
+        if let Err(e) = self.ensure_matched(&client) {
+            let code = e.code().to_string();
+            self.fail(e);
+            return self.emit_error(&code);
+        }
+        match store::preview_counts(&self.db.conn()) {
+            Ok((tags, entries)) => {
+                (self.emit)(json!({ "action": "tanglePreview", "tags": tags, "entries": entries }));
+            }
+            Err(e) => self.emit_error(db_error(e).code()),
+        }
+        self.refresh_counts();
+        self.emit_status();
+    }
+
+    /// Nothing matched yet, or (at most every `rematch_every`) a folder with present
+    /// tracks has no Tangle source: a folder added later, or a changed source id.
     fn collection_needed(&self) -> bool {
         let c = self.db.conn();
-        c.query_row("SELECT NOT EXISTS (SELECT 1 FROM tangle_items)", [], |r| r.get::<_, bool>(0))
-            .unwrap_or(false)
+        let rematch_due = self.last_rematch.is_none_or(|t| t.elapsed() >= self.timing.rematch_every);
+        let needed = store::nothing_matched(&c)
+            .and_then(|none| Ok(none || (rematch_due && store::unmapped_folders(&c)?)));
+        needed.unwrap_or_else(|e| {
+            log::error!("tangle match check failed: {e}");
+            false
+        })
     }
 
     /// Keeps requests of consecutive pass phases at least `pace` apart.
@@ -293,12 +335,13 @@ impl Worker {
         }
     }
 
-    /// Bulk-match from the collection export if nothing has been matched yet.
+    /// Bulk-match from the collection export when `collection_needed`.
     fn ensure_matched(&mut self, client: &Client) -> Result<(), TangleError> {
         if self.collection_needed() {
+            self.last_rematch = Some(Instant::now());
             let records = client.collection()?;
             match_from_collection(&self.db.conn(), &records, &self.home, unix_now())
-                .map_err(crate::matcher::db_error)?;
+                .map_err(db_error)?;
         }
         Ok(())
     }
@@ -316,7 +359,7 @@ impl Worker {
 
     fn tick(&mut self) {
         if !self.enabled {
-            self.set_state(SyncState::Disabled);
+            self.tick_disabled();
             return;
         }
         let Some(token) = self.token() else { return };
@@ -352,6 +395,37 @@ impl Worker {
         self.pass(&token, fp);
     }
 
+    /// Sync is off: still confirm a new token (start, `TokenChanged`) so Settings can show
+    /// who is connected and the switch can be turned on. Backoff and pauses still apply.
+    fn tick_disabled(&mut self) {
+        let due = self.needs_me && self.paused.is_none() && !self.retry_pending();
+        let Some(token) = self.token.clone().filter(|_| due) else {
+            return self.set_state(SyncState::Disabled);
+        };
+        match self.check_me(&Client::new(&self.base, &token)) {
+            Ok(()) => {
+                self.attempt = 0;
+                self.retry = None;
+            }
+            Err(e) => self.fail(e),
+        }
+        self.refresh_counts();
+        self.status.state = SyncState::Disabled;
+        self.status.retry_at = None;
+        self.emit_status();
+    }
+
+    /// `GET /me`: the user name, and whether Tangle lets FlowTag read the collection.
+    fn check_me(&mut self, client: &Client) -> Result<(), TangleError> {
+        let me = client.me()?;
+        self.status.user = Some(me.user_name);
+        if !me.collection_available {
+            return Err(TangleError::BackupRequired);
+        }
+        self.needs_me = false;
+        Ok(())
+    }
+
     fn pass(&mut self, token: &str, fp: i64) {
         self.force = false;
         self.set_state(SyncState::Syncing);
@@ -375,12 +449,7 @@ impl Worker {
         let mut requested = false;
         if self.needs_me {
             requested = true;
-            let me = client.me()?;
-            self.status.user = Some(me.user_name);
-            if !me.collection_available {
-                return Err(TangleError::BackupRequired);
-            }
-            self.needs_me = false;
+            self.check_me(client)?;
         }
         if self.collection_needed() {
             self.pace_after(requested);
@@ -414,7 +483,9 @@ impl Worker {
                 SyncState::TokenInvalid
             }
             TangleError::BackupRequired => {
-                self.paused = Some(SyncState::BackupRequired);
+                // A slow retry: the user can turn Backup and restore on in Tangle at any time.
+                self.needs_me = true;
+                self.schedule_retry(backoff, SyncState::BackupRequired);
                 SyncState::BackupRequired
             }
             TangleError::RateLimited { retry_after_s } => {
@@ -427,17 +498,17 @@ impl Worker {
                 SyncState::Waiting
             }
             TangleError::Network(_) | TangleError::Server(_) => {
-                self.schedule_retry(backoff);
+                self.schedule_retry(backoff, SyncState::Offline);
                 SyncState::Offline
             }
             TangleError::Other { code, .. } => {
                 self.status.error = Some(code.clone());
-                self.schedule_retry(backoff);
+                self.schedule_retry(backoff, SyncState::Error);
                 SyncState::Error
             }
             TangleError::ListNotFound | TangleError::ItemNotFound => {
                 self.status.error = Some("not_found".into());
-                self.schedule_retry(backoff);
+                self.schedule_retry(backoff, SyncState::Error);
                 SyncState::Error
             }
         };
@@ -446,9 +517,9 @@ impl Worker {
         self.emit_status();
     }
 
-    fn schedule_retry(&mut self, backoff: Duration) {
+    /// No requests until `backoff` has passed; `state` is shown meanwhile.
+    fn schedule_retry(&mut self, backoff: Duration, state: SyncState) {
         self.attempt = self.attempt.saturating_add(1);
-        let state = if self.status.error.is_some() { SyncState::Error } else { SyncState::Offline };
         self.retry = Some((Instant::now() + backoff, state, None));
         self.force = true;
     }
@@ -468,6 +539,7 @@ mod tests {
             debounce: Duration::from_millis(30),
             full_every: Duration::from_secs(300),
             pace: Duration::ZERO,
+            rematch_every: Duration::ZERO,
         }
     }
 
@@ -518,7 +590,7 @@ mod tests {
 
     #[test]
     fn should_run_debounces_and_forces_every_five_minutes() {
-        let t = Timing { tick: Duration::from_secs(5), debounce: Duration::from_secs(3), full_every: Duration::from_secs(300), pace: Duration::ZERO };
+        let t = Timing { debounce: Duration::from_secs(3), full_every: Duration::from_secs(300), ..Timing::default() };
         let s = Duration::from_secs;
         assert!(!should_run(1, 1, s(10), s(10), &t), "unchanged: no run");
         assert!(!should_run(1, 2, s(1), s(10), &t), "changed but still being edited");

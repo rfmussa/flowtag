@@ -225,6 +225,21 @@ pub fn preview_counts(c: &Connection) -> Result<(usize, usize)> {
     Ok((tags, pairs as usize))
 }
 
+/// No track has a `tangle_items` row yet: the first bulk match has not run.
+pub fn nothing_matched(c: &Connection) -> Result<bool> {
+    c.query_row("SELECT NOT EXISTS (SELECT 1 FROM tangle_items)", [], |r| r.get(0))
+}
+
+/// Some folder with present tracks has no Tangle source mapped.
+pub fn unmapped_folders(c: &Connection) -> Result<bool> {
+    c.query_row(
+        "SELECT EXISTS (SELECT 1 FROM tracks t WHERE t.missing = 0
+                        AND t.folder_id NOT IN (SELECT folder_id FROM tangle_sources))",
+        [],
+        |r| r.get(0),
+    )
+}
+
 const MAX_UNMATCHED_PATHS: usize = 50;
 
 /// (present tracks with an item id, present tracks, up to 50 paths of unmatched present tracks).

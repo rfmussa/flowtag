@@ -5,7 +5,6 @@ use std::sync::mpsc::Sender;
 use anyhow::Error;
 use onetagger_shared::Settings;
 use onetagger_tangle::client::{Client, DEFAULT_BASE};
-use onetagger_tangle::error::TangleError;
 use onetagger_tangle::token::{KeychainToken, TokenStore};
 use onetagger_tangle::worker::{self, Command};
 use serde_json::json;
@@ -36,20 +35,6 @@ pub(crate) fn spawn_worker(
             error!("Failed starting Tangle worker, continuing without Tangle: {e}");
             None
         }
-    }
-}
-
-/// Short stable code per error variant for the UI.
-pub(crate) fn error_code(e: &TangleError) -> String {
-    match e {
-        TangleError::InvalidToken => "invalid_token".to_string(),
-        TangleError::BackupRequired => "backup_and_restore_required".to_string(),
-        TangleError::RateLimited { .. } => "rate_limited".to_string(),
-        TangleError::Network(_) => "network".to_string(),
-        TangleError::Server(_) => "server".to_string(),
-        TangleError::ListNotFound => "list_not_found".to_string(),
-        TangleError::ItemNotFound => "item_not_found".to_string(),
-        TangleError::Other { code, .. } => code.clone(),
     }
 }
 
@@ -86,7 +71,7 @@ pub(crate) async fn connect(
     }
     // reqwest::blocking and Keychain access must stay off the async runtime
     let result = tokio::task::spawn_blocking(move || -> Result<String, String> {
-        let me = Client::new(DEFAULT_BASE, &token).me().map_err(|e| error_code(&e))?;
+        let me = Client::new(DEFAULT_BASE, &token).me().map_err(|e| e.code().to_string())?;
         KeychainToken.set(&token).map_err(|e| {
             warn!("Storing Tangle token in Keychain failed: {e}");
             "keychain".to_string()
