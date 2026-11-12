@@ -224,3 +224,72 @@ describe('startup stage counts', () => {
         ]);
     });
 });
+
+describe('stageState events', () => {
+    it('stage_state_event_overwrites_derived_counts', () => {
+        const s = new TagStore();
+        s.handleMessage({ action: 'tagTracks', tracks: [track(1, { staged: true }), track(2, { doneAt: 3 })] });
+        expect(s.stageTotal.value).toBe(1);
+        s.handleMessage({
+            action: 'stageState', ready: 4, total: 9, libraryDone: 7,
+            stage: [{ trackId: 1, skip: false, ready: true }],
+        });
+        expect([s.stageReady.value, s.stageTotal.value, s.libraryDone.value]).toEqual([4, 9, 7]);
+        expect(s.stageRows.value).toEqual([{ trackId: 1, skip: false, ready: true }]);
+    });
+});
+
+describe('whenViewReady', () => {
+    it('view_gate_opens_via_timer_when_playlists_never_load', () => {
+        vi.useFakeTimers();
+        try {
+            const s = new TagStore();
+            s.loaded.value = true;
+            const ready = vi.fn();
+            s.whenViewReady(ready, 10_000);
+            vi.advanceTimersByTime(9_999);
+            expect(ready).not.toHaveBeenCalled();
+            vi.advanceTimersByTime(1);
+            expect(ready).toHaveBeenCalledExactlyOnceWith(false);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+
+    it('opens immediately and once when everything is loaded', () => {
+        vi.useFakeTimers();
+        try {
+            const s = new TagStore();
+            s.loaded.value = true;
+            s.playlistsLoaded.value = true;
+            const ready = vi.fn();
+            s.whenViewReady(ready, 10_000);
+            vi.advanceTimersByTime(20_000);
+            expect(ready).toHaveBeenCalledExactlyOnceWith(true);
+        } finally {
+            vi.useRealTimers();
+        }
+    });
+});
+
+describe('resumeTagging', () => {
+    it('resume_tagging_jumps_to_next_not_ready_in_stage', () => {
+        const s = storeWith([track(1, { staged: true }), track(2, { staged: true, tagIds: [1] }), track(3, { staged: true })]);
+        s.stageRows.value = [
+            { trackId: 1, skip: false, ready: false },
+            { trackId: 2, skip: false, ready: true },
+            { trackId: 3, skip: false, ready: false },
+        ];
+        s.selectedId.value = 1;
+        s.resumeTagging('stage');
+        expect(s.scope.value).toBe('stage');
+        expect(s.selectedId.value).toBe(3);
+    });
+
+    it('resume_tagging_selects_next_untagged_outside_stage', () => {
+        const s = storeWith([track(1), track(2, { tagIds: [1] }), track(3)]);
+        s.selectedId.value = 1;
+        s.resumeTagging('all');
+        expect(s.selectedId.value).toBe(3);
+    });
+});

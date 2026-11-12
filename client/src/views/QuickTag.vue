@@ -131,7 +131,7 @@
 </template>
 
 <script lang='ts' setup>
-import { computed, onMounted, ref, watch } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useLocalStorage, watchDebounced } from '@vueuse/core';
 import {
     ArrowDownIcon, ArrowUpIcon, LibraryIcon, ListMinusIcon, LoaderCircleIcon,
@@ -326,24 +326,22 @@ function playTrack(track: FlowTrack) {
 const VIEW_SAVE_DEBOUNCE_MS = 1000;
 const viewRestored = ref(false);
 
-// Restore once, after the library and playlists arrived (so the scope can be validated)
-const stopRestore = watch(
-    () => store.loaded.value && store.playlistsLoaded.value,
-    (ready) => {
-        if (!ready) return;
-        const saved = $1t.settings.value.flowtag.viewState;
-        if (saved) {
-            store.applyViewState(resolveViewState(saved, {
-                playlistIds: store.playlists.value.map((p) => p.id),
-                stageTotal: store.stageTotal.value,
-                trackIds: store.tracks.value.map((t) => t.id),
-            }));
-        }
-        viewRestored.value = true;
-        stopRestore();
-    },
-    { immediate: true },
-);
+// Restore once, after the library and playlists arrived (so the scope can be validated);
+// a bounded fallback opens the gate anyway so view saving can't stay dead all session
+const VIEW_READY_TIMEOUT_MS = 10_000;
+function restoreContext() {
+    return {
+        playlistIds: store.playlists.value.map((p) => p.id),
+        stageTotal: store.stageTotal.value,
+        trackIds: store.tracks.value.map((t) => t.id),
+    };
+}
+const cancelRestore = store.whenViewReady(() => {
+    const saved = $1t.settings.value.flowtag.viewState;
+    if (saved) store.applyViewState(resolveViewState(saved, restoreContext()));
+    viewRestored.value = true;
+}, VIEW_READY_TIMEOUT_MS);
+onBeforeUnmount(cancelRestore);
 
 // Persist the view (never before the restore, or it would overwrite what we are about to read)
 watchDebounced(
@@ -373,14 +371,11 @@ function dismissWelcome() {
     $1t.saveSettings(false);
 }
 
+// Continue = resume tagging: saved scope, then the next track still to do
 function continueWelcome() {
     const saved = $1t.settings.value.flowtag.viewState;
     if (saved) {
-        store.applyScope(resolveViewState(saved, {
-            playlistIds: store.playlists.value.map((p) => p.id),
-            stageTotal: store.stageTotal.value,
-            trackIds: [],
-        }).scope);
+        store.resumeTagging(resolveViewState(saved, { ...restoreContext(), trackIds: [] }).scope);
     }
     dismissWelcome();
 }

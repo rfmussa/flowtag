@@ -1077,6 +1077,37 @@ export class TagStore {
         else this.selectPlaylist(scope);
     }
 
+    /** Calls `onReady` once the library and playlists have loaded, or after
+     *  `timeoutMs` regardless (logged), so a missing reply can't block view saving forever.
+     *  Returns a cancel function. */
+    whenViewReady(onReady: (complete: boolean) => void, timeoutMs: number): () => void {
+        let finished = false;
+        let timer: ReturnType<typeof setTimeout> | undefined;
+        let stop: () => void = () => {};
+        const finish = (complete: boolean) => {
+            if (finished) return;
+            finished = true;
+            clearTimeout(timer);
+            stop();
+            if (!complete) diag('viewRestoreTimeout', { loaded: this.loaded.value, playlists: this.playlistsLoaded.value });
+            onReady(complete);
+        };
+        stop = watch(
+            () => this.loaded.value && this.playlistsLoaded.value,
+            (ready) => { if (ready) finish(true); },
+            { immediate: true },
+        );
+        if (!finished) timer = setTimeout(() => finish(false), timeoutMs);
+        return () => { finished = true; clearTimeout(timer); stop(); };
+    }
+
+    /** Welcome-back Continue: re-apply the saved scope, then jump to the next track to tag */
+    resumeTagging(scope: Scope) {
+        this.applyScope(scope);
+        if (this.scope.value === 'stage') this.selectNextStagedNotReady();
+        else this.selectNextUntagged();
+    }
+
     /** Re-apply a (already validated) saved view */
     applyViewState(view: ViewState) {
         this.applyScope(view.scope);
