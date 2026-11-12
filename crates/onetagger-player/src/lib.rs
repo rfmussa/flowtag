@@ -10,6 +10,16 @@ use std::time::Instant;
 use hound::{WavSpec, SampleFormat, WavWriter};
 use rodio::{Sink, Source};
 
+/// Audio duration read with tag parsing disabled: a damaged text frame in the
+/// metadata (e.g. an odd-length UTF-16 string) must not make a file unplayable
+pub(crate) fn duration_without_tags(path: impl AsRef<Path>) -> Result<std::time::Duration, Error> {
+    use lofty::file::AudioFile;
+    let file = lofty::probe::Probe::open(&path)?
+        .options(lofty::config::ParseOptions::new().read_tags(false))
+        .read()?;
+    Ok(file.properties().duration())
+}
+
 pub mod mp3;
 pub mod mp4;
 pub mod wav;

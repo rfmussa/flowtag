@@ -1,6 +1,5 @@
 use std::path::{Path, PathBuf};
 use anyhow::Error;
-use lofty::file::AudioFile;
 use std::io::BufReader;
 use std::fs::File;
 use rodio::{Source, Decoder};
@@ -20,7 +19,7 @@ impl MP3Source {
         // Get duration
         let duration = match duration_ms {
             Some(ms) => ms,
-            None => lofty::read_from_path(&path)?.properties().duration().as_millis(),
+            None => crate::duration_without_tags(&path)?.as_millis(),
         };
 
         Ok(MP3Source {

@@ -1,6 +1,5 @@
 use std::time::Duration;
 use anyhow::Error;
-use lofty::file::AudioFile;
 use std::path::{PathBuf, Path};
 use std::io::BufReader;
 use std::fs::File;
@@ -16,8 +15,7 @@ pub struct OGGSource {
 impl OGGSource {
     pub fn new(path: impl AsRef<Path>) -> Result<OGGSource, Error> {
         // Get duration
-        let file = lofty::read_from_path(&path)?;
-        let duration = file.properties().duration();
+        let duration = crate::duration_without_tags(&path)?;
 
         Ok(OGGSource {
             duration,

@@ -1,7 +1,6 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use anyhow::Error;
-use lofty::file::AudioFile;
 use std::fs::File;
 use std::io::Read;
 use std::time::Duration;
@@ -29,7 +28,7 @@ impl AIFFSource {
         // Get duration
         let duration = match duration_ms {
             Some(ms) => Duration::from_millis(ms as u64),
-            None => lofty::read_from_path(&path)?.properties().duration(),
+            None => crate::duration_without_tags(&path)?,
         };
 
         Ok(AIFFSource {
@@ -161,6 +160,38 @@ mod tests {
         let path = std::env::temp_dir().join(format!("flowtag_{name}_{}.aiff", std::process::id()));
         std::fs::write(&path, tiny_aiff(frames)).unwrap();
         path
+    }
+
+    /// ID3v2.3 chunk holding a UTF-16 TIT2 frame whose text has an odd byte length
+    /// (the in-the-wild damage that made lofty refuse whole files)
+    fn damaged_id3_chunk() -> Vec<u8> {
+        let mut frame = b"TIT2".to_vec();
+        frame.extend(4u32.to_be_bytes());
+        frame.extend([0, 0]); // frame flags
+        frame.extend([0x01, 0xFF, 0xFE, 0x41]); // UTF-16 with BOM, then a lone odd byte
+        let mut tag = b"ID3".to_vec();
+        tag.extend([3, 0, 0]); // v2.3, no tag flags
+        tag.extend([0, 0, 0, (10 + frame.len()) as u8]); // syncsafe size
+        tag.extend(&frame);
+        let mut chunk = b"ID3 ".to_vec();
+        chunk.extend((tag.len() as u32).to_be_bytes());
+        chunk.extend(tag);
+        chunk
+    }
+
+    #[test]
+    fn damaged_text_tag_does_not_block_playback() {
+        let mut bytes = tiny_aiff(20);
+        bytes.extend(damaged_id3_chunk());
+        let form_size = (bytes.len() - 8) as u32;
+        bytes[4..8].copy_from_slice(&form_size.to_be_bytes());
+        let path = std::env::temp_dir().join(format!("flowtag_badid3_{}.aiff", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let src = AIFFSource::new_with_duration(&path, None);
+        std::fs::remove_file(&path).ok();
+        let src = src.expect("a damaged text tag must not block playback");
+        // 20 frames at 8000 Hz: duration still comes from the audio properties
+        assert!(src.duration() < 1000, "duration {}ms", src.duration());
     }
 
     #[test]

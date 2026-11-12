@@ -100,12 +100,21 @@ fn parse_file(path: &Path, mtime: i64, size: i64) -> ScannedTrack {
     }
 
     // Duration via lofty (best effort, only for new/changed files)
-    if let Ok(file) = lofty::read_from_path(path) {
-        use lofty::file::AudioFile;
-        track.duration_ms = Some(file.properties().duration().as_millis() as i64);
+    if let Some(ms) = duration_ms_without_tags(path) {
+        track.duration_ms = Some(ms);
     }
 
     track
+}
+
+/// Audio duration with tag parsing disabled: a damaged text frame (e.g. an
+/// odd-length UTF-16 string) must not cost the duration
+fn duration_ms_without_tags(path: &Path) -> Option<i64> {
+    use lofty::file::AudioFile;
+    let file = lofty::probe::Probe::open(path).ok()?
+        .options(lofty::config::ParseOptions::new().read_tags(false))
+        .read().ok()?;
+    Some(file.properties().duration().as_millis() as i64)
 }
 
 fn is_audio_file(path: &Path) -> bool {
@@ -189,7 +198,38 @@ pub fn scan(db: &Db, full: bool, progress: impl Fn(usize, usize) + Sync) -> Resu
         progress(total, total);
     }
 
+    backfill_missing_durations(db)?;
+
     Ok(result)
+}
+
+/// Retry the duration (tags-off probe) for present tracks an older scan left
+/// without one — damaged text frames used to fail the whole lofty read
+fn backfill_missing_durations(db: &Db) -> Result<(), Error> {
+    let rows: Vec<(i64, String)> = {
+        let conn = db.conn();
+        let mut stmt = conn.prepare(
+            "SELECT id, path FROM tracks WHERE (duration_ms IS NULL OR duration_ms <= 0) AND missing = 0",
+        )?;
+        let rows = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        rows
+    };
+    if rows.is_empty() {
+        return Ok(());
+    }
+    let healed: Vec<(i64, i64)> = rows
+        .par_iter()
+        .filter_map(|(id, path)| duration_ms_without_tags(Path::new(path)).filter(|ms| *ms > 0).map(|ms| (*id, ms)))
+        .collect();
+    let conn = db.conn();
+    for (id, ms) in &healed {
+        conn.execute("UPDATE tracks SET duration_ms = ?2 WHERE id = ?1", [*id, *ms])?;
+    }
+    if !healed.is_empty() {
+        log::info!("Scan: backfilled {} missing duration(s)", healed.len());
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -210,6 +250,71 @@ mod tests {
         // Foreign tools: plain ";" without space, stray whitespace, empties
         assert_eq!(split_file_tags(&["dark;rolling; ".to_string()]), vec!["dark", "rolling"]);
         assert!(split_file_tags(&[]).is_empty());
+    }
+
+    /// Minimal AIFF (2ch/16-bit/8000Hz) with an ID3v2.3 chunk holding a UTF-16
+    /// text frame of odd byte length — the in-the-wild damage that made lofty
+    /// refuse whole files ("UTF-16 string has an odd length")
+    fn damaged_tag_aiff(frames: u16) -> Vec<u8> {
+        let mut comm = vec![];
+        comm.extend(2u16.to_be_bytes());
+        comm.extend((frames as u32).to_be_bytes());
+        comm.extend(16u16.to_be_bytes());
+        comm.extend([0x40, 0x0B, 0xFA, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]); // 8000 Hz
+        let ssnd = vec![0u8; 8 + frames as usize * 4];
+        let mut frame = b"TIT2".to_vec();
+        frame.extend(4u32.to_be_bytes());
+        frame.extend([0, 0]);
+        frame.extend([0x01, 0xFF, 0xFE, 0x41]); // UTF-16 with BOM, lone odd byte
+        let mut tag = b"ID3".to_vec();
+        tag.extend([3, 0, 0]);
+        tag.extend([0, 0, 0, (10 + frame.len()) as u8]);
+        tag.extend(&frame);
+        let mut body = b"AIFF".to_vec();
+        for (id, chunk) in [(&b"COMM"[..], &comm), (&b"SSND"[..], &ssnd), (&b"ID3 "[..], &tag)] {
+            body.extend(id);
+            body.extend((chunk.len() as u32).to_be_bytes());
+            body.extend(chunk);
+        }
+        let mut out = b"FORM".to_vec();
+        out.extend((body.len() as u32).to_be_bytes());
+        out.extend(body);
+        out
+    }
+
+    #[test]
+    fn scan_reads_duration_despite_damaged_text_tags() {
+        let (dir, db) = test_db();
+        let root = dir.path().join("music");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("bad.aiff"), damaged_tag_aiff(8000)).unwrap(); // 1 s
+        add_folder(&db, &root.to_string_lossy()).unwrap();
+        scan(&db, false, |_, _| {}).unwrap();
+        let t = &list_tracks(&db).unwrap()[0];
+        assert_eq!(t.duration_ms, Some(1000));
+    }
+
+    #[test]
+    fn scan_backfills_durations_lost_to_earlier_failures() {
+        let (dir, db) = test_db();
+        let root = dir.path().join("music");
+        std::fs::create_dir_all(&root).unwrap();
+        let file = root.join("bad.aiff");
+        std::fs::write(&file, damaged_tag_aiff(8000)).unwrap();
+        let folder = add_folder(&db, &root.to_string_lossy()).unwrap();
+        // A row an older scan left without a duration, stats matching the file
+        // (so the incremental scan skips re-parsing it); the scan walks the
+        // folder's canonical path, so the row must use it too
+        let canonical = Path::new(&folder.path).join("bad.aiff");
+        let (mtime, size) = crate::file_stats(&file).unwrap();
+        db.conn().execute(
+            "INSERT INTO tracks (folder_id, path, format, title, mtime, size) VALUES (?1, ?2, 'aiff', 'Bad', ?3, ?4)",
+            rusqlite::params![folder.id, canonical.to_string_lossy(), mtime, size],
+        ).unwrap();
+        let res = scan(&db, false, |_, _| {}).unwrap();
+        assert_eq!((res.added, res.updated), (0, 0), "stats match: no re-parse");
+        let t = &list_tracks(&db).unwrap()[0];
+        assert_eq!(t.duration_ms, Some(1000));
     }
 
     #[test]
