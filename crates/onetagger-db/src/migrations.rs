@@ -73,6 +73,48 @@ fn rekey_deleted_tangle_tags(tx: &Transaction) -> HookResult {
     Ok(())
 }
 
+/// v11: staging, commits and the local edit log, plus tracks.done_at / done_commit.
+/// SQLite has no `ADD COLUMN IF NOT EXISTS`, so the columns are guarded like v5/v8
+/// (the re-run tests replay later migrations on an already-migrated database).
+fn add_staging(tx: &Transaction) -> HookResult {
+    tx.execute_batch("
+        CREATE TABLE IF NOT EXISTS staged (
+            track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+            staged_at INTEGER NOT NULL,
+            skip INTEGER NOT NULL DEFAULT 0            -- X: listened, nothing to add
+        );
+        CREATE TABLE IF NOT EXISTS commits (
+            id INTEGER PRIMARY KEY,
+            created_at INTEGER NOT NULL,
+            message TEXT NOT NULL DEFAULT '',
+            track_count INTEGER NOT NULL
+        );
+    ")?;
+    for (column, ddl) in [
+        ("done_at", "ALTER TABLE tracks ADD COLUMN done_at INTEGER;          -- NULL = not done"),
+        ("done_commit", "ALTER TABLE tracks ADD COLUMN done_commit INTEGER;      -- commits.id; no FK on purpose (revert is code's job)"),
+    ] {
+        let has_column = tx
+            .prepare("SELECT 1 FROM pragma_table_info('tracks') WHERE name = ?1")?
+            .exists([column])?;
+        if !has_column {
+            tx.execute_batch(ddl)?;
+        }
+    }
+    tx.execute_batch("
+        CREATE TABLE IF NOT EXISTS edit_log (
+            id INTEGER PRIMARY KEY,
+            at INTEGER NOT NULL,
+            track_id INTEGER,                                   -- NULL for tag/group-level events
+            kind TEXT NOT NULL,   -- tag_added | tag_removed | skip_set | skip_cleared | staged | unstaged
+                                      -- | committed | commit_reverted | tag_created | tag_renamed | tag_deleted
+            data TEXT NOT NULL DEFAULT '{}'                     -- JSON: tagId, tagName, commitId, count…
+        );
+        CREATE INDEX IF NOT EXISTS idx_edit_log_at ON edit_log(at);
+    ")?;
+    Ok(())
+}
+
 /// The ordered migration list. `rusqlite_migration` records progress in
 /// `PRAGMA user_version` (number of migrations applied), the same counter the
 /// previous hand-rolled runner used, so existing libraries carry over as-is.
@@ -198,6 +240,8 @@ pub fn migrations() -> Migrations<'static> {
         "),
         // v10: a deleted tag's Tangle rows move to a negative id (see the trigger)
         M::up_with_hook("", rekey_deleted_tangle_tags),
+        // v11: staging + commits (done status) + local edit log
+        M::up_with_hook("", add_staging),
     ])
 }
 
@@ -373,6 +417,22 @@ mod tests {
             .prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'tangle_tag_deleted'").unwrap()
             .exists([]).unwrap();
         assert!(trigger);
+    }
+
+    /// v11 adds the staging tables and done columns; replaying it on a migrated DB is a no-op
+    #[test]
+    fn v11_is_idempotent() {
+        let (_dir, db) = crate::testutil::test_db();
+        let mut conn = db.conn();
+        conn.pragma_update(None, "user_version", 10).unwrap();
+        super::migrate(&mut conn).unwrap();
+        conn.prepare("SELECT done_at, done_commit FROM tracks").unwrap();
+        for table in ["staged", "commits", "edit_log"] {
+            let exists = conn
+                .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?1").unwrap()
+                .exists([table]).unwrap();
+            assert!(exists, "{table} missing after v11");
+        }
     }
 
     #[test]
