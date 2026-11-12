@@ -31,6 +31,7 @@
 </template>
 
 <script lang='ts' setup>
+import { tagInputOwnsKey } from '../../scripts/commitsheet';
 import { computed, ref, watch } from 'vue';
 import { getTagStore } from '../../scripts/tagstore';
 
@@ -85,6 +86,8 @@ function apply(index: number) {
 }
 
 function onKey(e: KeyboardEvent) {
+    // ⌘Enter is the commit chord: leave it (and its propagation) to the global handler
+    if (!tagInputOwnsKey(e)) return;
     switch (e.code) {
         case 'ArrowDown':
             highlighted.value = Math.min(highlighted.value + 1, suggestions.value.length - 1);
@@ -95,8 +98,6 @@ function onKey(e: KeyboardEvent) {
             e.preventDefault();
             break;
         case 'Enter':
-            // ⌘Enter is the commit chord (global handler), not "add tag"
-            if (e.metaKey || e.ctrlKey) break;
             if (text.value.trim() || suggestions.value.length > 0) apply(highlighted.value);
             e.preventDefault();
             break;

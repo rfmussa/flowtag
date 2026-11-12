@@ -83,6 +83,25 @@ function actionMatches(event: KeyboardEvent, action: FlowTagAction): boolean {
         && !event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
 }
 
+/**
+ * Does the event trigger the action? Like actionMatches, except the NEW stage /
+ * skip actions on their default key yield to existing bindings: a per-tag hotkey
+ * or another action's custom keybind on that key keeps it.
+ */
+export function actionFires(event: KeyboardEvent, action: FlowTagAction): boolean {
+    if (!actionMatches(event, action)) return false;
+    if (action !== 'stage' && action !== 'skip') return true;
+    if (customBind(action)) return true;
+    const store = getTagStore();
+    if (store.tags.value.some((t) => t.keybind && Keybind.check(event, Keybind.fromJson(t.keybind)))) return false;
+    for (const other of Object.keys(FLOWTAG_ACTION_DEFAULTS) as FlowTagAction[]) {
+        if (other === action) continue;
+        const kb = customBind(other);
+        if (kb && Keybind.check(event, kb)) return false;
+    }
+    return true;
+}
+
 /** prev/next matching; shift on top of the bind extends the multi-selection */
 function navMatches(event: KeyboardEvent, action: 'prev' | 'next'): { extend: boolean } | undefined {
     const kb = customBind(action);
@@ -239,11 +258,11 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         return true;
     }
 
-    if (actionMatches(event, 'stage')) {
+    if (actionFires(event, 'stage')) {
         store.toggleStageSelection();
         return true;
     }
-    if (actionMatches(event, 'skip')) {
+    if (actionFires(event, 'skip')) {
         store.stageSkipCurrent();
         return true;
     }
