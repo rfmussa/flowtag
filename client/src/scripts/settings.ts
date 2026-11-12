@@ -23,6 +23,8 @@ class FlowTagSettings {
     /** Experimental audition analysis: loudness auto-gain, intro/drop/outro
      *  markers, shift+Space plays from the drop. Default off. */
     analysisEnabled: boolean = false;
+    /** One-way tag sync to Tangle. The backend doesn't persist it; the client resends it. */
+    tangleSync: boolean = false;
 
     static fromJson(data: any): FlowTagSettings {
         const s = new FlowTagSettings();
@@ -35,6 +37,7 @@ class FlowTagSettings {
         }
         s.keybinds = keybinds;
         if (typeof safe.analysisEnabled === 'boolean') s.analysisEnabled = safe.analysisEnabled;
+        if (typeof safe.tangleSync === 'boolean') s.tangleSync = safe.tangleSync;
         const cols = (safe.columns && typeof safe.columns === 'object') ? safe.columns : {};
         const columns = { ...DEFAULT_COLUMNS };
         for (const key of Object.keys(DEFAULT_COLUMNS) as (keyof FlowTagColumns)[]) {

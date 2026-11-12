@@ -9,6 +9,7 @@ import { ManualTag } from './manualtag';
 import router from './router';
 import { getTagStore } from './tagstore';
 import { handleFlowKeys } from './flowkeys';
+import { TangleStatus } from '@/lib/tangle';
 
 class OneTagger {
     // Singleton
@@ -25,6 +26,12 @@ class OneTagger {
     taggerStatus: Ref<TaggerStatus> = ref(new TaggerStatus());
     autoTaggerPlaylist: Ref<Playlist> = ref({});
     manualTag: Ref<ManualTag> = ref(new ManualTag());
+    // Tangle sync (backend state; the token is never kept client-side)
+    tangleStatus: Ref<TangleStatus | null> = ref(null);
+    /** Last connect/sync error code from the backend, cleared on success */
+    tangleError: Ref<string | null> = ref(null);
+    /** Latest enable-preview counts; consumed by the enable confirmation */
+    tanglePreview: Ref<{ tags: number, entries: number } | null> = ref(null);
 
     // Websocket
     private ws!: WebSocket;
@@ -268,6 +275,21 @@ class OneTagger {
                 this.platformsLoading.value = false;
                 break;
 
+            // Tangle sync
+            case 'tangleStatus':
+                this.tangleStatus.value = json.status;
+                break;
+            case 'tanglePreview':
+                this.tanglePreview.value = { tags: json.tags, entries: json.entries };
+                break;
+            case 'tangleConnected':
+                this.tangleError.value = null;
+                this.send('tangleStatus');
+                break;
+            case 'tangleError':
+                this.tangleError.value = json.code;
+                break;
+
             // Show notification
             case 'notify':
                 notify({
@@ -418,6 +440,9 @@ class OneTagger {
         this.spotify.value.clientId = this.settings.value.audioFeatures.spotifyClientId;
         this.spotify.value.clientSecret = this.settings.value.audioFeatures.spotifyClientSecret;
 
+        // The backend doesn't persist the Tangle switch: resend it, then ask for state
+        if (this.settings.value.flowtag.tangleSync) this.send('tangleSetEnabled', { enabled: true });
+        this.send('tangleStatus');
     }
 
     // Load autotagger profile

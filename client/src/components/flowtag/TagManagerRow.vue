@@ -152,7 +152,8 @@ async function commitName() {
 async function confirmDelete() {
     const ok = await confirmDialog({
         title: 'Delete tag',
-        message: `Delete "${props.tag.name}"? It will be removed from ${props.tag.count} track(s).`,
+        message: `Delete "${props.tag.name}"? It will be removed from ${props.tag.count} track(s).`
+            + ($1t.settings.value.flowtag.tangleSync ? ' Also deletes it from Tangle.' : ''),
         okLabel: 'Delete',
         destructive: true,
     });

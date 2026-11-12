@@ -89,6 +89,10 @@
                 </Button>
             </div>
 
+            <!-- Tangle -->
+            <div class='ft-label section'>Tangle</div>
+            <TangleSettings />
+
             <!-- Advanced -->
             <div class='ft-label section'>Advanced</div>
             <label class='row-item'>
@@ -128,6 +132,7 @@ import { FLOWTAG_ACTION_DEFAULTS, FLOWTAG_ACTION_LABELS, FIXED_FLOWTAG_CODES } f
 import { Keybind as KeybindClass } from '../scripts/utils';
 import { diag } from '../scripts/diag';
 import Keybind from './Keybind.vue';
+import TangleSettings from './flowtag/TangleSettings.vue';
 
 const props = defineProps({
     modelValue: { type: Boolean, required: true }
