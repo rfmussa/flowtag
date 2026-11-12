@@ -20,10 +20,17 @@ pub struct AIFFSource {
 
 impl AIFFSource {
     // Load from path
-    pub fn new(path: impl AsRef<Path>) -> Result<AIFFSource, Error> { 
+    pub fn new(path: impl AsRef<Path>) -> Result<AIFFSource, Error> {
+        Self::new_with_duration(path, None)
+    }
+
+    /// `duration_ms` (e.g. from the library DB) skips reading the file's metadata
+    pub fn new_with_duration(path: impl AsRef<Path>, duration_ms: Option<u128>) -> Result<AIFFSource, Error> {
         // Get duration
-        let file = lofty::read_from_path(&path)?;
-        let duration = file.properties().duration();
+        let duration = match duration_ms {
+            Some(ms) => Duration::from_millis(ms as u64),
+            None => lofty::read_from_path(&path)?.properties().duration(),
+        };
 
         Ok(AIFFSource {
             path: path.as_ref().to_owned(),
@@ -99,7 +106,7 @@ mod tests {
         let mut ssnd = vec![0u8; 8]; // offset + blockSize
         for f in 0..frames {
             for c in 0..2u16 {
-                ssnd.extend(((f * 10 + c) as i16).to_be_bytes());
+                ssnd.extend((f.wrapping_mul(10).wrapping_add(c) as i16).to_be_bytes());
             }
         }
         let mut body = b"AIFF".to_vec();
@@ -148,5 +155,29 @@ mod tests {
         let second = src.cached().unwrap();
         std::fs::remove_file(&path).ok();
         assert!(Arc::ptr_eq(&first, &second));
+    }
+
+    fn tiny_aiff_file(name: &str, frames: u16) -> PathBuf {
+        let path = std::env::temp_dir().join(format!("flowtag_{name}_{}.aiff", std::process::id()));
+        std::fs::write(&path, tiny_aiff(frames)).unwrap();
+        path
+    }
+
+    #[test]
+    fn supplied_duration_skips_file_metadata() {
+        let path = tiny_aiff_file("supplied", 20);
+        let src = AIFFSource::new_with_duration(&path, Some(1234));
+        std::fs::remove_file(&path).ok();
+        assert_eq!(src.unwrap().duration(), 1234);
+    }
+
+    #[test]
+    fn missing_duration_falls_back_to_lofty() {
+        // 8000 frames at 8kHz = 1s
+        let path = tiny_aiff_file("fallback", 8000);
+        let src = AIFFSource::new_with_duration(&path, None);
+        std::fs::remove_file(&path).ok();
+        let ms = src.unwrap().duration();
+        assert!((900..=1100).contains(&(ms as i64)), "got {ms}ms");
     }
 }

@@ -159,26 +159,31 @@ enum PlayerAction {
 pub struct AudioSources {}
 impl AudioSources {
     pub fn from_path(path: impl AsRef<Path>) -> Result<Box<dyn AudioSource + Send + 'static>, Error> {
+        Self::from_path_with_duration(path, None)
+    }
+
+    /// Like `from_path`, but a known duration (ms, e.g. from the library DB) skips the per-source duration probe
+    pub fn from_path_with_duration(path: impl AsRef<Path>, duration_ms: Option<u128>) -> Result<Box<dyn AudioSource + Send + 'static>, Error> {
         let p = path.as_ref().extension().ok_or(anyhow!("Missing extension"))?.to_ascii_lowercase();
         // MP3
         if p == "mp3" {
-            return Ok(Box::new(mp3::MP3Source::new(path)?));
+            return Ok(Box::new(mp3::MP3Source::new_with_duration(path, duration_ms)?));
         }
         // FLAC
         if p == "flac" {
-            return Ok(Box::new(flac::FLACSource::new(path)?));
+            return Ok(Box::new(flac::FLACSource::new_with_duration(path, duration_ms)?));
         }
         // AIFF
         if p == "aif" || p == "aiff" {
-            return Ok(Box::new(aiff::AIFFSource::new(path)?));
+            return Ok(Box::new(aiff::AIFFSource::new_with_duration(path, duration_ms)?));
         }
         // MP4
         if p == "m4a" || p == "mp4" {
-            return Ok(Box::new(mp4::MP4Source::new(path)?));
+            return Ok(Box::new(mp4::MP4Source::new_with_duration(path, duration_ms)?));
         }
         // WAV
         if p == "wav" {
-            return Ok(Box::new(wav::WAVSource::new(path)?));
+            return Ok(Box::new(wav::WAVSource::new_with_duration(path, duration_ms)?));
         }
         // OGG
         if p == "ogg" || p == "opus" || p == "oga" || p == "spx" {

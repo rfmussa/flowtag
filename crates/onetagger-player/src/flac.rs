@@ -12,12 +12,19 @@ pub struct FLACSource {
 
 impl FLACSource {
     pub fn new(path: impl AsRef<Path>) -> Result<FLACSource, Error> {
+        Self::new_with_duration(path, None)
+    }
+
+    /// `duration_ms` (e.g. from the library DB) skips opening the decoder just to measure
+    pub fn new_with_duration(path: impl AsRef<Path>, duration_ms: Option<u128>) -> Result<FLACSource, Error> {
         let mut flac = FLACSource {
             path: path.as_ref().to_owned(),
-            duration: 0
+            duration: duration_ms.unwrap_or(0)
         };
         // Get duration from decoder
-        flac.duration = flac.get_source()?.total_duration().ok_or(anyhow!("Missing duration"))?.as_millis();
+        if duration_ms.is_none() {
+            flac.duration = flac.get_source()?.total_duration().ok_or(anyhow!("Missing duration"))?.as_millis();
+        }
 
         Ok(flac)
     }

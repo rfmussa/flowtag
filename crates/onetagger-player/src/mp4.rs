@@ -18,6 +18,12 @@ pub struct MP4Source {
 
 impl MP4Source {
     pub fn new(path: impl AsRef<Path>) -> Result<MP4Source, Error> {
+        Self::new_with_duration(path, None)
+    }
+
+    /// MP4 duration comes from the mp4parse pass that also detects ALAC (no lofty read),
+    /// so the hint is accepted for API symmetry but not needed
+    pub fn new_with_duration(path: impl AsRef<Path>, _duration_ms: Option<u128>) -> Result<MP4Source, Error> {
         let file = File::open(&path)?;
         let mp4 = mp4parse::read_mp4(&mut BufReader::new(file))?;
         let track = mp4.tracks.first().ok_or(anyhow!("No MP4 tracks"))?;

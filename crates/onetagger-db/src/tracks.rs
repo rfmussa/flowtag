@@ -250,6 +250,17 @@ pub fn tracks_without_waveform(db: &Db, limit: usize) -> Result<Vec<i64>, Error>
     Ok(ids)
 }
 
+/// Stored duration (ms) of a present track by path; None when unknown, missing or not yet measured
+pub fn duration_ms_for_path(db: &Db, path: &str) -> Result<Option<i64>, Error> {
+    let conn = db.conn();
+    let mut stmt = conn.prepare("SELECT duration_ms FROM tracks WHERE path = ?1 AND missing = 0")?;
+    let mut rows = stmt.query([path])?;
+    match rows.next()? {
+        Some(row) => Ok(row.get(0)?),
+        None => Ok(None),
+    }
+}
+
 /// Update stored duration (filled lazily on first playback)
 pub fn set_duration(db: &Db, track_id: i64, duration_ms: i64) -> Result<(), Error> {
     db.conn().execute(
@@ -271,7 +282,7 @@ pub fn mark_dirty(db: &Db, track_id: i64) -> Result<(), Error> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::test_db;
+    use crate::testutil::{test_db, insert_track};
 
     fn scanned(path: &str, title: &str, tags: &[&str]) -> ScannedTrack {
         ScannedTrack {
@@ -425,5 +436,19 @@ mod tests {
         assert_eq!(pending.len(), 1);
         assert!(!ids.contains(&pending[0]));
         assert_eq!(tracks_without_waveform(&db, 0).unwrap().len(), 0);
+    }
+
+    #[test]
+    fn duration_for_known_path_and_none_for_missing() {
+        let (_dir, db) = test_db();
+        let id = insert_track(&db, "/a.mp3");
+        // Unknown path and NULL duration both give None
+        assert_eq!(duration_ms_for_path(&db, "/nope.mp3").unwrap(), None);
+        assert_eq!(duration_ms_for_path(&db, "/a.mp3").unwrap(), None);
+        db.conn().execute("UPDATE tracks SET duration_ms = 215000 WHERE id = ?1", [id]).unwrap();
+        assert_eq!(duration_ms_for_path(&db, "/a.mp3").unwrap(), Some(215000));
+        // Missing rows are ignored
+        db.conn().execute("UPDATE tracks SET missing = 1 WHERE id = ?1", [id]).unwrap();
+        assert_eq!(duration_ms_for_path(&db, "/a.mp3").unwrap(), None);
     }
 }

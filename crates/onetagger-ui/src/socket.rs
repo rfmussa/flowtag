@@ -201,6 +201,17 @@ pub(crate) fn is_currently_playing(path: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Track duration from the library, if known. A DB problem never blocks playback.
+fn known_duration_ms(db: &onetagger_db::Db, path: &Path) -> Option<u128> {
+    match onetagger_db::tracks::duration_ms_for_path(db, &path.to_string_lossy()) {
+        Ok(ms) => ms.filter(|&ms| ms > 0).map(|ms| ms as u128),
+        Err(e) => {
+            debug!("duration lookup failed for {path:?}: {e}");
+            None
+        }
+    }
+}
+
 fn set_currently_playing(path: &Path) {
     if let Ok(mut p) = CURRENT_PLAYER_PATH.lock() {
         *p = Some(path.to_owned());
@@ -594,7 +605,8 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             // Decoder open touches the file: keep it off the async threads
             let source_start = std::time::Instant::now();
             let log_path = path.clone();
-            let source = tokio::task::spawn_blocking(move || AudioSources::from_path(&path)).await??;
+            let duration_ms = known_duration_ms(&context.db, &path);
+            let source = tokio::task::spawn_blocking(move || AudioSources::from_path_with_duration(&path, duration_ms)).await??;
             context.send(json!({
                 "action": "playerStarted",
                 "duration": source.duration() as u64,
@@ -619,7 +631,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             // Protect the file from the flush worker while it may be held for playback
             set_currently_playing(&path);
             let source_start = std::time::Instant::now();
-            let source = AudioSources::from_path(&path)?;
+            let source = AudioSources::from_path_with_duration(&path, known_duration_ms(&context.db, &path))?;
             // Meta
             let tag = Tag::load_file(&path, false)?;
             let title = tag.tag().get_field(Field::Title).map(|i| i.first().map(String::from)).flatten();
