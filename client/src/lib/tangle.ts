@@ -63,3 +63,15 @@ export function connectErrorText(code: string): string {
         default: return `Tangle error (${code})`;
     }
 }
+
+/** The first preview downloads the whole Tangle library, so give it time */
+export const PREVIEW_TIMEOUT_MS = 120_000;
+
+export function isConnected(s: TangleStatus | null): boolean {
+    return !!s && !!s.user && s.state !== 'noToken';
+}
+
+/** The token field shows when disconnected, and when Tangle rejected the saved token */
+export function needsToken(s: TangleStatus | null): boolean {
+    return !isConnected(s) || s?.state === 'tokenInvalid';
+}

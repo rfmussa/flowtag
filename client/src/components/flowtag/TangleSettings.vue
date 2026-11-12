@@ -1,13 +1,13 @@
 <template>
 <div class='tangle'>
-    <div v-if='!connected' class='row-item'>
+    <div v-if='showToken' class='row-item'>
         <span class='row-label'>Access token</span>
         <span class='bind'>
             <Input v-model='token' type='password' autocomplete='off' placeholder='Paste token' class='token-input' @keydown.enter='connect' />
             <Button variant='default' :disabled='!token.trim() || connecting' @click='connect'>Save</Button>
         </span>
     </div>
-    <div v-else class='row-item'>
+    <div v-if='connected' class='row-item'>
         <span class='row-label'>
             Connected as {{ status?.user }}
             <span class='sub'>{{ status?.matched }} of {{ status?.total }} tracks found in Tangle</span>
@@ -15,11 +15,12 @@
         <Button @click='disconnect'>Disconnect</Button>
     </div>
     <div v-if='errorText' class='note err'>{{ errorText }}</div>
+    <div v-if='previewing' class='note'>Checking Tangle…</div>
     <div v-if='revokeNote' class='note'>Also revoke the token in Tangle's dashboard.</div>
 
     <label class='row-item'>
         <span class='row-label'>Sync tags to Tangle</span>
-        <Switch :model-value='$1t.settings.value.flowtag.tangleSync' :disabled='!connected' @update:model-value='toggle' />
+        <Switch :model-value='$1t.settings.value.flowtag.tangleSync' :disabled='!connected || previewing' @update:model-value='toggle' />
     </label>
 
     <div v-if='status' class='row-item status'>
@@ -41,10 +42,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { confirmDialog } from '@/lib/dialogs';
-import { connectErrorText, statusLine, unmatchedLine } from '@/lib/tangle';
+import { connectErrorText, isConnected, needsToken, PREVIEW_TIMEOUT_MS, statusLine, unmatchedLine } from '@/lib/tangle';
 import { get1t } from '../../scripts/onetagger';
-
-const PREVIEW_TIMEOUT_MS = 10_000;
 
 const $1t = get1t();
 const token = ref('');
@@ -54,9 +53,12 @@ const now = ref(Math.floor(Date.now() / 1000));
 let timer: ReturnType<typeof setInterval> | undefined;
 
 const status = computed(() => $1t.tangleStatus.value);
-const connected = computed(() => !!status.value?.user && status.value.state !== 'noToken');
+const connected = computed(() => isConnected(status.value));
+const showToken = computed(() => needsToken(status.value));
+const previewing = ref(false);
+const localError = ref('');
 const unmatched = computed(() => (status.value ? unmatchedLine(status.value) : ''));
-const errorText = computed(() => ($1t.tangleError.value ? connectErrorText($1t.tangleError.value) : ''));
+const errorText = computed(() => localError.value || ($1t.tangleError.value ? connectErrorText($1t.tangleError.value) : ''));
 
 onMounted(() => {
     $1t.send('tangleStatus');
@@ -72,6 +74,7 @@ function connect() {
     if (!value) return;
     connecting.value = true;
     revokeNote.value = false;
+    localError.value = '';
     $1t.tangleError.value = null;
     $1t.send('tangleConnect', { token: value });
     token.value = '';
@@ -90,25 +93,33 @@ function setSync(enabled: boolean) {
     $1t.send('tangleSetEnabled', { enabled });
 }
 
-/** Ask the backend how much enabling would create; null on timeout */
-function requestPreview(): Promise<{ tags: number, entries: number } | null> {
+type PreviewResult = { tags: number, entries: number } | { error: string };
+
+/** Ask the backend how much enabling would create; ends early on a tangleError */
+function requestPreview(): Promise<PreviewResult> {
     return new Promise((resolve) => {
         $1t.tanglePreview.value = null;
-        const stop = watch($1t.tanglePreview, (p) => {
-            if (!p) return;
-            clearTimeout(timeout);
-            stop();
-            resolve(p);
+        $1t.tangleError.value = null;
+        const finish = (r: PreviewResult) => { clearTimeout(timeout); stop(); resolve(r); };
+        const stop = watch([$1t.tanglePreview, $1t.tangleError], ([p, err]) => {
+            if (err) finish({ error: connectErrorText(err) });
+            else if (p) finish(p);
         });
-        const timeout = setTimeout(() => { stop(); resolve(null); }, PREVIEW_TIMEOUT_MS);
+        const timeout = setTimeout(() => finish({ error: "Tangle didn't answer. Try again." }), PREVIEW_TIMEOUT_MS);
         $1t.send('tanglePreview');
     });
 }
 
 async function toggle(on: boolean) {
     if (!on) return setSync(false);
-    const preview = await requestPreview();
-    if (!preview) return;
+    if (previewing.value) return;
+    localError.value = '';
+    previewing.value = true;
+    const preview = await requestPreview().finally(() => { previewing.value = false; });
+    if ('error' in preview) {
+        localError.value = preview.error;
+        return;
+    }
     const ok = await confirmDialog({
         title: 'Sync tags to Tangle',
         message: `This creates ${preview.tags} tags in Tangle and adds ${preview.entries} tracks to them.`,

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { connectErrorText, statusLine, unmatchedLine, TangleStatus } from './tangle';
+import { connectErrorText, isConnected, needsToken, PREVIEW_TIMEOUT_MS, statusLine, unmatchedLine, TangleStatus } from './tangle';
 
 const NOW = 1_800_000_000;
 
@@ -66,5 +66,22 @@ describe('connectErrorText', () => {
     });
     it('falls back to the code', () => {
         expect(connectErrorText('rate_limited')).toBe('Tangle error (rate_limited)');
+    });
+});
+
+describe('connection state', () => {
+    it('is connected when a user is present and a token exists', () => {
+        expect(isConnected(status())).toBe(true);
+        expect(isConnected(status({ state: 'noToken', user: null }))).toBe(false);
+        expect(isConnected(null)).toBe(false);
+    });
+    it('asks for a token when not connected or when the token expired', () => {
+        expect(needsToken(null)).toBe(true);
+        expect(needsToken(status({ state: 'noToken', user: null }))).toBe(true);
+        expect(needsToken(status({ state: 'tokenInvalid' }))).toBe(true);
+        expect(needsToken(status())).toBe(false);
+    });
+    it('waits long enough for the first preview download', () => {
+        expect(PREVIEW_TIMEOUT_MS).toBe(120_000);
     });
 });
