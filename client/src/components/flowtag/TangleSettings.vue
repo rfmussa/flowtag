@@ -9,7 +9,7 @@
     </div>
     <div v-if='connected' class='row-item'>
         <span class='row-label'>
-            Connected as {{ status?.user }}
+            Connected as {{ user }}
             <span class='sub'>{{ status?.matched }} of {{ status?.total }} tracks found in Tangle</span>
         </span>
         <Button @click='disconnect'>Disconnect</Button>
@@ -42,7 +42,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { confirmDialog } from '@/lib/dialogs';
-import { connectErrorText, isConnected, needsToken, PREVIEW_TIMEOUT_MS, statusLine, unmatchedLine } from '@/lib/tangle';
+import { connectedUser, connectErrorText, isConnected, needsToken, PREVIEW_TIMEOUT_MS, statusLine, unmatchedLine } from '@/lib/tangle';
 import { get1t } from '../../scripts/onetagger';
 
 const $1t = get1t();
@@ -53,8 +53,9 @@ const now = ref(Math.floor(Date.now() / 1000));
 let timer: ReturnType<typeof setInterval> | undefined;
 
 const status = computed(() => $1t.tangleStatus.value);
-const connected = computed(() => isConnected(status.value));
-const showToken = computed(() => needsToken(status.value));
+const user = computed(() => connectedUser(status.value, $1t.tangleUser.value));
+const connected = computed(() => isConnected(status.value, $1t.tangleUser.value));
+const showToken = computed(() => needsToken(status.value, $1t.tangleUser.value));
 const previewing = ref(false);
 const localError = ref('');
 const unmatched = computed(() => (status.value ? unmatchedLine(status.value) : ''));
@@ -66,8 +67,10 @@ onMounted(() => {
 });
 onUnmounted(() => clearInterval(timer));
 
-// A reply (success or error) ends the connecting state
-watch([() => $1t.tangleError.value, () => status.value?.user], () => { connecting.value = false; });
+// A reply (tangleConnected or tangleError) ends the connecting state; connect() clearing both does not
+watch([() => $1t.tangleError.value, () => $1t.tangleUser.value], ([err, connectedAs]) => {
+    if (err || connectedAs) connecting.value = false;
+});
 
 function connect() {
     const value = token.value.trim();
@@ -76,11 +79,14 @@ function connect() {
     revokeNote.value = false;
     localError.value = '';
     $1t.tangleError.value = null;
+    // Cleared so a reply naming the same user still registers as a change
+    $1t.tangleUser.value = null;
     $1t.send('tangleConnect', { token: value });
     token.value = '';
 }
 
 function disconnect() {
+    $1t.tangleUser.value = null;
     $1t.send('tangleDisconnect');
     setSync(false);
     revokeNote.value = true;

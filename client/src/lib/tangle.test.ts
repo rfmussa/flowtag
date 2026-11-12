@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { connectErrorText, isConnected, needsToken, PREVIEW_TIMEOUT_MS, statusLine, unmatchedLine, TangleStatus } from './tangle';
+import { connectedUser, connectErrorText, isConnected, needsToken, PREVIEW_TIMEOUT_MS, statusLine, unmatchedLine, TangleStatus } from './tangle';
 
 const NOW = 1_800_000_000;
 
@@ -50,9 +50,13 @@ describe('statusLine', () => {
 
 describe('unmatchedLine', () => {
     it('uses singular and plural copy, empty for zero', () => {
-        expect(unmatchedLine(status({ unmatchedPaths: ['a'] }))).toBe("1 track isn't in Tangle");
-        expect(unmatchedLine(status({ unmatchedPaths: ['a', 'b', 'c', 'd', 'e', 'f'] }))).toBe("6 tracks aren't in Tangle");
+        expect(unmatchedLine(status({ matched: 9, unmatchedPaths: ['a'] }))).toBe("1 track isn't in Tangle");
+        expect(unmatchedLine(status({ matched: 4, unmatchedPaths: ['a', 'b', 'c', 'd', 'e', 'f'] }))).toBe("6 tracks aren't in Tangle");
         expect(unmatchedLine(status())).toBe('');
+    });
+    it('counts every unmatched track, not just the 50 listed paths', () => {
+        const paths = Array.from({ length: 50 }, (_, i) => `/m/${i}.mp3`);
+        expect(unmatchedLine(status({ matched: 10, total: 120, unmatchedPaths: paths }))).toBe("110 tracks aren't in Tangle");
     });
 });
 
@@ -80,6 +84,19 @@ describe('connection state', () => {
         expect(needsToken(status({ state: 'noToken', user: null }))).toBe(true);
         expect(needsToken(status({ state: 'tokenInvalid' }))).toBe(true);
         expect(needsToken(status())).toBe(false);
+    });
+    it('uses the user from tangleConnected until the status has one', () => {
+        const off = status({ state: 'disabled', user: null });
+        expect(connectedUser(off, 'dj')).toBe('dj');
+        expect(isConnected(off, 'dj')).toBe(true);
+        expect(needsToken(off, 'dj')).toBe(false);
+        expect(isConnected(off, null)).toBe(false);
+        expect(connectedUser(status({ user: 'worker' }), 'dj')).toBe('worker');
+    });
+    it('ignores the tangleConnected user once the token is gone or rejected', () => {
+        expect(connectedUser(status({ state: 'noToken', user: null }), 'dj')).toBe(null);
+        expect(needsToken(status({ state: 'tokenInvalid', user: null }), 'dj')).toBe(true);
+        expect(connectedUser(null, 'dj')).toBe(null);
     });
     it('waits long enough for the first preview download', () => {
         expect(PREVIEW_TIMEOUT_MS).toBe(120_000);

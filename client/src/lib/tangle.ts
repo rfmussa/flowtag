@@ -47,8 +47,9 @@ export function statusLine(s: TangleStatus, now: number): string {
     return `Synced · ${ago(s.lastSyncedAt, now)}`;
 }
 
+/** Counts every unmatched track; `unmatchedPaths` lists only the first 50 (for the hover) */
 export function unmatchedLine(s: TangleStatus): string {
-    const n = s.unmatchedPaths.length;
+    const n = Math.max(0, s.total - s.matched);
     if (n === 0) return '';
     return n === 1 ? "1 track isn't in Tangle" : `${n} tracks aren't in Tangle`;
 }
@@ -67,11 +68,20 @@ export function connectErrorText(code: string): string {
 /** The first preview downloads the whole Tangle library, so give it time */
 export const PREVIEW_TIMEOUT_MS = 120_000;
 
-export function isConnected(s: TangleStatus | null): boolean {
-    return !!s && !!s.user && s.state !== 'noToken';
+/**
+ * Who is connected: the worker's user, else `connectedAs` (the user `tangleConnected`
+ * reported, which arrives before the worker has asked Tangle itself)
+ */
+export function connectedUser(s: TangleStatus | null, connectedAs: string | null): string | null {
+    if (!s || s.state === 'noToken') return null;
+    return s.user ?? connectedAs;
+}
+
+export function isConnected(s: TangleStatus | null, connectedAs: string | null = null): boolean {
+    return connectedUser(s, connectedAs) != null;
 }
 
 /** The token field shows when disconnected, and when Tangle rejected the saved token */
-export function needsToken(s: TangleStatus | null): boolean {
-    return !isConnected(s) || s?.state === 'tokenInvalid';
+export function needsToken(s: TangleStatus | null, connectedAs: string | null = null): boolean {
+    return !isConnected(s, connectedAs) || s?.state === 'tokenInvalid';
 }

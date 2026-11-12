@@ -30,6 +30,8 @@ class OneTagger {
     tangleStatus: Ref<TangleStatus | null> = ref(null);
     /** Last connect/sync error code from the backend, cleared on success */
     tangleError: Ref<string | null> = ref(null);
+    /** User name from the last `tangleConnected` reply; cleared on disconnect */
+    tangleUser: Ref<string | null> = ref(null);
     /** Latest enable-preview counts; consumed by the enable confirmation */
     tanglePreview: Ref<{ tags: number, entries: number } | null> = ref(null);
 
@@ -284,6 +286,7 @@ class OneTagger {
                 break;
             case 'tangleConnected':
                 this.tangleError.value = null;
+                this.tangleUser.value = json.user ?? null;
                 this.send('tangleStatus');
                 break;
             case 'tangleError':
