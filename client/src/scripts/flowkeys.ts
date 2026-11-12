@@ -42,12 +42,16 @@ export const FLOWTAG_ACTION_LABELS: Record<FlowTagAction, string> = {
     skip: 'Skip current track at commit',
 };
 
+/** Digit / numpad codes → the tenth of the track they seek to (0 = start … 9 = 90%) */
+const SEEK_DIGITS: Record<string, number> = Object.fromEntries(
+    Array.from({ length: 10 }, (_, d) => [[`Digit${d}`, d], [`Numpad${d}`, d]]).flat(),
+);
+
 /** Key codes FlowTag always claims, regardless of configuration */
 export const FIXED_FLOWTAG_CODES = [
     'Space',
     'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight',
-    'Digit0', 'Digit1', 'Digit2', 'Digit3',
-    'Numpad0', 'Numpad1', 'Numpad2', 'Numpad3',
+    ...Object.keys(SEEK_DIGITS),
     'Escape', 'Tab',
 ];
 
@@ -126,7 +130,7 @@ function navMatches(event: KeyboardEvent, action: 'prev' | 'next'): { extend: bo
  * caller then prevents default).
  *
  * Fixed:        Space play/pause · ↑/↓ select (shift extends) ·
- *               ←/→ seek -10s/+30s · 1/2/3 seek 25/50/75% · 0 seek start ·
+ *               ←/→ seek -10s/+30s · 0–9 seek to that tenth of the track ·
  *               Esc clear multi-select · ⌘Z undo · ⌘Enter commit sheet
  * Remappable:   prev J · next K · focus tag input T · focus filter F ·
  *               done D · edit metadata E · online lookup M ·
@@ -140,6 +144,13 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     const $1t = get1t();
     const store = getTagStore();
     const player = $1t.player.value;
+
+    // Digits jump to tenths of the track (YouTube-style: 0 = start … 9 = 90%)
+    const digit = SEEK_DIGITS[event.code];
+    if (digit !== undefined) {
+        player.seek(Math.round(player.duration * digit / 10));
+        return true;
+    }
 
     // Fixed transport keys work with or without a selection
     switch (event.code) {
@@ -187,22 +198,6 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
             return true;
         case 'ArrowRight':
             player.seek(Math.min(player.position + 30_000, player.duration));
-            return true;
-        case 'Digit0':
-        case 'Numpad0':
-            player.seek(0);
-            return true;
-        case 'Digit1':
-        case 'Numpad1':
-            player.seek(Math.round(player.duration * 0.25));
-            return true;
-        case 'Digit2':
-        case 'Numpad2':
-            player.seek(Math.round(player.duration * 0.5));
-            return true;
-        case 'Digit3':
-        case 'Numpad3':
-            player.seek(Math.round(player.duration * 0.75));
             return true;
         // NOTE: Tab is deliberately NOT bound — it keeps normal focus navigation
     }

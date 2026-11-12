@@ -2,8 +2,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const settings = vi.hoisted(() => ({ keybinds: {} as Record<string, unknown> }));
 const send = vi.hoisted(() => vi.fn());
+const playerStub = vi.hoisted(() => ({} as Record<string, unknown>));
 vi.mock('@/scripts/onetagger', () => ({
-    get1t: () => ({ send, settings: { value: { flowtag: settings } }, player: { value: {} } }),
+    get1t: () => ({ send, settings: { value: { flowtag: settings } }, player: { value: playerStub } }),
 }));
 vi.mock('@/lib/notify', () => ({ notify: () => undefined }));
 
@@ -22,6 +23,22 @@ function tag(keybind?: { key: string; ctrl?: boolean; alt?: boolean; shift?: boo
 beforeEach(() => {
     settings.keybinds = {};
     getTagStore().tags.value = [];
+});
+
+describe('digit seek', () => {
+    afterEach(() => vi.unstubAllGlobals());
+
+    it('every_digit_seeks_to_its_tenth_of_the_track', () => {
+        vi.stubGlobal('document', { querySelector: () => null });
+        const seek = vi.fn();
+        Object.assign(playerStub, { seek, duration: 200_000, position: 0 });
+        expect(handleFlowKeys(key('Digit7') as KeyboardEvent)).toBe(true);
+        expect(seek).toHaveBeenLastCalledWith(140_000);
+        handleFlowKeys(key('Numpad4') as KeyboardEvent);
+        expect(seek).toHaveBeenLastCalledWith(80_000);
+        handleFlowKeys(key('Digit0') as KeyboardEvent);
+        expect(seek).toHaveBeenLastCalledWith(0);
+    });
 });
 
 describe('default stage/skip bindings yield', () => {
