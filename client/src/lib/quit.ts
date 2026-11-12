@@ -3,7 +3,8 @@ export interface QuitDeps {
     readonly readyIds: number[];
     /** A tagging run holds the app: the existing guard owns the exit */
     readonly taggingRunning: boolean;
-    readonly confirm: () => Promise<boolean>;
+    /** ok = Commit & quit; cancel = Quit anyway; dismiss = stay in the app */
+    readonly confirm: () => Promise<'ok' | 'cancel' | 'dismiss'>;
     /** Commit the ids and wait (bounded) for the server */
     readonly commitAndWait: (ids: number[]) => Promise<void>;
     readonly forceExit: () => void;
@@ -11,13 +12,16 @@ export interface QuitDeps {
 }
 
 /** Offer to commit ready staged tracks before quitting. Once the user chose
- *  "Commit & quit" the app always quits, whatever the commit does. */
+ *  "Commit & quit" the app always quits, whatever the commit does; "Quit
+ *  anyway" takes the normal exit; dismissing the prompt aborts the quit. */
 export async function runQuitFlow(d: QuitDeps): Promise<void> {
     if (d.taggingRunning || d.stageReady <= 0 || d.readyIds.length === 0) {
         d.exitNormally();
         return;
     }
-    if (!(await d.confirm())) {
+    const choice = await d.confirm();
+    if (choice === 'dismiss') return;
+    if (choice === 'cancel') {
         d.exitNormally();
         return;
     }

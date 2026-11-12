@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { alertDialog, confirmDialog, currentDialog, promptDialog, resetDialogs, settleDialog } from './dialogs';
+import { alertDialog, choiceDialog, confirmDialog, currentDialog, promptDialog, resetDialogs, settleDialog } from './dialogs';
 
 beforeEach(() => resetDialogs());
 
@@ -18,9 +18,32 @@ describe('confirmDialog', () => {
         await expect(result).resolves.toBe(false);
     });
 
+    it('resolves false when dismissed (Esc)', async () => {
+        const result = confirmDialog({ title: 'Remove folder?' });
+        settleDialog(currentDialog.value!.id, null);
+        await expect(result).resolves.toBe(false);
+    });
+
     it('defaults the button labels', () => {
         confirmDialog({ title: 'X' });
         expect(currentDialog.value).toMatchObject({ okLabel: 'OK', cancelLabel: 'Cancel', destructive: false });
+    });
+});
+
+describe('choiceDialog', () => {
+    it('tells ok, the cancel button and a dismiss apart', async () => {
+        const ok = choiceDialog({ title: 'Quit?' });
+        settleDialog(currentDialog.value!.id, true);
+        await expect(ok).resolves.toBe('ok');
+
+        const cancel = choiceDialog({ title: 'Quit?' });
+        settleDialog(currentDialog.value!.id, false);
+        await expect(cancel).resolves.toBe('cancel');
+
+        const dismiss = choiceDialog({ title: 'Quit?' });
+        expect(currentDialog.value).toMatchObject({ kind: 'confirm' });
+        settleDialog(currentDialog.value!.id, null);
+        await expect(dismiss).resolves.toBe('dismiss');
     });
 });
 

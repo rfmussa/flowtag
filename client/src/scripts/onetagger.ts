@@ -1,5 +1,5 @@
 import { notify } from '@/lib/notify';
-import { alertDialog, confirmDialog } from '@/lib/dialogs';
+import { alertDialog, choiceDialog, confirmDialog } from '@/lib/dialogs';
 import { ref, Ref } from 'vue';
 import { AutotaggerConfig, AutotaggerPlatform, ConfigCallbackResponse, TaggerStatus } from './autotagger';
 import { Player } from './player';
@@ -481,9 +481,10 @@ class OneTagger {
             stageReady: store.stageReady.value,
             readyIds: store.stageRows.value.filter((r) => r.ready).map((r) => r.trackId),
             taggingRunning: this.lock.value.locked && !this.taggerStatus.value.done,
-            confirm: () => confirmDialog({
+            confirm: () => choiceDialog({
                 title: `Commit ${store.stageReady.value} ready staged tracks first?`,
                 okLabel: 'Commit & quit',
+                cancelLabel: 'Quit anyway',
             }),
             commitAndWait: (ids) => store.commitStageAndWait(ids, 5000),
             forceExit: () => this.forceExit(),

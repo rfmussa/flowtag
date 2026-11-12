@@ -6,7 +6,7 @@ function deps(over: Partial<QuitDeps> = {}): QuitDeps {
         stageReady: 3,
         readyIds: [1, 2, 3],
         taggingRunning: false,
-        confirm: vi.fn().mockResolvedValue(true),
+        confirm: vi.fn().mockResolvedValue('ok'),
         commitAndWait: vi.fn().mockResolvedValue(undefined),
         forceExit: vi.fn(),
         exitNormally: vi.fn(),
@@ -35,11 +35,20 @@ describe('runQuitFlow', () => {
         expect(d.forceExit).toHaveBeenCalledOnce();
     });
 
-    it('declined_falls_through_to_the_normal_exit', async () => {
-        const d = deps({ confirm: vi.fn().mockResolvedValue(false) });
+    it('quit_anyway_falls_through_to_the_normal_exit', async () => {
+        const d = deps({ confirm: vi.fn().mockResolvedValue('cancel') });
         await runQuitFlow(d);
         expect(d.commitAndWait).not.toHaveBeenCalled();
         expect(d.exitNormally).toHaveBeenCalledOnce();
+        expect(d.forceExit).not.toHaveBeenCalled();
+    });
+
+    it('dismissed_stays_in_the_app', async () => {
+        const d = deps({ confirm: vi.fn().mockResolvedValue('dismiss') });
+        await runQuitFlow(d);
+        expect(d.commitAndWait).not.toHaveBeenCalled();
+        expect(d.exitNormally).not.toHaveBeenCalled();
+        expect(d.forceExit).not.toHaveBeenCalled();
     });
 
     it('skips_the_offer_while_tagging_runs', async () => {

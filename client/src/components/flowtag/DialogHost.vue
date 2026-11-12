@@ -1,6 +1,6 @@
 <template>
 <AlertDialog :open='!!request'>
-    <AlertDialogContent v-if='request' :key='request.id' @open-auto-focus='focusFirst' @escape-key-down='cancel'>
+    <AlertDialogContent v-if='request' :key='request.id' @open-auto-focus='focusFirst' @escape-key-down='dismiss'>
         <AlertDialogHeader>
             <AlertDialogTitle>{{ request.title }}</AlertDialogTitle>
             <AlertDialogDescription v-if='request.message' class='break-words'>{{ request.message }}</AlertDialogDescription>
@@ -48,5 +48,10 @@ function ok() {
 function cancel() {
     const r = request.value;
     if (r) settleDialog(r.id, r.kind === 'alert');
+}
+/** Esc: alerts just close; confirms and prompts settle as dismissed */
+function dismiss() {
+    const r = request.value;
+    if (r) settleDialog(r.id, r.kind === 'alert' ? true : null);
 }
 </script>

@@ -35,8 +35,12 @@ export interface DialogRequest {
     readonly placeholder?: string;
 }
 
-/** OK carries the prompt's text (or true); cancel / dismiss is false */
-export type DialogResult = string | boolean;
+/** OK carries the prompt's text (or true); the cancel button is false;
+ *  a dismiss (Esc) is null */
+export type DialogResult = string | boolean | null;
+
+/** Which way a confirm was settled: OK, the cancel button, or dismissed */
+export type DialogChoice = 'ok' | 'cancel' | 'dismiss';
 
 interface Pending {
     readonly request: DialogRequest;
@@ -73,8 +77,16 @@ export function settleDialog(id: number, result: DialogResult): void {
     pending.resolve(result);
 }
 
+/** true on OK; the cancel button and a dismiss are both false */
 export async function confirmDialog(opts: DialogOptions): Promise<boolean> {
-    return (await enqueue('confirm', opts)) !== false;
+    return (await choiceDialog(opts)) === 'ok';
+}
+
+/** A confirm that tells the cancel button apart from a dismiss (Esc) */
+export async function choiceDialog(opts: DialogOptions): Promise<DialogChoice> {
+    const result = await enqueue('confirm', opts);
+    if (result === null) return 'dismiss';
+    return result === false ? 'cancel' : 'ok';
 }
 
 /** The trimmed text, or undefined when cancelled or left blank */
