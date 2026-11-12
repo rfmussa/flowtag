@@ -44,6 +44,35 @@ fn add_folder_name(tx: &Transaction) -> HookResult {
     Ok(())
 }
 
+/// v10: `tags.id` has no AUTOINCREMENT, so SQLite hands a deleted max id to the
+/// next new tag. Move a deleted tag's Tangle bookkeeping to a fresh negative id
+/// (never a `tags.id`) so the sync deletes its old list instead of renaming it
+/// for the new tag. The offset exceeds every |tag_id| in `tangle_tags`, and sent
+/// rows only exist for linked tags, so the new id is unique in both tables.
+const TANGLE_TAG_DELETED_TRIGGER: &str = "
+    CREATE TRIGGER IF NOT EXISTS tangle_tag_deleted AFTER DELETE ON tags
+    WHEN EXISTS (SELECT 1 FROM tangle_tags WHERE tag_id = OLD.id)
+    BEGIN
+        UPDATE tangle_sent
+            SET tag_id = -(OLD.id + (SELECT MAX(ABS(tag_id)) FROM tangle_tags))
+            WHERE tag_id = OLD.id;
+        UPDATE tangle_tags
+            SET tag_id = -(OLD.id + (SELECT MAX(ABS(tag_id)) FROM tangle_tags))
+            WHERE tag_id = OLD.id;
+    END;
+";
+
+/// v10 hook: re-key bookkeeping of tags already deleted before the trigger existed, then add it.
+fn rekey_deleted_tangle_tags(tx: &Transaction) -> HookResult {
+    let offset: i64 =
+        tx.query_row("SELECT COALESCE(MAX(ABS(tag_id)), 0) FROM tangle_tags", [], |r| r.get(0))?;
+    let orphans = "tag_id > 0 AND tag_id NOT IN (SELECT id FROM tags)";
+    tx.execute(&format!("UPDATE tangle_sent SET tag_id = -(tag_id + ?1) WHERE {orphans}"), [offset])?;
+    tx.execute(&format!("UPDATE tangle_tags SET tag_id = -(tag_id + ?1) WHERE {orphans}"), [offset])?;
+    tx.execute_batch(TANGLE_TAG_DELETED_TRIGGER)?;
+    Ok(())
+}
+
 /// The ordered migration list. `rusqlite_migration` records progress in
 /// `PRAGMA user_version` (number of migrations applied), the same counter the
 /// previous hand-rolled runner used, so existing libraries carry over as-is.
@@ -167,6 +196,8 @@ pub fn migrations() -> Migrations<'static> {
                 PRIMARY KEY (tag_id, item_id)
             );
         "),
+        // v10: a deleted tag's Tangle rows move to a negative id (see the trigger)
+        M::up_with_hook("", rekey_deleted_tangle_tags),
     ])
 }
 
@@ -272,9 +303,76 @@ mod tests {
         ).unwrap();
         conn.execute("DELETE FROM tags WHERE id = ?1", [tag_id]).unwrap();
         let remaining: i64 = conn
-            .query_row("SELECT COUNT(*) FROM tangle_tags WHERE tag_id = ?1", [tag_id], |r| r.get(0))
+            .query_row("SELECT COUNT(*) FROM tangle_tags WHERE list_id = 'lst_1'", [], |r| r.get(0))
             .unwrap();
         assert_eq!(remaining, 1, "tangle_tags row must survive tag deletion");
+    }
+
+    fn tangle_ids(conn: &rusqlite::Connection, table: &str) -> Vec<i64> {
+        conn.prepare(&format!("SELECT tag_id FROM {table} ORDER BY tag_id")).unwrap()
+            .query_map([], |r| r.get(0)).unwrap()
+            .collect::<Result<_, _>>().unwrap()
+    }
+
+    /// v10: deleting a tag moves its Tangle rows to a negative id that no
+    /// new tag can take, so a reused tags.id starts with no Tangle link.
+    #[test]
+    fn v10_deleted_tag_rows_move_to_unique_negative_ids() {
+        let (_dir, db) = crate::testutil::test_db();
+        let conn = db.conn();
+        for (name, list) in [("a", "lst_a"), ("b", "lst_b")] {
+            conn.execute("INSERT INTO tags (name) VALUES (?1)", [name]).unwrap();
+            let id = conn.last_insert_rowid();
+            conn.execute(
+                "INSERT INTO tangle_tags (tag_id, list_id, sent_name) VALUES (?1, ?2, ?3)",
+                rusqlite::params![id, list, name],
+            ).unwrap();
+            conn.execute("INSERT INTO tangle_sent (tag_id, item_id) VALUES (?1, 'trk_1')", [id]).unwrap();
+        }
+        // Delete b (the max id) twice over: reuse its id, then delete again.
+        conn.execute("DELETE FROM tags WHERE name = 'b'", []).unwrap();
+        conn.execute("INSERT INTO tags (name) VALUES ('c')", []).unwrap();
+        let c = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO tangle_tags (tag_id, list_id, sent_name) VALUES (?1, 'lst_c', 'c')", [c],
+        ).unwrap();
+        conn.execute("INSERT INTO tangle_sent (tag_id, item_id) VALUES (?1, 'trk_1')", [c]).unwrap();
+        conn.execute("DELETE FROM tags WHERE id = ?1", [c]).unwrap();
+
+        let tags = tangle_ids(&conn, "tangle_tags");
+        assert_eq!(tags.len(), 3);
+        assert_eq!(tags.iter().filter(|id| **id < 0).count(), 2, "{tags:?}");
+        assert!(!tags.contains(&c), "the reused id must carry no link: {tags:?}");
+        assert_eq!(tangle_ids(&conn, "tangle_sent"), tags, "sent rows follow their link");
+    }
+
+    /// v10 also re-keys rows of tags deleted before the trigger existed.
+    #[test]
+    fn v10_rekeys_rows_orphaned_before_upgrade() {
+        let (_dir, db) = crate::testutil::test_db();
+        let mut conn = db.conn();
+        conn.execute("DROP TRIGGER tangle_tag_deleted", []).unwrap();
+        conn.execute("INSERT INTO tags (name) VALUES ('kept')", []).unwrap();
+        let kept = conn.last_insert_rowid();
+        for (id, list) in [(kept, "lst_k"), (kept + 1, "lst_gone")] {
+            conn.execute(
+                "INSERT INTO tangle_tags (tag_id, list_id, sent_name) VALUES (?1, ?2, 'x')",
+                rusqlite::params![id, list],
+            ).unwrap();
+            conn.execute("INSERT INTO tangle_sent (tag_id, item_id) VALUES (?1, 'trk_1')", [id]).unwrap();
+        }
+        conn.pragma_update(None, "user_version", 9).unwrap();
+        super::migrate(&mut conn).unwrap();
+
+        let gone: i64 = conn
+            .query_row("SELECT tag_id FROM tangle_tags WHERE list_id = 'lst_gone'", [], |r| r.get(0))
+            .unwrap();
+        assert!(gone < 0, "orphan re-keyed: {gone}");
+        assert_eq!(tangle_ids(&conn, "tangle_sent"), vec![gone, kept]);
+        let trigger = conn
+            .prepare("SELECT 1 FROM sqlite_master WHERE type = 'trigger' AND name = 'tangle_tag_deleted'").unwrap()
+            .exists([]).unwrap();
+        assert!(trigger);
     }
 
     #[test]

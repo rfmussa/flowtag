@@ -95,7 +95,8 @@ fn deleted_tag_yields_list_delete() {
     let d = tags_to_delete(&c).unwrap();
     assert_eq!(d.len(), 1);
     assert_eq!(d[0].list_id, "lst_1");
-    forget_tag(&c, tag).unwrap();
+    assert!(d[0].tag_id < 0, "a deleted tag's link moves off its reusable id");
+    forget_tag(&c, d[0].tag_id).unwrap();
     assert!(tags_to_delete(&c).unwrap().is_empty());
     let sent: i64 = c.query_row("SELECT COUNT(*) FROM tangle_sent", [], |r| r.get(0)).unwrap();
     assert_eq!(sent, 0);
@@ -228,10 +229,12 @@ fn unlinked_tags_lists_name_or_sent_name() {
     mark_unlinked(&c, kept).unwrap();
     mark_unlinked(&c, gone).unwrap();
     c.execute("DELETE FROM tags WHERE id = ?1", [gone]).unwrap();
-    assert_eq!(
-        unlinked_tags(&c).unwrap(),
-        vec![(kept, "dark".to_string()), (gone, "old".to_string())]
-    );
+    let unlinked = unlinked_tags(&c).unwrap();
+    assert_eq!(unlinked.len(), 2);
+    // The deleted tag's row was re-keyed to a negative id and shows its sent name.
+    assert!(unlinked[0].0 < 0);
+    assert_eq!(unlinked[0].1, "old");
+    assert_eq!(unlinked[1], (kept, "dark".to_string()));
 }
 
 #[test]

@@ -3,10 +3,10 @@
 //! Each phase recomputes its diff; the DB is updated after every confirmed request
 //! and the connection lock is never held across HTTP.
 
-use crate::client::Client;
+use crate::client::{Client, ListPatch};
 use crate::error::TangleError;
 use crate::matcher::db_error;
-use crate::store::{self, Entries};
+use crate::store::{self, Entries, Linked, TagRow};
 use onetagger_db::Db;
 use rusqlite::Connection;
 use std::time::Duration;
@@ -87,7 +87,7 @@ fn delete_lists(db: &Db, client: &Client, p: &mut Pacer, rep: &mut PassReport) -
 fn update_lists(db: &Db, client: &Client, p: &mut Pacer, rep: &mut PassReport) -> Res<()> {
     for (linked, tag) in with_db(db, store::tags_to_update)? {
         p.wait();
-        match client.update_list(&linked.list_id, &tag.name, Some(&tag.color), tag.group.as_deref()) {
+        match client.update_list(&linked.list_id, &changed_fields(&linked, &tag)) {
             Ok(()) => {
                 with_db(db, |c| store::mark_updated(c, &tag))?;
                 rep.updated += 1;
@@ -97,6 +97,15 @@ fn update_lists(db: &Db, client: &Client, p: &mut Pacer, rep: &mut PassReport) -
         }
     }
     Ok(())
+}
+
+/// Only what FlowTag changed since the last send: Tangle-side edits to other fields stay.
+fn changed_fields<'a>(sent: &Linked, tag: &'a TagRow) -> ListPatch<'a> {
+    ListPatch {
+        name: (tag.name != sent.sent_name).then_some(tag.name.as_str()),
+        color: (sent.sent_color.as_deref() != Some(tag.color.as_str())).then_some(tag.color.as_str()),
+        group: (tag.group != sent.sent_group).then_some(tag.group.as_deref()),
+    }
 }
 
 fn create_lists(db: &Db, client: &Client, p: &mut Pacer, rep: &mut PassReport) -> Res<()> {

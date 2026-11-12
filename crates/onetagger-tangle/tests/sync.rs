@@ -290,3 +290,105 @@ fn item_not_found_retries_singly_and_clears_item() {
         .unwrap();
     assert_eq!(cleared, None);
 }
+
+fn patch_body(req: &mockito::Request) -> serde_json::Value {
+    serde_json::from_slice(req.body().unwrap()).unwrap()
+}
+
+/// Linked tag "dark" (#111111, no group) on lst_1, already synced once.
+fn synced_one(s: &mut ServerGuard) -> (TestDb, i64) {
+    let t = TestDb::new();
+    let (_, tag) = setup_one(&t);
+    mock_create(s, "lst_1");
+    mock_ok(s, "POST", "/lists/lst_1/entries");
+    pass(&t, s).unwrap();
+    (t, tag)
+}
+
+#[test]
+fn recolour_only_patch_leaves_name_and_group_alone() {
+    let mut s = Server::new();
+    let (t, tag) = synced_one(&mut s);
+    onetagger_db::tags::update_tag(&t.db, tag, None, Some("#222222"), None, None).unwrap();
+    let patch = s
+        .mock("PATCH", "/lists/lst_1")
+        .match_request(|r| patch_body(r) == serde_json::json!({ "color": "#222222" }))
+        .with_body("{}")
+        .expect(1)
+        .create();
+    assert_eq!(pass(&t, &s).unwrap().updated, 1);
+    patch.assert();
+}
+
+#[test]
+fn rename_only_patch_leaves_colour_and_group_alone() {
+    let mut s = Server::new();
+    let (t, tag) = synced_one(&mut s);
+    onetagger_db::tags::update_tag(&t.db, tag, Some("darker"), None, None, None).unwrap();
+    let patch = s
+        .mock("PATCH", "/lists/lst_1")
+        .match_request(|r| patch_body(r) == serde_json::json!({ "name": "darker" }))
+        .with_body("{}")
+        .expect(1)
+        .create();
+    assert_eq!(pass(&t, &s).unwrap().updated, 1);
+    patch.assert();
+}
+
+#[test]
+fn removed_group_patch_sends_null_group_only() {
+    let mut s = Server::new();
+    let t = TestDb::new();
+    {
+        let c = t.db.conn();
+        let g = add_group(&c, "mood");
+        let tr = add_track(&c, "a");
+        set_item(&c, tr, Some("trk_1"));
+        let tag = add_tag(&c, "dark", "#111111", Some(g));
+        tag_track(&c, tr, tag);
+    }
+    mock_create(&mut s, "lst_1");
+    mock_ok(&mut s, "POST", "/lists/lst_1/entries");
+    pass(&t, &s).unwrap();
+    t.db.conn().execute("UPDATE tags SET group_id = NULL", []).unwrap();
+    let patch = s
+        .mock("PATCH", "/lists/lst_1")
+        .match_request(|r| {
+            patch_body(r) == serde_json::json!({ "ext": { "com.github.rfmussa.flowtag": { "group": null } } })
+        })
+        .with_body("{}")
+        .expect(1)
+        .create();
+    assert_eq!(pass(&t, &s).unwrap().updated, 1);
+    patch.assert();
+}
+
+#[test]
+fn reused_tag_id_deletes_old_list_and_creates_new_one() {
+    let mut s = Server::new();
+    let (t, old) = synced_one(&mut s);
+    let new = {
+        let c = t.db.conn();
+        c.execute("DELETE FROM tags WHERE id = ?1", [old]).unwrap();
+        let tr = add_track(&c, "b");
+        set_item(&c, tr, Some("trk_2"));
+        let new = add_tag(&c, "warm", "#333333", None);
+        tag_track(&c, tr, new);
+        new
+    };
+    assert_eq!(new, old, "SQLite reuses the max rowid");
+    let del = mock_ok(&mut s, "DELETE", "/lists/lst_1").expect(1).create();
+    let update = s.mock("PATCH", Matcher::Any).expect(0).create();
+    let create = s
+        .mock("POST", "/lists")
+        .match_body(Matcher::PartialJsonString(r#"{"name":"warm"}"#.into()))
+        .with_body(r#"{"id":"lst_2"}"#)
+        .expect(1)
+        .create();
+    mock_ok(&mut s, "POST", "/lists/lst_2/entries");
+    let r = pass(&t, &s).unwrap();
+    del.assert();
+    update.assert();
+    create.assert();
+    assert_eq!((r.deleted, r.updated, r.created), (1, 0, 1));
+}

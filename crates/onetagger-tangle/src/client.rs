@@ -20,6 +20,15 @@ pub struct Me {
     pub collection_available: bool,
 }
 
+/// Fields to change on a Tangle list; `None` leaves that field as it is in Tangle.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct ListPatch<'a> {
+    pub name: Option<&'a str>,
+    pub color: Option<&'a str>,
+    /// `Some(None)` removes the group.
+    pub group: Option<Option<&'a str>>,
+}
+
 /// Blocking Tangle (MIX Access) API client.
 pub struct Client {
     base: String,
@@ -139,17 +148,18 @@ impl Client {
             .ok_or_else(|| invalid_response(200))
     }
 
-    pub fn update_list(
-        &self,
-        id: &str,
-        name: &str,
-        color: Option<&str>,
-        group: Option<&str>,
-    ) -> Result<(), TangleError> {
-        // Merge-patch: an explicit null group clears a previously set group.
-        let mut body = json!({ "name": name, "ext": flowtag_ext(group) });
-        if let Some(c) = color {
-            body["color"] = json!(c);
+    /// Merge-patch only the fields in `patch`, so edits made inside Tangle to the others stay.
+    pub fn update_list(&self, id: &str, patch: &ListPatch) -> Result<(), TangleError> {
+        let mut body = json!({});
+        if let Some(name) = patch.name {
+            body["name"] = json!(name);
+        }
+        if let Some(color) = patch.color {
+            body["color"] = json!(color);
+        }
+        // An explicit null group clears a previously set group.
+        if let Some(group) = patch.group {
+            body["ext"] = flowtag_ext(group);
         }
         let req = self
             .request(reqwest::Method::PATCH, &format!("/lists/{id}"))
@@ -310,11 +320,25 @@ mod tests {
         let m = s
             .mock("PATCH", "/lists/lst_1")
             .match_body(Matcher::Json(json!({
-                "name":"Dark","ext":{"com.github.rfmussa.flowtag":{"group":null}}
+                "ext":{"com.github.rfmussa.flowtag":{"group":null}}
             })))
             .with_body("{}")
             .create();
-        client(&s).update_list("lst_1", "Dark", None, None).unwrap();
+        let patch = ListPatch { group: Some(None), ..ListPatch::default() };
+        client(&s).update_list("lst_1", &patch).unwrap();
+        m.assert();
+    }
+
+    #[test]
+    fn update_list_sends_only_given_fields() {
+        let mut s = Server::new();
+        let m = s
+            .mock("PATCH", "/lists/lst_1")
+            .match_body(Matcher::Json(json!({ "name": "Dark", "color": "#e5484d" })))
+            .with_body("{}")
+            .create();
+        let patch = ListPatch { name: Some("Dark"), color: Some("#e5484d"), group: None };
+        client(&s).update_list("lst_1", &patch).unwrap();
         m.assert();
     }
 
