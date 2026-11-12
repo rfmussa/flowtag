@@ -5,6 +5,7 @@ use onetagger_tangle::client::Client;
 use onetagger_tangle::matcher::{lookup_unmatched, match_from_collection};
 use rusqlite::Connection;
 use serde_json::{json, Value};
+use std::time::Duration;
 
 const HOME: &str = "/Users/r";
 const HOUR: i64 = 3600;
@@ -69,12 +70,12 @@ fn missing_tracks_are_rechecked_after_six_hours_only() {
         .with_body(r#"{"data":[{"id":"trk_3"}]}"#).expect(1)
         .create();
     let client = Client::new(&s.url(), "tok");
-    assert_eq!(lookup_unmatched(&c, &client, HOME, HOUR, 50).unwrap(), 0);
+    assert_eq!(lookup_unmatched(&c, &client, HOME, HOUR, 50, Duration::ZERO).unwrap(), 0);
     assert!(!m.matched(), "no request expected yet");
-    assert_eq!(lookup_unmatched(&c, &client, HOME, 7 * HOUR, 50).unwrap(), 1);
+    assert_eq!(lookup_unmatched(&c, &client, HOME, 7 * HOUR, 50, Duration::ZERO).unwrap(), 1);
     assert!(m.matched(), "exactly one request expected");
     // now matched, so never asked again
-    assert_eq!(lookup_unmatched(&c, &client, HOME, 20 * HOUR, 50).unwrap(), 0);
+    assert_eq!(lookup_unmatched(&c, &client, HOME, 20 * HOUR, 50, Duration::ZERO).unwrap(), 0);
     assert!(m.matched(), "exactly one request expected");
 }
 
@@ -91,7 +92,7 @@ fn lookup_respects_limit() {
     let mut s = Server::new();
     let m = s.mock("GET", "/items").match_query(Matcher::Any).with_body(r#"{"data":[]}"#).expect(2).create();
     let client = Client::new(&s.url(), "tok");
-    assert_eq!(lookup_unmatched(&c, &client, HOME, 100, 2).unwrap(), 2);
+    assert_eq!(lookup_unmatched(&c, &client, HOME, 100, 2, Duration::ZERO).unwrap(), 2);
     m.assert();
 }
 
@@ -101,6 +102,24 @@ fn unmapped_folder_tracks_are_checked_without_request() {
     let c = t.db.conn();
     let s = Server::new();
     let client = Client::new(&s.url(), "tok");
-    assert_eq!(lookup_unmatched(&c, &client, HOME, 100, 50).unwrap(), 3);
+    assert_eq!(lookup_unmatched(&c, &client, HOME, 100, 50, Duration::ZERO).unwrap(), 3);
     assert_eq!(item_of(&c, ids[0]), Some(None));
+}
+
+#[test]
+fn lookup_paces_consecutive_requests() {
+    let (t, _) = setup();
+    let c = t.db.conn();
+    c.execute("INSERT INTO tangle_sources (folder_id, source_id) SELECT id, 'src_local' FROM folders", [])
+        .unwrap();
+    for i in 0..3 {
+        common::add_track(&c, &format!("p{i}"));
+    }
+    c.execute("UPDATE tracks SET path = '/Users/r/Music/Swinsian/' || title || '.mp3'", []).unwrap();
+    let mut s = Server::new();
+    s.mock("GET", "/items").match_query(Matcher::Any).with_body(r#"{"data":[]}"#).expect(3).create();
+    let client = Client::new(&s.url(), "tok");
+    let start = std::time::Instant::now();
+    lookup_unmatched(&c, &client, HOME, 100, 3, Duration::from_millis(80)).unwrap();
+    assert!(start.elapsed() >= Duration::from_millis(160), "3 requests need 2 gaps");
 }

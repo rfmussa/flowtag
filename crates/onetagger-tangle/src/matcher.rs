@@ -2,6 +2,7 @@
 //! then one-by-one lookups for whatever is still unmatched.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::time::Duration;
 
 use rusqlite::{params, Connection};
 use serde_json::Value;
@@ -130,6 +131,7 @@ pub fn lookup_unmatched(
     home: &str,
     now: i64,
     limit: usize,
+    pace: Duration,
 ) -> Result<usize, TangleError> {
     let pending: Vec<(i64, String, Option<String>)> = c
         .prepare(
@@ -150,9 +152,16 @@ pub fn lookup_unmatched(
         .map_err(db_error)?;
 
     let mut handled = 0;
+    let mut requested = false;
     for (track_id, path, source) in pending {
         let item = match (source, local_ref(&path, home)) {
-            (Some(src), Some(r)) => client.find_item(&src, &r)?,
+            (Some(src), Some(r)) => {
+                if requested {
+                    std::thread::sleep(pace);
+                }
+                requested = true;
+                client.find_item(&src, &r)?
+            }
             _ => None,
         };
         c.execute(

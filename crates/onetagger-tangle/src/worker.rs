@@ -159,13 +159,14 @@ struct Worker {
     emit: Box<dyn Fn(Value) + Send>,
     status: TangleStatus,
     /// TokenInvalid / BackupRequired: no requests until `TokenChanged`.
-    paused: bool,
+    paused: Option<SyncState>,
     /// `me()` must be called before the next pass (start, or token changed).
     needs_me: bool,
     /// Run the next pass regardless of the debounce (new token, resend, retry after an error).
     force: bool,
     attempt: u32,
-    retry_at: Option<Instant>,
+    /// No requests before this instant; the state and unix `retry_at` to show meanwhile.
+    retry: Option<(Instant, SyncState, Option<i64>)>,
     seen_fp: Option<i64>,
     seen_fp_since: Instant,
     synced_fp: Option<i64>,
@@ -192,11 +193,11 @@ impl Worker {
             timing,
             emit,
             status: TangleStatus::new(state),
-            paused: false,
+            paused: None,
             needs_me: true,
             force: true,
             attempt: 0,
-            retry_at: None,
+            retry: None,
             seen_fp: None,
             seen_fp_since: Instant::now(),
             synced_fp: None,
@@ -229,10 +230,10 @@ impl Worker {
                 }
             }
             Command::TokenChanged => {
-                self.paused = false;
+                self.paused = None;
                 self.needs_me = true;
                 self.force = true;
-                self.retry_at = None;
+                self.retry = None;
                 self.attempt = 0;
                 self.status.user = None;
                 self.status.error = None;
@@ -258,7 +259,7 @@ impl Worker {
 
     fn preview(&mut self) {
         let Some(token) = self.token() else { return };
-        if self.paused {
+        if self.paused.is_some() {
             self.emit_status();
             return;
         }
@@ -279,14 +280,22 @@ impl Worker {
         }
     }
 
+    fn collection_needed(&self) -> bool {
+        let c = self.db.conn();
+        c.query_row("SELECT NOT EXISTS (SELECT 1 FROM tangle_items)", [], |r| r.get::<_, bool>(0))
+            .unwrap_or(false)
+    }
+
+    /// Keeps requests of consecutive pass phases at least `pace` apart.
+    fn pace_after(&self, made_request: bool) {
+        if made_request {
+            std::thread::sleep(self.timing.pace);
+        }
+    }
+
     /// Bulk-match from the collection export if nothing has been matched yet.
     fn ensure_matched(&mut self, client: &Client) -> Result<(), TangleError> {
-        let empty = {
-            let c = self.db.conn();
-            c.query_row("SELECT NOT EXISTS (SELECT 1 FROM tangle_items)", [], |r| r.get::<_, bool>(0))
-                .unwrap_or(false)
-        };
-        if empty {
+        if self.collection_needed() {
             let records = client.collection()?;
             match_from_collection(&self.db.conn(), &records, &self.home, unix_now())
                 .map_err(crate::matcher::db_error)?;
@@ -311,8 +320,16 @@ impl Worker {
             return;
         }
         let Some(token) = self.token() else { return };
-        if self.paused || self.retry_at.is_some_and(|t| Instant::now() < t) {
+        if let Some(state) = self.paused {
+            self.set_state(state);
             return;
+        }
+        if let Some((until, state, retry_at)) = self.retry {
+            if Instant::now() < until {
+                self.status.retry_at = retry_at;
+                self.set_state(state);
+                return;
+            }
         }
         let fp = match store::fingerprint(&self.db.conn()) {
             Ok(fp) => fp,
@@ -342,7 +359,7 @@ impl Worker {
         match self.pass_inner(&client) {
             Ok(()) => {
                 self.attempt = 0;
-                self.retry_at = None;
+                self.retry = None;
                 self.synced_fp = Some(fp);
                 self.last_full = Some(Instant::now());
                 self.status.error = None;
@@ -355,7 +372,9 @@ impl Worker {
     }
 
     fn pass_inner(&mut self, client: &Client) -> Result<(), TangleError> {
+        let mut requested = false;
         if self.needs_me {
+            requested = true;
             let me = client.me()?;
             self.status.user = Some(me.user_name);
             if !me.collection_available {
@@ -363,8 +382,21 @@ impl Worker {
             }
             self.needs_me = false;
         }
-        self.ensure_matched(client)?;
-        lookup_unmatched(&self.db.conn(), client, &self.home, unix_now(), LOOKUPS_PER_PASS)?;
+        if self.collection_needed() {
+            self.pace_after(requested);
+            requested = true;
+            self.ensure_matched(client)?;
+        }
+        self.pace_after(requested);
+        let looked_up = lookup_unmatched(
+            &self.db.conn(),
+            client,
+            &self.home,
+            unix_now(),
+            LOOKUPS_PER_PASS,
+            self.timing.pace,
+        )?;
+        self.pace_after(requested || looked_up > 0);
         let report = run_pass(&self.db, client, self.timing.pace)?;
         self.status.pending = report.pending;
         self.status.unlinked = report.unlinked;
@@ -378,17 +410,19 @@ impl Worker {
         self.status.error = None;
         let state = match &e {
             TangleError::InvalidToken => {
-                self.paused = true;
+                self.paused = Some(SyncState::TokenInvalid);
                 SyncState::TokenInvalid
             }
             TangleError::BackupRequired => {
-                self.paused = true;
+                self.paused = Some(SyncState::BackupRequired);
                 SyncState::BackupRequired
             }
             TangleError::RateLimited { retry_after_s } => {
-                let wait = Duration::from_secs(*retry_after_s);
-                self.retry_at = Some(Instant::now() + wait);
-                self.status.retry_at = Some(unix_now() + *retry_after_s as i64);
+                // Clamp: the header is server-controlled and must not overflow time arithmetic.
+                let secs = (*retry_after_s).min(BACKOFF_MAX_S);
+                let retry_at = Some(unix_now() + secs as i64);
+                self.status.retry_at = retry_at;
+                self.retry = Some((Instant::now() + Duration::from_secs(secs), SyncState::Waiting, retry_at));
                 self.force = true;
                 SyncState::Waiting
             }
@@ -414,7 +448,8 @@ impl Worker {
 
     fn schedule_retry(&mut self, backoff: Duration) {
         self.attempt = self.attempt.saturating_add(1);
-        self.retry_at = Some(Instant::now() + backoff);
+        let state = if self.status.error.is_some() { SyncState::Error } else { SyncState::Offline };
+        self.retry = Some((Instant::now() + backoff, state, None));
         self.force = true;
     }
 }
@@ -516,5 +551,75 @@ mod tests {
         cmd.send(Command::TokenChanged).unwrap();
         wait_state(&rx, "tokenInvalid");
         again.assert();
+    }
+
+    #[test]
+    fn huge_retry_after_is_clamped_and_worker_survives() {
+        let mut server = Server::new();
+        server
+            .mock("GET", "/me")
+            .with_status(429)
+            .with_header("Retry-After", "18446744073709551615")
+            .create();
+        let (cmd, rx, _dir) = start(&server, Some("tok"));
+        let ev = wait_state(&rx, "waiting");
+        let retry_at = ev["status"]["retryAt"].as_i64().expect("retryAt set");
+        let now = unix_now();
+        assert!(retry_at > now && retry_at <= now + BACKOFF_MAX_S as i64 + 5, "retryAt {retry_at} vs {now}");
+        // The thread is still alive and answers commands.
+        cmd.send(Command::Status).unwrap();
+        wait_state(&rx, "waiting");
+    }
+
+    #[test]
+    fn pause_survives_disable_and_enable() {
+        let mut server = Server::new();
+        server.mock("GET", "/me").with_status(401).create();
+        let (cmd, rx, _dir) = start(&server, Some("bad"));
+        wait_state(&rx, "tokenInvalid");
+        cmd.send(Command::SetEnabled(false)).unwrap();
+        wait_state(&rx, "disabled");
+        cmd.send(Command::SetEnabled(true)).unwrap();
+        wait_state(&rx, "tokenInvalid");
+    }
+
+    #[test]
+    fn waiting_state_and_retry_at_survive_disable_and_enable() {
+        let mut server = Server::new();
+        server.mock("GET", "/me").with_status(429).with_header("Retry-After", "600").create();
+        let (cmd, rx, _dir) = start(&server, Some("tok"));
+        let first = wait_state(&rx, "waiting");
+        cmd.send(Command::SetEnabled(false)).unwrap();
+        wait_state(&rx, "disabled");
+        cmd.send(Command::SetEnabled(true)).unwrap();
+        let again = wait_state(&rx, "waiting");
+        assert_eq!(first["status"]["retryAt"], again["status"]["retryAt"]);
+    }
+
+    #[test]
+    fn pass_phases_are_paced() {
+        let mut server = Server::new();
+        server
+            .mock("GET", "/me")
+            .with_body(r#"{"user":{"id":"u","name":"dj"},"collection_available":true}"#)
+            .create();
+        server.mock("GET", "/collection").with_body("{\"type\":\"header\"}\n").create();
+        let dir = tempfile::tempdir().unwrap();
+        let (tx, rx) = channel();
+        let pace = Duration::from_millis(150);
+        let _cmd = spawn_with(
+            dir.path().join("w.db"),
+            server.url(),
+            Box::new(Fake(Some("tok"))),
+            true,
+            move |ev| { let _ = tx.send(ev); },
+            Timing { pace, ..fast() },
+        )
+        .unwrap();
+        wait_state(&rx, "syncing");
+        let started = Instant::now();
+        wait_state(&rx, "idle");
+        // me -> collection -> (lookups) -> run_pass: at least two gaps.
+        assert!(started.elapsed() >= pace * 2, "phases ran back to back: {:?}", started.elapsed());
     }
 }
