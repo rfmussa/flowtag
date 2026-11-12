@@ -28,9 +28,11 @@ export function matchesStatus(t: StatusSource, rule: { status: StatusValue; nega
     return rule.negate ? !hit : hit;
 }
 
-/** The header quick filter: notdone hides only done tracks; untagged shows only untagged */
+/** The header quick filter: notdone hides only done tracks; untagged shows
+ *  tracks with no tags that are not done, staged or not (staging a bare track
+ *  must not make it vanish from the Untagged view) */
 export function passesQuickFilter(t: StatusSource, q: QuickFilter): boolean {
     if (q === 'notdone') return statusOf(t) !== 'done';
-    if (q === 'untagged') return statusOf(t) === 'untagged';
+    if (q === 'untagged') return t.tagIds.length === 0 && (t.doneAt === undefined || t.doneAt === null);
     return true;
 }

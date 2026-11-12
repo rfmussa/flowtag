@@ -34,6 +34,17 @@ describe('quick filter', () => {
         expect(kept('notdone')).toEqual([false, true, true, true]);
         expect(kept('untagged')).toEqual([false, false, false, true]);
     });
+
+    it('quickfilter_untagged_keeps_staged_zero_tag_tracks', () => {
+        const stagedBare = { staged: true, tagIds: [] };
+        const stagedSkip = { staged: true, tagIds: [], doneAt: null };
+        const doneBare = { doneAt: 9, tagIds: [] };
+        expect(passesQuickFilter(stagedBare, 'untagged')).toBe(true);
+        expect(passesQuickFilter(stagedSkip, 'untagged')).toBe(true);
+        expect(passesQuickFilter(doneBare, 'untagged')).toBe(false);
+        // the chip status keeps its precedence
+        expect(statusOf(stagedBare)).toBe('staged');
+    });
 });
 
 describe('smart status rule', () => {
