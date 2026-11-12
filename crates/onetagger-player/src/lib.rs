@@ -37,8 +37,9 @@ impl AudioPlayer {
             let mut volume = 0.5;
             let mut source = None;
             // Create sink
-            // Kept alive for the thread's lifetime; replaced on every Load so playback
-            // follows the current default output device (rodio never follows device changes)
+            // Kept alive for the thread's lifetime; replaced on a Load when the default
+            // output device changed (rodio never follows device changes on its own)
+            let mut bound_device = default_output_name();
             let (mut _stream, mut stream_handle) = rodio::OutputStream::try_default().unwrap();
             let mut sink = Sink::try_new(&stream_handle).unwrap();
             sink.set_volume(volume);
@@ -58,14 +59,22 @@ impl AudioPlayer {
                     // Play new source
                     PlayerAction::Load(audio_source) => {
                         sink.stop();
-                        // Rebind to the current default output; on failure keep the old one
-                        match rodio::OutputStream::try_default() {
-                            Ok((new_stream, new_handle)) => {
-                                _stream = new_stream;
-                                stream_handle = new_handle;
-                                debug!("player output: rebound to default device");
+                        // Rebind only when the default output changed (opening one costs ~220ms);
+                        // on any failure keep the current device
+                        match default_output_name() {
+                            None => debug!("player output: default device name unreadable, keeping current device"),
+                            Some(current) if should_rebind(bound_device.as_deref(), &current) => {
+                                match rodio::OutputStream::try_default() {
+                                    Ok((new_stream, new_handle)) => {
+                                        _stream = new_stream;
+                                        stream_handle = new_handle;
+                                        bound_device = Some(current);
+                                        debug!("player output: rebound to default device");
+                                    },
+                                    Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
+                                }
                             },
-                            Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
+                            Some(_) => {},
                         }
                         // Create new sink
                         sink = Sink::try_new(&stream_handle).unwrap();
@@ -153,6 +162,18 @@ impl AudioPlayer {
     pub fn stop(&self) {
         self.tx.send(PlayerAction::Stop).ok();
     }
+}
+
+/// Name of the system's current default output device (~0.5ms when warm)
+fn default_output_name() -> Option<String> {
+    use rodio::cpal::traits::{DeviceTrait, HostTrait};
+    rodio::cpal::default_host().default_output_device().and_then(|d| d.name().ok())
+}
+
+/// Whether the output must be reopened: the default device differs from the bound one,
+/// or the bound one's name was never known. Same-named devices are not told apart.
+fn should_rebind(bound: Option<&str>, current: &str) -> bool {
+    bound != Some(current)
 }
 
 enum PlayerAction {
@@ -268,5 +289,17 @@ pub trait AudioSource {
             writer.finalize()?;
         }
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::should_rebind;
+
+    #[test]
+    fn rebinds_only_when_default_device_changed() {
+        assert!(!should_rebind(Some("MacBook Pro Speakers"), "MacBook Pro Speakers"));
+        assert!(should_rebind(Some("MacBook Pro Speakers"), "Living Room AirPlay"));
+        assert!(should_rebind(None, "MacBook Pro Speakers"), "unknown bound device rebinds");
     }
 }
