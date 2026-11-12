@@ -1,7 +1,17 @@
-/** Opens the stage commit sheet. Placeholder: the sheet itself arrives with the
- *  commit-sheet task, which fills this in. */
+import { ref } from 'vue';
+import { notify } from '@/lib/notify';
+import { getTagStore } from './tagstore';
+
+/** Whether the commit sheet is showing; <CommitSheet /> in App.vue binds to it */
+export const commitSheetOpen = ref(false);
+
+/** Opens the stage commit sheet (⌘Enter, Stage header, quit flow). An empty stage only toasts. */
 export function openCommitSheet(): void {
-    // intentionally empty until the commit sheet exists
+    if (getTagStore().stageTotal.value === 0) {
+        notify({ message: 'Stage is empty', timeout: 1500 });
+        return;
+    }
+    commitSheetOpen.value = true;
 }
 
 /** ⌘Enter / Ctrl+Enter: opens the commit sheet even from a focused input */

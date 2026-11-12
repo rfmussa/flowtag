@@ -136,3 +136,20 @@ describe('cursor after removal', () => {
         expect(s.selectedId.value).toBe(1);
     });
 });
+
+describe('commit fallback', () => {
+    it('falls_back_to_all_when_a_commit_empties_the_stage_in_stage_scope', () => {
+        const s = storeWith([track(1)]);
+        s.scope.value = 'stage';
+        s.handleMessage({ action: 'stageCommitted', commit: { id: 1, createdAt: 0, message: '', trackCount: 1 } });
+        s.handleMessage({ action: 'stageState', ready: 0, total: 0, stage: [] });
+        expect(s.scope.value).toBe('all');
+    });
+
+    it('stays_in_stage_scope_when_the_stage_empties_without_a_commit', () => {
+        const s = storeWith([track(1)]);
+        s.scope.value = 'stage';
+        s.handleMessage({ action: 'stageState', ready: 0, total: 0, stage: [] });
+        expect(s.scope.value).toBe('stage');
+    });
+});

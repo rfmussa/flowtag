@@ -1,4 +1,4 @@
-import { ref, Ref, computed, WritableComputedRef } from 'vue';
+import { ref, Ref, computed, watch, WritableComputedRef } from 'vue';
 import { notify } from '@/lib/notify';
 
 import { get1t } from './onetagger';
@@ -629,6 +629,29 @@ export class TagStore {
 
     // ---- Staging ----
 
+    /** A stageCommitted arrived and the next stageState has not yet been seen */
+    private commitLanded = false;
+
+    /** The newest commit the server confirmed */
+    lastCommit: Ref<{ id: number; trackCount: number } | undefined> = ref(undefined);
+
+    /** Commit with an empty message and resolve once the server confirms (or after `timeoutMs`) */
+    commitStageAndWait(trackIds: number[], timeoutMs: number): Promise<void> {
+        const before = this.lastCommit.value?.id;
+        return new Promise((resolve) => {
+            const stop = watch(this.lastCommit, (c) => {
+                if (c && c.id !== before) { stop(); clearTimeout(timer); resolve(); }
+            });
+            const timer = setTimeout(() => { stop(); resolve(); }, timeoutMs);
+            this.commitStage(trackIds, '');
+        });
+    }
+
+    /** Commit the given staged tracks with a message */
+    commitStage(trackIds: number[], message: string) {
+        get1t().send('stageCommit', { trackIds, message });
+    }
+
     /** Rows only learn staged/skip/doneAt from a row load: refetch after our own stage mutations */
     private refreshRows() {
         get1t().send('tagTracksLoad');
@@ -741,6 +764,8 @@ export class TagStore {
                 return true;
             }
             case 'stageCommitted':
+                this.commitLanded = true;
+                if (json.commit) this.lastCommit.value = { id: json.commit.id, trackCount: json.commit.trackCount };
                 this.refreshRows();
                 return false;
             case 'stageState':
@@ -751,6 +776,9 @@ export class TagStore {
                     ((json.folderCounts ?? []) as [number, number, number][])
                         .map(([id, done, total]): [number, [number, number]] => [id, [done, total]]));
                 this.stageRows.value = json.stage ?? [];
+                // A commit that empties the stage leaves nothing to show in its scope
+                if (this.commitLanded && this.stageTotal.value === 0 && this.scope.value === 'stage') this.scope.value = 'all';
+                this.commitLanded = false;
                 return true;
             case 'tagPool':
                 this.tags.value = json.tags ?? [];

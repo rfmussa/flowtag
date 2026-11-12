@@ -31,6 +31,9 @@
         <!-- confirm / prompt / alert requests from lib/dialogs -->
         <DialogHost />
 
+        <!-- ⌘Enter: commit the staged tracks -->
+        <CommitSheet />
+
         <!-- In-app folder browser (Settings → Advanced) -->
         <FolderBrowser />
 
@@ -63,6 +66,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { LoaderCircleIcon } from '@lucide/vue';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import DialogHost from '@/components/flowtag/DialogHost.vue';
+import CommitSheet from '@/components/flowtag/CommitSheet.vue';
 
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';

@@ -354,24 +354,7 @@ class OneTagger {
 
             // Exit app
             case 'exit':
-                // AT
-                if (this.lock.value.locked && !this.taggerStatus.value.done) {
-                    confirmDialog({
-                        title: 'Tagging in progress',
-                        message: 'Tagging is still running. Exit anyway?',
-                        okLabel: 'Exit anyway',
-                        destructive: true,
-                    }).then((ok) => { if (ok) this.forceExit(); });
-                }
-                // Exit anyway
-                else {
-                    try {
-                        // @ts-ignore
-                        window.ipc.postMessage('exit');
-                    } catch (e) {
-                        this.send('exit');
-                    }
-                }
+                this.exitWithStagePrompt();
                 break;
             default:
                 console.log(`Unknown OS action: ${json}`);
@@ -466,6 +449,46 @@ class OneTagger {
     loadPlatforms() {
         this.send('loadPlatforms');
         this.platformsLoading.value = true;
+    }
+
+    /// The pre-existing exit paths: confirm if tagging runs, otherwise quit
+    private exitNormally() {
+        // AT
+        if (this.lock.value.locked && !this.taggerStatus.value.done) {
+            confirmDialog({
+                title: 'Tagging in progress',
+                message: 'Tagging is still running. Exit anyway?',
+                okLabel: 'Exit anyway',
+                destructive: true,
+            }).then((ok) => { if (ok) this.forceExit(); });
+        }
+        // Exit anyway
+        else {
+            try {
+                // @ts-ignore
+                window.ipc.postMessage('exit');
+            } catch (e) {
+                this.send('exit');
+            }
+        }
+    }
+
+    /// Quit flow: offer to commit ready staged tracks first, then the normal exit paths
+    private async exitWithStagePrompt() {
+        const store = getTagStore();
+        const ready = store.stageRows.value.filter((r) => r.ready).map((r) => r.trackId);
+        if (store.stageReady.value > 0 && ready.length > 0) {
+            const ok = await confirmDialog({
+                title: `Commit ${store.stageReady.value} ready staged tracks first?`,
+                okLabel: 'Commit & quit',
+            });
+            if (ok) {
+                await store.commitStageAndWait(ready, 5000);
+                this.forceExit();
+                return;
+            }
+        }
+        this.exitNormally();
     }
 
     /// Exit while the tagger holds the main connection: use a fresh socket
