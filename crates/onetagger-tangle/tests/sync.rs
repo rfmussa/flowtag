@@ -312,7 +312,7 @@ fn recolour_only_patch_leaves_name_and_group_alone() {
     onetagger_db::tags::update_tag(&t.db, tag, None, Some("#222222"), None, None).unwrap();
     let patch = s
         .mock("PATCH", "/lists/lst_1")
-        .match_request(|r| patch_body(r) == serde_json::json!({ "color": "#222222" }))
+        .match_request(|r| patch_body(r) == serde_json::json!({ "ext": { "com.github.rfmussa.flowtag": { "color": "#222222" } } }))
         .with_body("{}")
         .expect(1)
         .create();

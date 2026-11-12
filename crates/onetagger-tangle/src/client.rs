@@ -46,8 +46,17 @@ impl fmt::Debug for Client {
     }
 }
 
-fn flowtag_ext(group: Option<&str>) -> Value {
-    json!({ EXT_KEY: { "group": group } })
+/// FlowTag's own ext namespace. Tangle refuses a top-level list `color`, so the colour lives
+/// here next to the group. `None` leaves a key out; `Some(None)` group writes an explicit null.
+fn flowtag_ext(group: Option<Option<&str>>, color: Option<&str>) -> Option<Value> {
+    let mut ns = serde_json::Map::new();
+    if let Some(g) = group {
+        ns.insert("group".into(), json!(g));
+    }
+    if let Some(c) = color {
+        ns.insert("color".into(), json!(c));
+    }
+    (!ns.is_empty()).then(|| json!({ EXT_KEY: ns }))
 }
 
 impl Client {
@@ -135,11 +144,8 @@ impl Client {
         group: Option<&str>,
     ) -> Result<String, TangleError> {
         let mut body = json!({ "name": name, "ordered": false });
-        if let Some(c) = color {
-            body["color"] = json!(c);
-        }
-        if group.is_some() {
-            body["ext"] = flowtag_ext(group);
+        if let Some(ext) = flowtag_ext(group.map(Some), color) {
+            body["ext"] = ext;
         }
         let v = self.send_json(self.request(reqwest::Method::POST, "/lists").json(&body))?;
         v["id"]
@@ -154,12 +160,9 @@ impl Client {
         if let Some(name) = patch.name {
             body["name"] = json!(name);
         }
-        if let Some(color) = patch.color {
-            body["color"] = json!(color);
-        }
         // An explicit null group clears a previously set group.
-        if let Some(group) = patch.group {
-            body["ext"] = flowtag_ext(group);
+        if let Some(ext) = flowtag_ext(patch.group, patch.color) {
+            body["ext"] = ext;
         }
         let req = self
             .request(reqwest::Method::PATCH, &format!("/lists/{id}"))
@@ -304,8 +307,8 @@ mod tests {
         let m = s
             .mock("POST", "/lists")
             .match_body(Matcher::Json(json!({
-                "name":"Dark","ordered":false,"color":"#e5484d",
-                "ext":{"com.github.rfmussa.flowtag":{"group":"Mood"}}
+                "name":"Dark","ordered":false,
+                "ext":{"com.github.rfmussa.flowtag":{"group":"Mood","color":"#e5484d"}}
             })))
             .with_body(r#"{"id":"lst_9"}"#)
             .create();
@@ -334,11 +337,46 @@ mod tests {
         let mut s = Server::new();
         let m = s
             .mock("PATCH", "/lists/lst_1")
-            .match_body(Matcher::Json(json!({ "name": "Dark", "color": "#e5484d" })))
+            .match_body(Matcher::Json(json!({
+                "name": "Dark",
+                "ext":{"com.github.rfmussa.flowtag":{"color":"#e5484d"}}
+            })))
             .with_body("{}")
             .create();
         let patch = ListPatch { name: Some("Dark"), color: Some("#e5484d"), group: None };
         client(&s).update_list("lst_1", &patch).unwrap();
+        m.assert();
+    }
+
+    #[test]
+    fn update_list_sends_group_and_colour_in_one_ext_object() {
+        let mut s = Server::new();
+        let m = s
+            .mock("PATCH", "/lists/lst_1")
+            .match_body(Matcher::Json(json!({
+                "ext":{"com.github.rfmussa.flowtag":{"group":"Mood","color":"#e5484d"}}
+            })))
+            .with_body("{}")
+            .create();
+        let patch = ListPatch { name: None, color: Some("#e5484d"), group: Some(Some("Mood")) };
+        client(&s).update_list("lst_1", &patch).unwrap();
+        m.assert();
+    }
+
+    #[test]
+    fn create_list_never_sends_top_level_color() {
+        let mut s = Server::new();
+        let m = s
+            .mock("POST", "/lists")
+            .match_request(|r| {
+                let b: Value = serde_json::from_slice(r.body().unwrap()).unwrap();
+                b.get("color").is_none()
+                    && b["ext"]["com.github.rfmussa.flowtag"]["color"] == "#e5484d"
+                    && b["ext"]["com.github.rfmussa.flowtag"].get("group").is_none()
+            })
+            .with_body(r#"{"id":"lst_9"}"#)
+            .create();
+        client(&s).create_list("Dark", Some("#e5484d"), None).unwrap();
         m.assert();
     }
 
