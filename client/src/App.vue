@@ -34,6 +34,9 @@
         <!-- ⌘Enter: commit the staged tracks -->
         <CommitSheet />
 
+        <!-- Done chip: today, chart and trail -->
+        <JournalDialog />
+
         <!-- In-app folder browser (Settings → Advanced) -->
         <FolderBrowser />
 
@@ -67,6 +70,7 @@ import { LoaderCircleIcon } from '@lucide/vue';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import DialogHost from '@/components/flowtag/DialogHost.vue';
 import CommitSheet from '@/components/flowtag/CommitSheet.vue';
+import JournalDialog from '@/components/flowtag/JournalDialog.vue';
 
 import Settings from './components/Settings.vue';
 import PlayerBar from './components/PlayerBar.vue';

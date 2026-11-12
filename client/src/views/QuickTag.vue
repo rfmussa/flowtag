@@ -35,8 +35,8 @@
         <div class='flex-1'></div>
 
         <button type='button' class='ft-btn ml-2' data-test='stage-next-50' title='Stage the next 50 not-done tracks in view order' @click='stageNext50($event)'>Stage next 50</button>
-        <!-- Library progress; the Journal opens from here later -->
-        <button type='button' class='ft-btn done-chip ft-num ml-2' data-test='done-chip' title='Tracks marked done' @click='blurTarget($event)'>{{ store.libraryDone.value.toLocaleString() }} done</button>
+        <!-- Library progress; opens the Journal -->
+        <button type='button' class='ft-btn done-chip ft-num ml-2' data-test='done-chip' title='Tracks marked done: open the Journal' @click='openDoneJournal($event)'>{{ store.libraryDone.value.toLocaleString() }} done</button>
         <FlushIndicator class='ml-4' />
 
         <label class='ft-field search-field ml-4'>
@@ -152,6 +152,7 @@ import Hint from '../components/flowtag/Hint.vue';
 import TagManager from '../components/flowtag/TagManager.vue';
 import TrackInspector from '../components/flowtag/TrackInspector.vue';
 import ManualTag from '../components/ManualTag.vue';
+import { openJournal } from '@/scripts/journalsheet';
 
 const PALETTE_KEY = 'flowtag.paletteOpen';
 
@@ -196,6 +197,11 @@ const sortOptions: { label: string; value: SortField }[] = [
     { label: 'Added', value: 'added' },
 ];
 
+
+function openDoneJournal(e: Event) {
+    blurTarget(e);
+    openJournal();
+}
 
 function blurTarget(e: Event) {
     (e.currentTarget as HTMLElement | null)?.blur();

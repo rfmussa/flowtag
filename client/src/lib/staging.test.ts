@@ -179,3 +179,23 @@ describe('commitStageAndWait', () => {
         } finally { vi.useRealTimers(); }
     });
 });
+
+describe('journal', () => {
+    const page = (ids: number[]) => ({
+        action: 'journal', today: { committed: 1, tagsCreated: 0, activeSecs: 60 }, days: [], commits: [],
+        trail: ids.map((id) => ({ id, at: 0, trackId: null, trackTitle: null, kind: 'staged', data: '{}' })),
+    });
+
+    it('load_more_appends_and_a_plain_refresh_replaces', () => {
+        const s = new TagStore();
+        s.requestJournal();
+        s.handleMessage(page([5, 4]));
+        s.requestJournal(4);
+        expect(send).toHaveBeenLastCalledWith('journalGet', { beforeId: 4 });
+        s.handleMessage(page([3, 2]));
+        expect(s.journal.value?.trail.map((r) => r.id)).toEqual([5, 4, 3, 2]);
+        s.requestJournal();
+        s.handleMessage(page([6, 5]));
+        expect(s.journal.value?.trail.map((r) => r.id)).toEqual([6, 5]);
+    });
+});

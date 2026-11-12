@@ -3,6 +3,7 @@ import { notify } from '@/lib/notify';
 
 import { get1t } from './onetagger';
 import { diag, diagError } from './diag';
+import { JournalState } from '@/lib/journal';
 import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
 
 // Types mirroring onetagger-db models (serde camelCase)
@@ -635,6 +636,17 @@ export class TagStore {
     /** Bumped on every server error reply */
     errorSeq: Ref<number> = ref(0);
 
+    /** Journal contents from the server; undefined until first requested */
+    journal: Ref<JournalState | undefined> = ref(undefined);
+    /** The beforeId of an in-flight "load more" request, whose reply appends to the trail */
+    private journalAppendFrom: number | undefined = undefined;
+
+    /** Ask the server for the journal; with `beforeId` the reply appends the next trail page */
+    requestJournal(beforeId?: number) {
+        this.journalAppendFrom = beforeId;
+        get1t().send('journalGet', beforeId === undefined ? {} : { beforeId });
+    }
+
     /** The newest commit the server confirmed */
     lastCommit: Ref<{ id: number; trackCount: number } | undefined> = ref(undefined);
 
@@ -778,6 +790,20 @@ export class TagStore {
                 if (json.commit) this.lastCommit.value = { id: json.commit.id, trackCount: json.commit.trackCount };
                 this.refreshRows();
                 return false;
+            case 'journal': {
+                const next: JournalState = {
+                    today: json.today, days: json.days ?? [], trail: json.trail ?? [], commits: json.commits ?? [],
+                };
+                const prev = this.journal.value;
+                if (this.journalAppendFrom !== undefined && prev) {
+                    const seen = new Set(prev.trail.map((r) => r.id));
+                    this.journal.value = { ...next, trail: [...prev.trail, ...next.trail.filter((r) => !seen.has(r.id))] };
+                } else {
+                    this.journal.value = next;
+                }
+                this.journalAppendFrom = undefined;
+                return true;
+            }
             case 'stageState':
                 this.stageReady.value = json.ready ?? 0;
                 this.stageTotal.value = json.total ?? 0;
