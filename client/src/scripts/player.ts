@@ -3,6 +3,7 @@ import { diag } from "./diag";
 import { httpUrl, wsUrl } from "./utils";
 import router from "./router";
 import { getTagStore } from "./tagstore";
+import { endOfTrackAction } from "../lib/player";
 
 const WAVES = 180;
 
@@ -32,17 +33,34 @@ class Player {
         // Setup
         this.generateDefaultWaveform();
         setInterval(() => {
-            if (this.position > this.duration) {
-                // Auto play next track — but never while the user holds a
-                // multi-selection: advancing would silently collapse it
-                const store = getTagStore();
-                if ($1t.settings.value.autoPlayNext
-                    && router.currentRoute.value.path.startsWith('/quicktag')
-                    && store.selectedIds.value.length === 0) {
-                    store.selectOffset(1);
-                } else {
+            const store = getTagStore();
+            const action = endOfTrackAction({
+                playing: this.playing,
+                position: this.position,
+                duration: this.duration,
+                autoPlayNext: $1t.settings.value.autoPlayNext,
+                onQuickTag: router.currentRoute.value.path.startsWith('/quicktag'),
+                multiSelect: store.selectedIds.value.length > 0,
+            });
+            if (action === 'advance') {
+                // Same pattern as the media "next" key: wasPlaying makes the
+                // selection watcher start the newly selected track. Without it
+                // the selection moved but nothing played, so this check refired
+                // every tick and the cursor ran away to the end of the list.
+                const before = store.selectedId.value;
+                this.wasPlaying = true;
+                store.selectOffset(1);
+                if (store.selectedId.value === before) {
+                    // Last row: nothing to advance to
+                    this.wasPlaying = false;
                     this.pause();
+                } else {
+                    // The watcher's startTrack resets the clock on Vue's flush;
+                    // clamp now so the check cannot refire before that lands
+                    this.position = 0;
                 }
+            } else if (action === 'pause') {
+                this.pause();
             }
 
             if (this.playing)
