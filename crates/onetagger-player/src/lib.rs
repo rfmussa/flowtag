@@ -35,9 +35,24 @@ pub(crate) mod pcm;
 /// Re-Export to prevent dependency issues
 pub use rodio;
 
+/// Events the player thread pushes without being asked
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlayerEvent {
+    /// The sink actually ran out of audio while playing — the exact end of
+    /// the track, independent of any stated duration
+    Ended,
+}
+
+/// A playing sink that ran dry is the end of the track; it is reported once
+/// per load (a paused sink, or one that already reported, stays quiet)
+fn should_emit_ended(has_source: bool, paused: bool, empty: bool, already_sent: bool) -> bool {
+    has_source && !paused && empty && !already_sent
+}
+
 pub struct AudioPlayer {
     tx: Sender<PlayerAction>,
     rx: Receiver<bool>,
+    events: Option<Receiver<PlayerEvent>>,
 }
 
 impl AudioPlayer {
@@ -46,6 +61,7 @@ impl AudioPlayer {
         // Create thread, becuase for some reason it stops working after closure ends
         let (tx_main, rx) = channel();
         let (tx, rx_main) = channel();
+        let (event_tx, event_rx) = channel();
         // The player posts rebinds to itself (sleep recovery, device watcher);
         // the flag collapses a burst of device-change events into one rebind
         let self_tx = tx_main.clone();
@@ -81,8 +97,22 @@ impl AudioPlayer {
             let mut sink = Sink::try_new(&stream_handle).unwrap();
             sink.set_volume(volume);
             sink.pause();
-            // Wait for messages
-            for action in rx {
+            // One Ended per load; starts true because nothing is loaded yet
+            let mut ended_sent = true;
+            // Wait for messages; the timeout tick watches for the sink running dry
+            loop {
+                let action = match rx.recv_timeout(std::time::Duration::from_millis(200)) {
+                    Ok(action) => action,
+                    Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                        if should_emit_ended(source.is_some(), sink.is_paused(), sink.empty(), ended_sent) {
+                            ended_sent = true;
+                            info!("player ended: sink ran dry");
+                            event_tx.send(PlayerEvent::Ended).ok();
+                        }
+                        continue;
+                    },
+                    Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break,
+                };
                 let slept = slept_between(last_action_mono.elapsed(), last_action_wall.elapsed().unwrap_or_default());
                 last_action_mono = Instant::now();
                 last_action_wall = std::time::SystemTime::now();
@@ -93,6 +123,8 @@ impl AudioPlayer {
                     },
                     PlayerAction::Stop => {
                         sink.stop();
+                        // An explicitly stopped track is not an end-of-track
+                        ended_sent = true;
                     }
                     PlayerAction::Play => {
                         // Resuming after a system sleep would play into the dead
@@ -143,6 +175,9 @@ impl AudioPlayer {
                         info!("player decode: took {}ms", decode_start.elapsed().as_millis());
                         // Save source
                         source = Some(audio_source);
+                        // Arm end detection for this load (an unplayable file
+                        // counts as instantly ended, so autoplay skips past it)
+                        ended_sent = false;
                     },
                     PlayerAction::Seek(pos) => {
                         let seek_start = Instant::now();
@@ -215,8 +250,15 @@ impl AudioPlayer {
 
         AudioPlayer {
             tx: tx_main,
-            rx: rx_main
+            rx: rx_main,
+            events: Some(event_rx),
         }
+    }
+
+    /// The push-event stream (Ended, …); yields once, to whoever forwards the
+    /// events — the channel closes when the player is dropped
+    pub fn take_events(&mut self) -> Option<Receiver<PlayerEvent>> {
+        self.events.take()
     }
 
     // Load file
@@ -388,7 +430,7 @@ pub trait AudioSource {
 
 #[cfg(test)]
 mod tests {
-    use super::{should_rebind, slept_between};
+    use super::{should_emit_ended, should_rebind, slept_between};
     use std::time::Duration;
 
     #[test]
@@ -396,6 +438,35 @@ mod tests {
         assert!(!should_rebind(Some("MacBook Pro Speakers"), "MacBook Pro Speakers"));
         assert!(should_rebind(Some("MacBook Pro Speakers"), "Living Room AirPlay"));
         assert!(should_rebind(None, "MacBook Pro Speakers"), "unknown bound device rebinds");
+    }
+
+    #[test]
+    fn ended_fires_once_for_a_playing_sink_that_ran_dry() {
+        // (has_source, paused, empty, already_sent)
+        assert!(should_emit_ended(true, false, true, false));
+        assert!(!should_emit_ended(true, false, true, true), "only once per load");
+        assert!(!should_emit_ended(true, true, true, false), "paused is not ended");
+        assert!(!should_emit_ended(true, false, false, false), "still playing");
+        assert!(!should_emit_ended(false, false, true, false), "nothing loaded");
+    }
+
+    #[test]
+    #[ignore] // needs an audio output device: cargo test -- --ignored
+    fn ended_event_reaches_the_receiver_when_audio_runs_out() {
+        struct Blip;
+        impl crate::AudioSource for Blip {
+            fn duration(&self) -> u128 { 100 }
+            fn get_source(&self) -> Result<Box<dyn rodio::Source<Item = i16> + Send>, anyhow::Error> {
+                // 100 ms of silence at 8 kHz mono
+                Ok(Box::new(rodio::buffer::SamplesBuffer::new(1, 8000, vec![0i16; 800])))
+            }
+        }
+        let mut player = crate::AudioPlayer::new();
+        let events = player.take_events().expect("events receiver");
+        player.load_file(Box::new(Blip));
+        player.play();
+        let event = events.recv_timeout(std::time::Duration::from_secs(3));
+        assert!(matches!(event, Ok(crate::PlayerEvent::Ended)), "got {event:?}");
     }
 
     #[test]

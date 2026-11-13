@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { endOfTrackAction, shouldPreload } from './player';
+import { endOfTrackAction, shouldPreload, trackEndAction } from './player';
 
 describe('shouldPreload', () => {
     it('preload_skips_null_and_playing_path', () => {
@@ -31,5 +31,24 @@ describe('endOfTrackAction', () => {
         expect(endOfTrackAction({ ...atEnd, autoPlayNext: false })).toBe('pause');
         expect(endOfTrackAction({ ...atEnd, onQuickTag: false })).toBe('pause');
         expect(endOfTrackAction({ ...atEnd, multiSelect: true })).toBe('pause');
+    });
+});
+
+describe('server-ended vs clock fallback', () => {
+    it('track_end_decision_ignores_the_clock', () => {
+        const base = { autoPlayNext: true, onQuickTag: true, multiSelect: false };
+        expect(trackEndAction(base)).toBe('advance');
+        expect(trackEndAction({ ...base, autoPlayNext: false })).toBe('pause');
+        expect(trackEndAction({ ...base, onQuickTag: false })).toBe('pause');
+        expect(trackEndAction({ ...base, multiSelect: true })).toBe('pause');
+    });
+
+    it('clock_waits_out_the_grace_window', () => {
+        // Stated durations can be short (bitrate estimates): the clock only
+        // acts well past the stated end, leaving the exact server event to act
+        const s = { playing: true, position: 210_000, duration: 200_000, autoPlayNext: true, onQuickTag: true, multiSelect: false };
+        expect(endOfTrackAction({ ...s, graceMs: 30_000 })).toBe('none');
+        expect(endOfTrackAction({ ...s, position: 230_100, graceMs: 30_000 })).toBe('advance');
+        expect(endOfTrackAction(s)).toBe('advance');
     });
 });

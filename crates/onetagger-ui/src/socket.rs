@@ -258,8 +258,22 @@ impl SocketContext {
         tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
         events: tokio::sync::broadcast::Sender<String>,
     ) -> SocketContext {
+        let mut player = AudioPlayer::new();
+        // Forward the player's push events (exact end-of-track) to this client;
+        // the thread ends when the player is dropped with the connection
+        if let Some(player_events) = player.take_events() {
+            let event_sender = sender.clone();
+            std::thread::spawn(move || {
+                for event in player_events {
+                    let onetagger_player::PlayerEvent::Ended = event;
+                    if event_sender.send(serde_json::json!({ "action": "playerEnded" })).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
         SocketContext {
-            player: AudioPlayer::new(),
+            player,
             spotify: None,
             start_context,
             sender,

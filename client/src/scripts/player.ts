@@ -3,7 +3,7 @@ import { diag } from "./diag";
 import { httpUrl, wsUrl } from "./utils";
 import router from "./router";
 import { getTagStore } from "./tagstore";
-import { endOfTrackAction } from "../lib/player";
+import { CLOCK_END_GRACE_MS, endOfTrackAction, trackEndAction } from "../lib/player";
 
 const WAVES = 180;
 
@@ -33,39 +33,60 @@ class Player {
         // Setup
         this.generateDefaultWaveform();
         setInterval(() => {
-            const store = getTagStore();
+            // The server's playerEnded event is the exact trigger; the clock
+            // only acts as a safety net well past the stated duration (which
+            // can be a short bitrate estimate). Legacy modes have no server
+            // sink, so there the clock stays the only trigger.
+            const serverEnds = !$1t.settings.value.clientSidePlayer && !$1t.settings.value.externalAudioPlayer;
             const action = endOfTrackAction({
                 playing: this.playing,
                 position: this.position,
                 duration: this.duration,
-                autoPlayNext: $1t.settings.value.autoPlayNext,
-                onQuickTag: router.currentRoute.value.path.startsWith('/quicktag'),
-                multiSelect: store.selectedIds.value.length > 0,
+                graceMs: serverEnds ? CLOCK_END_GRACE_MS : 0,
+                ...this.trackEndContext(),
             });
-            if (action === 'advance') {
-                // Same pattern as the media "next" key: wasPlaying makes the
-                // selection watcher start the newly selected track. Without it
-                // the selection moved but nothing played, so this check refired
-                // every tick and the cursor ran away to the end of the list.
-                const before = store.selectedId.value;
-                this.wasPlaying = true;
-                store.selectOffset(1);
-                if (store.selectedId.value === before) {
-                    // Last row: nothing to advance to
-                    this.wasPlaying = false;
-                    this.pause();
-                } else {
-                    // The watcher's startTrack resets the clock on Vue's flush;
-                    // clamp now so the check cannot refire before that lands
-                    this.position = 0;
-                }
-            } else if (action === 'pause') {
-                this.pause();
-            }
+            if (action === 'advance') this.advanceToNext();
+            else if (action === 'pause') this.pause();
 
             if (this.playing)
                 this.position += 150;
         }, 150);
+    }
+
+    trackEndContext() {
+        const $1t = get1t();
+        return {
+            autoPlayNext: $1t.settings.value.autoPlayNext,
+            onQuickTag: router.currentRoute.value.path.startsWith('/quicktag'),
+            multiSelect: getTagStore().selectedIds.value.length > 0,
+        };
+    }
+
+    /** The server's sink ran out of audio: the exact end of the track */
+    onEnded() {
+        if (!this.playing) return;
+        if (trackEndAction(this.trackEndContext()) === 'advance') this.advanceToNext();
+        else this.pause();
+    }
+
+    /** Advance to the next row and play it — the media "next" key pattern:
+     *  wasPlaying makes the selection watcher start the newly selected track.
+     *  Without it the selection moved but nothing played, so end checks
+     *  refired and the cursor ran away to the end of the list. */
+    advanceToNext() {
+        const store = getTagStore();
+        const before = store.selectedId.value;
+        this.wasPlaying = true;
+        store.selectOffset(1);
+        if (store.selectedId.value === before) {
+            // Last row: nothing to advance to
+            this.wasPlaying = false;
+            this.pause();
+        } else {
+            // The watcher's startTrack resets the clock on Vue's flush; clamp
+            // now so the clock check cannot refire before that lands
+            this.position = 0;
+        }
     }
 
     // Stop & reset player

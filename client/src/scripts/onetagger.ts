@@ -243,6 +243,10 @@ class OneTagger {
                 if (this.settings.value.playOnSeek && !json.playing)
                     this.player.value.play();
                 break;
+            // The server's sink ran out of audio: the exact end of the track
+            case 'playerEnded':
+                this.player.value.onEnded();
+                break;
             // Spotify
             case 'spotifyAuthorized':
                 this.spotify.value.authorized = json.value;
