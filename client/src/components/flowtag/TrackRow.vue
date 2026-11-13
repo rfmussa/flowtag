@@ -11,7 +11,7 @@
     <span class='row-title' :title='track.title'>{{ track.title }}</span>
     <span class='row-artist' :title='track.artist'>{{ track.artist }}</span>
     <span class='row-spacer'></span>
-    <TagChips dense :tagIds='track.tagIds' class='row-chips'></TagChips>
+    <TagChips dense :tagIds='track.tagIds' :max='chipMax' class='row-chips'></TagChips>
     <span v-if='statusChip' class='row-status' :class='"row-status-" + statusChip.kind' :data-test='"row-status-" + statusChip.kind'>{{ statusChip.label }}</span>
     <span v-if='track.needsFlush' class='row-pending' title='Not yet written to file'></span>
     <Hint v-if='track.missing' text='File missing'>
@@ -43,6 +43,8 @@ const props = defineProps<{
     alt?: boolean;
     /** This row's file is the one currently loaded in the player */
     playing?: boolean;
+    /** Cap the chips at this many (narrow windows show one + "+n") */
+    chipMax?: number;
 }>();
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void; (e: 'play'): void }>();
 
@@ -169,6 +171,17 @@ const addedDate = computed(() => {
         flex-shrink: 0;
     }
     .row-bpm { color: var(--ft-text-2); }
+
+    // Medium windows: the path and added columns give way first (tooltips keep them)
+    @media (max-width: 1199px) {
+        .row-path, .row-added { display: none; }
+    }
+    // Narrow windows: year goes too; BPM and key are the DJ columns and stay
+    @media (max-width: 899px) {
+        .row-meta:not(.row-bpm) { display: none; }
+        .row-title { max-width: 48%; }
+    }
+
     .row-key {
         width: 30px;
         text-align: right;

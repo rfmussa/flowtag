@@ -1,7 +1,7 @@
 <template>
 <span class='flowtag-chips' :class='{"flowtag-chips-dense": dense}'>
     <span
-        v-for='tag in resolved'
+        v-for='tag in capped.shown'
         :key='tag.id'
         class='flowtag-chip'
         :title='tag.name'
@@ -16,6 +16,7 @@
             @click.stop='store.removeTag(trackId!, tag.id)'
         >×</button>
     </span>
+    <span v-if='capped.more > 0' class='chips-more' :title='overflowNames'>+{{ capped.more }}</span>
 </span>
 </template>
 
@@ -38,12 +39,15 @@ export function chipTextColor(bg: string): 'black' | 'white' {
 <script lang='ts' setup>
 import { computed } from 'vue';
 import { getTagStore, FlowTag } from '../../scripts/tagstore';
+import { capChips } from '@/lib/layout';
 
 const props = defineProps<{
     tagIds: number[];
     trackId?: number;
     removable?: boolean;
     dense?: boolean;
+    /** Show at most this many chips, the rest as "+n" (narrow windows) */
+    max?: number;
 }>();
 
 const store = getTagStore();
@@ -57,6 +61,9 @@ const resolved = computed<FlowTag[]>(() => {
     }
     return out;
 });
+
+const capped = computed(() => capChips(resolved.value, props.max));
+const overflowNames = computed(() => resolved.value.slice(capped.value.shown.length).map((t) => t.name).join(', '));
 </script>
 
 <style lang='scss'>
@@ -65,6 +72,11 @@ const resolved = computed<FlowTag[]>(() => {
     flex-wrap: nowrap;
     align-items: center;
     gap: 4px;
+}
+.chips-more {
+    font-size: 10.5px;
+    color: var(--ft-text-3);
+    flex-shrink: 0;
 }
 .flowtag-chip {
     display: inline-flex;

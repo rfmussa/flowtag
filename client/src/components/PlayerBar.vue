@@ -1,8 +1,8 @@
 <template>
 <div>
 
-    <!-- Compact: slim strip, waveform hidden -->
-    <div v-if='compact' class='compact-row'>
+    <!-- Compact: slim strip, waveform hidden; forced below 900px of window -->
+    <div v-if='isCompact' class='compact-row'>
         <div class='compact-progress' :style='{ width: progress + "%" }'></div>
         <Button
             ref='playButton'
@@ -16,7 +16,7 @@
         <span class='compact-artist' v-if='$1t.player.value.artists?.length'>{{ $1t.player.value.artists.join(', ') }}</span>
         <span class='compact-spacer'></span>
         <span class='monospace'>{{ fmt($1t.player.value.position) }} / {{ fmt($1t.player.value.duration) }}</span>
-        <Button size='icon' title='Expand player' aria-label='Expand player' @click='toggleCompact'><ChevronUpIcon /></Button>
+        <Button v-if='!narrowViewport' size='icon' title='Expand player' aria-label='Expand player' @click='toggleCompact'><ChevronUpIcon /></Button>
     </div>
 
     <!-- Full bar -->
@@ -84,7 +84,7 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { PLACEHOLDER_IMG, httpUrl } from '../scripts/utils';
 import { computed, onDeactivated, onMounted, ref, watch } from 'vue';
-import { useLocalStorage } from '@vueuse/core';
+import { useLocalStorage, useMediaQuery } from '@vueuse/core';
 import { get1t } from '../scripts/onetagger';
 
 const $1t = get1t();
@@ -99,8 +99,13 @@ const compact = useLocalStorage('flowtag-compact-player', false, {
     },
 });
 
+/** Narrow windows (half of a 16″ screen) force the compact strip: the
+ *  waveform has no room, and the manual toggle resumes above the breakpoint */
+const narrowViewport = useMediaQuery('(max-width: 899px)');
+const isCompact = computed(() => compact.value || narrowViewport.value);
+
 /** The track list sizes itself against this (QuickTag: calc(100vh - var(--player-h))) */
-watch(compact, (c) => {
+watch(isCompact, (c) => {
     document.documentElement.style.setProperty('--player-h', c ? '36px' : '60px');
 }, { immediate: true });
 

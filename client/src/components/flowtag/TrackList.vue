@@ -15,6 +15,7 @@
             :anchor='row.track.id === store.selectedId.value'
             :alt='row.index % 2 === 1'
             :playing='row.track.path === playerPath'
+            :chip-max='narrowViewport ? 1 : undefined'
             @click='(ev) => select(row.track, ev)'
             @play='emit("play", row.track)'
         />
@@ -34,6 +35,7 @@
 <script lang='ts' setup>
 import { computed, nextTick, ref, watch } from 'vue';
 import { useVirtualizer } from '@tanstack/vue-virtual';
+import { useMediaQuery } from '@vueuse/core';
 import { ContextMenuContent, ContextMenuItem, ContextMenuPortal, ContextMenuRoot, ContextMenuTrigger } from 'reka-ui';
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowTrack } from '../../scripts/tagstore';
@@ -52,6 +54,8 @@ const viewport = ref<HTMLElement>();
 
 // The actively playing file (may differ from the anchor with continue-playback)
 const playerPath = computed(() => $1t.player.value.path);
+/** Narrow windows cap each row at one chip + "+n" (full list on its tooltip) */
+const narrowViewport = useMediaQuery('(max-width: 899px)');
 
 // Recomputes only when tracks / filter / toggle change
 const visible = computed(() => {

@@ -23,7 +23,7 @@
             <AlertDialogContent @escape-key-down.prevent>
                 <AlertDialogHeader>
                     <AlertDialogTitle>Window too small</AlertDialogTitle>
-                    <AlertDialogDescription>FlowTag needs at least a 1200×550 window. Resize to continue.</AlertDialogDescription>
+                    <AlertDialogDescription>FlowTag needs at least a 800×450 window. Resize to continue.</AlertDialogDescription>
                 </AlertDialogHeader>
             </AlertDialogContent>
         </AlertDialog>
@@ -69,6 +69,7 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { LoaderCircleIcon } from '@lucide/vue';
 import { AlertDialog, AlertDialogContent, AlertDialogDescription, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import DialogHost from '@/components/flowtag/DialogHost.vue';
+import { MIN_WINDOW_H, MIN_WINDOW_W, waveformWaves } from '@/lib/layout';
 import CommitSheet from '@/components/flowtag/CommitSheet.vue';
 import JournalDialog from '@/components/flowtag/JournalDialog.vue';
 
@@ -97,12 +98,12 @@ function openSettings() {
 }
 
 function setWaveformWidth() {
-    document.documentElement.style.setProperty('--waveform-wave', Math.min(Math.round(20 + ((window.innerWidth - 1200) / 10)), 70).toString());
+    document.documentElement.style.setProperty('--waveform-wave', waveformWaves(window.innerWidth).toString());
 }
 
 function onResize() {
     setWaveformWidth();
-    sizeDialog.value = !isMini.value && (window.innerHeight < 550 || window.innerWidth < 1200);
+    sizeDialog.value = !isMini.value && (window.innerHeight < MIN_WINDOW_H || window.innerWidth < MIN_WINDOW_W);
 }
 
 // Setup

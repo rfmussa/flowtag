@@ -16,9 +16,9 @@
             v-model='store.sortBy.value'
             :options='sortOptions'
             label='Sort by'
-            trigger-class='ml-2 border-transparent bg-transparent hover:bg-ft-hover hover:border-transparent text-ft-text-2 font-medium h-[26px] pl-2.5 pr-1.5'
+            trigger-class='hide-narrow ml-2 border-transparent bg-transparent hover:bg-ft-hover hover:border-transparent text-ft-text-2 font-medium h-[26px] pl-2.5 pr-1.5'
         />
-        <button type='button' class='ft-btn dir-btn' :aria-label='store.sortDesc.value ? "Sort descending" : "Sort ascending"' @click='toggleSortDir'>
+        <button type='button' class='ft-btn dir-btn hide-narrow' :aria-label='store.sortDesc.value ? "Sort descending" : "Sort ascending"' @click='toggleSortDir'>
             <ArrowDownIcon v-if='store.sortDesc.value' class='size-[15px]' />
             <ArrowUpIcon v-else class='size-[15px]' />
         </button>
@@ -34,7 +34,9 @@
 
         <div class='flex-1'></div>
 
-        <button type='button' class='ft-btn ml-2' data-test='stage-next-50' title='Stage the next 50 not-done tracks in view order' @click='stageNext50($event)'>Stage next 50</button>
+        <button type='button' class='ft-btn ml-2 hide-narrow' data-test='stage-next-50' title='Stage the next 50 not-done tracks in view order' @click='stageNext50($event)'>
+            <span class='when-full'>Stage next 50</span><span class='when-mid'>Stage 50</span>
+        </button>
         <!-- Library progress; opens the Journal -->
         <button type='button' class='ft-btn done-chip ft-num ml-2' data-test='done-chip' title='Tracks marked done: open the Journal' @click='openDoneJournal($event)'>{{ store.libraryDone.value.toLocaleString() }} done</button>
         <FlushIndicator class='ml-4' />
@@ -45,8 +47,31 @@
             <span v-if='!filterInput' class='ft-kbd'>F</span>
         </label>
 
-        <button type='button' class='ft-btn ml-2' @click='openManager'>Manage</button>
-        <button type='button' class='ft-btn' @click='confirmExport' title="Write tags as #hashtags into each file's comment (Rekordbox-searchable)">Export</button>
+        <button type='button' class='ft-btn ml-2 hide-mid' @click='openManager'>Manage</button>
+        <button type='button' class='ft-btn hide-mid' @click='confirmExport' title="Write tags as #hashtags into each file's comment (Rekordbox-searchable)">Export</button>
+
+        <!-- Overflow: everything the narrower header folds away, one click back -->
+        <DropdownMenu>
+            <DropdownMenuTrigger as-child>
+                <button type='button' class='ft-btn icon-only show-mid ml-2' aria-label='More actions'>
+                    <EllipsisIcon class='size-[15px]' />
+                </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align='end' class='min-w-[170px]'>
+                <template v-if='narrowHeader'>
+                    <DropdownMenuItem @select='store.stageNext50()'>Stage next 50</DropdownMenuItem>
+                    <DropdownMenuItem
+                        v-for='opt in sortOptions' :key='opt.value'
+                        @select='store.sortBy.value = opt.value'
+                    >{{ store.sortBy.value === opt.value ? '✓ ' : '' }}Sort by {{ opt.label }}</DropdownMenuItem>
+                    <DropdownMenuItem @select='store.sortDesc.value = !store.sortDesc.value'>
+                        {{ store.sortDesc.value ? '✓ ' : '' }}Descending
+                    </DropdownMenuItem>
+                </template>
+                <DropdownMenuItem @select='openManager'>Manage tags…</DropdownMenuItem>
+                <DropdownMenuItem @select='confirmExport'>Export…</DropdownMenuItem>
+            </DropdownMenuContent>
+        </DropdownMenu>
         <button type='button' class='ft-btn icon-only' :aria-label='paletteOpen ? "Hide tag palette" : "Show tag palette"' @click='togglePalette'>
             <PanelRightCloseIcon v-if='paletteOpen' class='size-[15px]' />
             <PanelRightOpenIcon v-else class='size-[15px]' />
@@ -62,9 +87,10 @@
     <!-- Session progress: one quiet line -->
     <div class='progress-line' aria-hidden='true'><div class='progress-fill' :style='{ width: progressPct + "%" }'></div></div>
 
-    <!-- Playlists + track list + palette -->
+    <!-- Playlists + track list + palette; below 900 the panels overlay the list -->
     <div class='flex flex-1 list-row'>
-        <PlaylistSidebar v-if='sidebarOpen' />
+        <div v-if='narrowHeader && (sidebarOpen || paletteOpen)' class='panel-scrim' @click='closeOverlays'></div>
+        <PlaylistSidebar v-if='sidebarOpen' :class='{ "overlay-left": narrowHeader }' />
         <div class='flex-1 list-area'>
             <WelcomeCard v-if='welcome' :text='welcome.text' @dismiss='dismissWelcome' @continue='continueWelcome' />
             <div class='list-body'>
@@ -80,7 +106,7 @@
                 <TrackList v-else @play='playTrack' />
             </div>
         </div>
-        <div v-if='paletteOpen' class='palette-col'>
+        <div v-if='paletteOpen' class='palette-col' :class='{ "overlay-right": narrowHeader }'>
             <TagPalette />
         </div>
     </div>
@@ -132,11 +158,12 @@
 
 <script lang='ts' setup>
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useLocalStorage, watchDebounced } from '@vueuse/core';
+import { useEventListener, useLocalStorage, useMediaQuery, watchDebounced } from '@vueuse/core';
 import {
-    ArrowDownIcon, ArrowUpIcon, LibraryIcon, ListMinusIcon, LoaderCircleIcon,
+    ArrowDownIcon, ArrowUpIcon, EllipsisIcon, LibraryIcon, ListMinusIcon, LoaderCircleIcon,
     PanelRightCloseIcon, PanelRightOpenIcon, PictureInPicture2Icon, SearchIcon, SettingsIcon,
 } from '@lucide/vue';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { get1t } from '../scripts/onetagger';
 import { getTagStore, FlowTrack, SortField } from '../scripts/tagstore';
 import type { QuickFilter } from '@/lib/status';
@@ -196,6 +223,20 @@ function blurFilter() {
 
 const managerOpen = ref(false);
 const paletteOpen = useLocalStorage(PALETTE_KEY, true);
+
+/** Below 900 the header folds Sort/Stage into ⋯ and the panels overlay the list */
+const narrowHeader = useMediaQuery('(max-width: 899px)');
+
+function closeOverlays() {
+    sidebarOpen.value = false;
+    paletteOpen.value = false;
+}
+// Esc dismisses an open overlay panel before anything else
+useEventListener(window, 'keydown', (e: KeyboardEvent) => {
+    if (e.code === 'Escape' && narrowHeader.value && (sidebarOpen.value || paletteOpen.value)) {
+        closeOverlays();
+    }
+});
 
 const sortOptions: { label: string; value: SortField }[] = [
     { label: 'Path', value: 'path' },
@@ -453,6 +494,49 @@ onMounted(() => {
 .flowtag .search-field {
     width: 230px;
     .search-icon { color: var(--ft-text-3); }
+}
+
+/* ---- Responsive ladder: full ≥1200 · medium 900–1199 · narrow 800–899 ----
+   Folded header controls stay one click away in the ⋯ menu; shortcuts always work. */
+.flowtag .show-mid { display: none !important; }
+.flowtag .when-mid { display: none; }
+@media (max-width: 1199px) {
+    .flowtag .hide-mid { display: none !important; }
+    .flowtag .show-mid { display: inline-flex !important; }
+    .flowtag .when-full { display: none; }
+    .flowtag .when-mid { display: inline; }
+    .flowtag .search-field { width: 160px; }
+}
+@media (max-width: 899px) {
+    .flowtag .hide-narrow { display: none !important; }
+    .flowtag .search-field { width: auto; flex: 1; min-width: 110px; max-width: 230px; }
+}
+
+.flowtag .panel-scrim {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    background: rgba(0, 0, 0, 0.4);
+}
+.flowtag .list-row { position: relative; }
+.flowtag .overlay-left {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    width: 212px;
+    box-shadow: 12px 0 32px rgba(0, 0, 0, 0.45);
+    border-right: 1px solid var(--ft-line-strong);
+}
+.flowtag .overlay-right {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 50;
+    box-shadow: -12px 0 32px rgba(0, 0, 0, 0.45);
+    border-left: 1px solid var(--ft-line-strong);
 }
 
 .flowtag .progress-line {

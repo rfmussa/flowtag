@@ -119,7 +119,7 @@ pub fn start_webview() -> Result<(), Error> {
     let loop_proxy = proxy.clone();
     let window = WindowBuilder::new()
         .with_title("FlowTag")
-        .with_min_inner_size(Size::Logical(LogicalSize::new(1150.0, 550.0)))
+        .with_min_inner_size(Size::Logical(LogicalSize::new(800.0, 450.0)))
         .with_inner_size(Size::Logical(LogicalSize::new(1280.0, 720.0)))
         .with_resizable(true)
         .with_window_icon(Some(Icon::from_rgba(include_bytes!("../../../assets/64x64.bin").to_vec(), 64, 64).unwrap()))
