@@ -452,6 +452,7 @@ onMounted(() => {
 
 .flowtag .header-bar {
     height: 46px;
+    white-space: nowrap; // inherited: no header label ever wraps to a second line
     box-sizing: border-box;
     padding: 0 12px;
     border-bottom: 1px solid var(--ft-line);
@@ -505,11 +506,12 @@ onMounted(() => {
     .flowtag .show-mid { display: inline-flex !important; }
     .flowtag .when-full { display: none; }
     .flowtag .when-mid { display: inline; }
-    .flowtag .search-field { width: 160px; }
+    // The search is the header's flexible element: it absorbs the squeeze
+    // so button labels keep their single line
+    .flowtag .search-field { width: auto; flex: 1 1 auto; min-width: 110px; max-width: 230px; }
 }
 @media (max-width: 899px) {
     .flowtag .hide-narrow { display: none !important; }
-    .flowtag .search-field { width: auto; flex: 1; min-width: 110px; max-width: 230px; }
 }
 
 .flowtag .panel-scrim {

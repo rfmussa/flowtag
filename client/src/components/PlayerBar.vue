@@ -49,7 +49,8 @@
                         <PauseIcon v-if='$1t.player.value.playing' class='size-5' /><PlayIcon v-else class='size-5' />
                     </Button>
                 </div>
-                <div><Waveform></Waveform></div>
+                <!-- min-w-0 + clip: glyphs may briefly outsize the cell while a resize settles -->
+                <div class='min-w-0 overflow-hidden'><Waveform></Waveform></div>
             </div>
         </div>
 

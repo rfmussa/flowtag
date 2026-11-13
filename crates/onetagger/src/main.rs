@@ -164,6 +164,9 @@ pub fn start_webview() -> Result<(), Error> {
     // Configure
     let mut webview = WebViewBuilder::new_with_web_context(&mut context)
         .with_url(&format!("http://127.0.0.1:{PORT}/"))
+        // Matches the client's --ft-bg: the area WKWebView exposes while it
+        // catches up during a live resize stays app-colored instead of white
+        .with_background_color((17, 17, 18, 255))
         .with_devtools(Settings::load().map(|s| s.devtools()).unwrap_or(false))
         .with_ipc_handler(move |message| {
             let proxy = &p;

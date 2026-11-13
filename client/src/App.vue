@@ -59,7 +59,7 @@
 
 <script lang='ts' setup>
 import { computed, onMounted, ref } from "vue";
-import { useEventListener } from '@vueuse/core';
+import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
@@ -101,8 +101,14 @@ function setWaveformWidth() {
     document.documentElement.style.setProperty('--waveform-wave', waveformWaves(window.innerWidth).toString());
 }
 
+// Re-shaping the 180 variable-font waveform glyphs is the most expensive
+// relayout on the page; WKWebView (macOS 26) defers reflow during a live
+// resize and catches up when the drag pauses, so the glyphs re-shape only
+// once the size settles, keeping that catch-up as short as possible.
+const setWaveformWidthSettled = useDebounceFn(setWaveformWidth, 150);
+
 function onResize() {
-    setWaveformWidth();
+    setWaveformWidthSettled();
     sizeDialog.value = !isMini.value && (window.innerHeight < MIN_WINDOW_H || window.innerWidth < MIN_WINDOW_W);
 }
 
