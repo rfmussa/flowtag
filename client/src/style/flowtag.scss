@@ -17,6 +17,10 @@
     --ft-ring: rgba(255, 255, 255, 0.25);
     // Fills
     --ft-stripe: rgba(255, 255, 255, 0.02);
+    // Browser surfaces (selection, scrollbars) carry the theme too
+    --ft-selection: rgba(255, 255, 255, 0.2);
+    --ft-scroll-thumb: rgba(255, 255, 255, 0.12);
+    --ft-scroll-thumb-hover: rgba(255, 255, 255, 0.22);
     // Text (neutral ramp)
     --ft-text: #ededef;
     --ft-text-2: #a6a6ad;
@@ -43,18 +47,18 @@
     letter-spacing: 0.005em;
 
     // Browser surfaces carry the design too
-    ::selection { background: rgba(255, 255, 255, 0.2); }
+    ::selection { background: var(--ft-selection); }
     caret-color: var(--ft-text);
 
     ::-webkit-scrollbar { width: 10px; height: 10px; }
     ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-        background: rgba(255, 255, 255, 0.12);
+        background: var(--ft-scroll-thumb);
         border-radius: 5px;
         border: 2px solid transparent;
         background-clip: content-box;
     }
-    ::-webkit-scrollbar-thumb:hover { background-color: rgba(255, 255, 255, 0.22); }
+    ::-webkit-scrollbar-thumb:hover { background-color: var(--ft-scroll-thumb-hover); }
 
     // The one focus indicator. Text fields show focus with their border instead;
     // the outline follows each element's own radius.
@@ -209,4 +213,136 @@
         font-size: 11px;
         color: var(--ft-text-3);
     }
+}
+
+// ============================================================================
+// Themes: value sets for the --ft-* tokens above, chosen in Settings and
+// applied as a class on <html> (scripts/themes.ts) so portaled layers follow.
+// The doubled selector (html.th-X, html.th-X .flowtag-theme) outranks the
+// base definitions on .flowtag-theme. Graphite is the default token set.
+// Tag colors and Camelot keys are data, not chrome: themes never touch them
+// (Porcelain only compensates their contrast for a light ground, below).
+// ============================================================================
+
+// Carbon: true black for dark rooms; hairlines and text step up so edges
+// survive the void
+html.th-carbon,
+html.th-carbon .flowtag-theme {
+    --ft-bg: #000000;
+    --ft-panel: #0b0b0c;
+    --ft-raised: #161617;
+    --ft-overlay: #1d1d1f;
+    --ft-line: rgba(255, 255, 255, 0.09);
+    --ft-line-strong: rgba(255, 255, 255, 0.18);
+    --ft-line-faint: rgba(255, 255, 255, 0.055);
+    --ft-ring: rgba(255, 255, 255, 0.3);
+    --ft-stripe: rgba(255, 255, 255, 0.025);
+    --ft-selection: rgba(255, 255, 255, 0.24);
+    --ft-scroll-thumb: rgba(255, 255, 255, 0.15);
+    --ft-scroll-thumb-hover: rgba(255, 255, 255, 0.26);
+    --ft-text: #f2f2f4;
+    --ft-text-2: #a3a3aa;
+    --ft-text-3: #808088;
+    --ft-hover: rgba(255, 255, 255, 0.05);
+    --ft-active: rgba(255, 255, 255, 0.08);
+    --ft-focus: rgba(255, 255, 255, 0.45);
+    --ft-playing: #33b374;
+    --wave-played: #f2f2f4;
+    --wave-hover: rgba(242, 242, 244, 0.44);
+    --wave-rest: #2e2e31;
+}
+
+// Umber: warm dark for late nights; the whole alpha family rides a candle
+// tint and focus is the one amber note
+html.th-umber,
+html.th-umber .flowtag-theme {
+    --ft-bg: #141110;
+    --ft-panel: #191512;
+    --ft-raised: #211c16;
+    --ft-overlay: #27211a;
+    --ft-line: rgba(255, 235, 205, 0.08);
+    --ft-line-strong: rgba(255, 235, 205, 0.16);
+    --ft-line-faint: rgba(255, 235, 205, 0.045);
+    --ft-ring: rgba(255, 235, 205, 0.28);
+    --ft-stripe: rgba(255, 235, 205, 0.02);
+    --ft-selection: rgba(222, 186, 120, 0.28);
+    --ft-scroll-thumb: rgba(255, 235, 205, 0.13);
+    --ft-scroll-thumb-hover: rgba(255, 235, 205, 0.24);
+    --ft-text: #f0e9df;
+    --ft-text-2: #b3a795;
+    --ft-text-3: #8f8574;
+    --ft-hover: rgba(255, 235, 205, 0.045);
+    --ft-active: rgba(255, 235, 205, 0.075);
+    --ft-focus: rgba(222, 186, 120, 0.5);
+    --ft-playing: #4ba05f;
+    --wave-played: #f0e9df;
+    --wave-hover: rgba(240, 233, 223, 0.44);
+    --wave-rest: #403a32;
+}
+
+// Porcelain: the one light theme; same hairline logic on an ink-on-paper
+// ramp, with its own composed shadows (never the dark theme's)
+html.th-porcelain,
+html.th-porcelain .flowtag-theme {
+    --ft-bg: #f6f6f7;
+    --ft-panel: #ffffff;
+    --ft-raised: #eaeaed;
+    --ft-overlay: #ffffff;
+    --ft-line: rgba(20, 20, 25, 0.09);
+    --ft-line-strong: rgba(20, 20, 25, 0.18);
+    --ft-line-faint: rgba(20, 20, 25, 0.05);
+    --ft-ring: rgba(20, 20, 25, 0.3);
+    --ft-stripe: rgba(20, 20, 25, 0.025);
+    --ft-selection: rgba(20, 20, 25, 0.16);
+    --ft-scroll-thumb: rgba(20, 20, 25, 0.22);
+    --ft-scroll-thumb-hover: rgba(20, 20, 25, 0.36);
+    --ft-text: #1c1c21;
+    --ft-text-2: #5b5b63;
+    --ft-text-3: #84848c;
+    --ft-hover: rgba(20, 20, 25, 0.04);
+    --ft-active: rgba(20, 20, 25, 0.07);
+    --ft-focus: rgba(20, 20, 25, 0.4);
+    --ft-warn: #9a6700;
+    --ft-danger: #c93c34;
+    --ft-playing: #1f9e5e;
+    --ft-shadow-pop: 0 8px 24px rgba(20, 20, 30, 0.14), 0 2px 6px rgba(20, 20, 30, 0.1);
+    --wave-played: #1c1c21;
+    --wave-hover: rgba(28, 28, 33, 0.44);
+    --wave-rest: #c9c9ce;
+}
+
+// Light-ground compensation for data colors: the Camelot ramp and pale tag
+// dots were tuned against ink. Keys mix toward ink to hold contrast on
+// white (components set --kc and read color from it); dots get a hairline
+// ring so pale hues stay visible on white panels. Hue is preserved.
+html.th-porcelain .row-key,
+html.th-porcelain .key-tinted {
+    color: color-mix(in oklab, var(--kc, currentColor) 72%, #16161a);
+}
+html.th-porcelain .chip-dot {
+    box-shadow: 0 0 0 1px var(--ft-line-strong);
+}
+
+// The one authored theme moment: switching crossfades surfaces for 240ms
+// (scripts/themes.ts adds and removes the class; reduced-motion skips it)
+html.theme-switching,
+html.theme-switching * {
+    transition:
+        background-color 240ms ease-out,
+        color 240ms ease-out,
+        border-color 240ms ease-out,
+        box-shadow 240ms ease-out !important;
+}
+
+// Keycap press echo: a bound key dips its on-screen hint for a beat
+// (scripts/keycapecho.ts). The 2px bottom edge collapsing sells the press.
+.flowtag-theme .ft-kbd {
+    transition: transform 80ms ease-out, border-bottom-width 80ms ease-out;
+}
+.flowtag-theme .ft-kbd.kbd-echo {
+    transform: translateY(1px);
+    border-bottom-width: 1px;
+}
+@media (prefers-reduced-motion: reduce) {
+    .flowtag-theme .ft-kbd { transition: none; }
 }

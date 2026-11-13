@@ -107,10 +107,12 @@ function keyColor(key?: string): string | undefined {
     return color;
 }
 
-/** keyColor as a full CSS declaration, for :style string bindings */
+/** keyColor as a full CSS declaration, for :style string bindings. Sets the
+ *  color through --kc so light themes can remix it for contrast (pair with
+ *  the `key-tinted` class). */
 function keyColorStyle(key?: string): string | undefined {
     const color = keyColor(key);
-    return color ? `color: ${color};` : undefined;
+    return color ? `--kc: ${color}; color: var(--kc);` : undefined;
 }
 
 export { CAMELOT_KEYS, KEY_COLORS, OPENKEY_KEYS, keyColor, keyColorStyle };
