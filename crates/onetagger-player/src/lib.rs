@@ -20,6 +20,9 @@ pub(crate) fn duration_without_tags(path: impl AsRef<Path>) -> Result<std::time:
     Ok(file.properties().duration())
 }
 
+#[cfg(target_os = "macos")]
+mod output_watch;
+
 pub mod mp3;
 pub mod mp4;
 pub mod wav;
@@ -43,6 +46,25 @@ impl AudioPlayer {
         // Create thread, becuase for some reason it stops working after closure ends
         let (tx_main, rx) = channel();
         let (tx, rx_main) = channel();
+        // The player posts rebinds to itself (sleep recovery, device watcher);
+        // the flag collapses a burst of device-change events into one rebind
+        let self_tx = tx_main.clone();
+        let rebind_pending = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        #[cfg(target_os = "macos")]
+        {
+            let watcher_tx = tx_main.clone();
+            let pending = rebind_pending.clone();
+            let registered = output_watch::watch_default_output(move || {
+                if !pending.swap(true, std::sync::atomic::Ordering::Relaxed) {
+                    watcher_tx.send(PlayerAction::RebindOutput).ok();
+                }
+            });
+            if registered {
+                info!("player output: watching default-device changes");
+            } else {
+                warn!("player output: device watcher registration failed, falling back to per-load checks");
+            }
+        }
         thread::spawn(move || {
             let mut volume = 0.5;
             let mut source = None;
@@ -51,15 +73,19 @@ impl AudioPlayer {
             // output device changed (rodio never follows device changes on its own)
             let mut bound_device = default_output_name();
             // Sleep detector: the monotonic clock stops during system sleep,
-            // the wall clock does not — the skew between loads is the sleep
-            let mut last_load_mono = Instant::now();
-            let mut last_load_wall = std::time::SystemTime::now();
+            // the wall clock does not — skew between actions means a sleep,
+            // and sleep kills the CoreAudio stream without renaming the device
+            let mut last_action_mono = Instant::now();
+            let mut last_action_wall = std::time::SystemTime::now();
             let (mut _stream, mut stream_handle) = rodio::OutputStream::try_default().unwrap();
             let mut sink = Sink::try_new(&stream_handle).unwrap();
             sink.set_volume(volume);
             sink.pause();
             // Wait for messages
             for action in rx {
+                let slept = slept_between(last_action_mono.elapsed(), last_action_wall.elapsed().unwrap_or_default());
+                last_action_mono = Instant::now();
+                last_action_wall = std::time::SystemTime::now();
                 match action {
                     PlayerAction::Volume(v) => {
                         sink.set_volume(v);
@@ -68,18 +94,24 @@ impl AudioPlayer {
                     PlayerAction::Stop => {
                         sink.stop();
                     }
-                    PlayerAction::Play => sink.play(),
+                    PlayerAction::Play => {
+                        // Resuming after a system sleep would play into the dead
+                        // stream: rebind first (both messages land before any other
+                        // producer, and the re-sent Play sees no further skew)
+                        if slept {
+                            self_tx.send(PlayerAction::RebindOutput).ok();
+                            self_tx.send(PlayerAction::Play).ok();
+                        } else {
+                            sink.play();
+                        }
+                    },
                     PlayerAction::Pause => sink.pause(),
                     // Play new source
                     PlayerAction::Load(audio_source) => {
                         sink.stop();
-                        // Rebind when the default output changed (opening one costs ~220ms) or
-                        // the machine slept since the last load — sleep tears down the CoreAudio
-                        // stream without changing the device name, leaving silent playback.
-                        // On any failure keep the current device.
-                        let slept = slept_between(last_load_mono.elapsed(), last_load_wall.elapsed().unwrap_or_default());
-                        last_load_mono = Instant::now();
-                        last_load_wall = std::time::SystemTime::now();
+                        // Rebind when the default output changed (opening one costs ~220ms)
+                        // or the machine slept since the last action; on any failure keep
+                        // the current device
                         let current = default_output_name();
                         let rebind = match &current {
                             None => {
@@ -149,6 +181,34 @@ impl AudioPlayer {
                         // Sync
                         tx.send(!sink.is_paused()).ok();
                     }
+                    PlayerAction::RebindOutput => {
+                        rebind_pending.store(false, std::sync::atomic::Ordering::Relaxed);
+                        let pos = sink.get_pos();
+                        let paused = sink.is_paused();
+                        match rodio::OutputStream::try_default() {
+                            Ok((new_stream, new_handle)) => {
+                                _stream = new_stream;
+                                stream_handle = new_handle;
+                                bound_device = default_output_name();
+                                sink.stop();
+                                sink = Sink::try_new(&stream_handle).unwrap();
+                                sink.set_volume(volume);
+                                sink.pause();
+                                if let Some(src) = source.as_ref() {
+                                    if let Ok(s) = src.get_source() {
+                                        sink.append(s);
+                                        // Position restore; a source without try_seek restarts at 0
+                                        sink.try_seek(pos).ok();
+                                    }
+                                }
+                                if !paused {
+                                    sink.play();
+                                }
+                                info!("player output: moved playback to the default device at {}ms{}", pos.as_millis(), if paused { " (paused)" } else { "" });
+                            },
+                            Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
+                        }
+                    }
                 }
             }
         });
@@ -216,6 +276,9 @@ enum PlayerAction {
     /// 0.0 - 1.0
     Volume(f32),
     Stop,
+    /// The default output device changed (or the system slept): move playback
+    /// to the current default, keeping position and pause state
+    RebindOutput,
 }
 
 /// Wrapper for getting audio sources

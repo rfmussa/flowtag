@@ -16,3 +16,6 @@ mp4parse = "0.17"
 
 rodio = { version = "0.20", features = ["symphonia-aac", "symphonia-isomp4", "symphonia-mp3", "symphonia-flac", "symphonia-wav", "vorbis"], default-features = false }
 
+
+[target.'cfg(target_os = "macos")'.dependencies]
+coreaudio-sys = "0.2"
