@@ -258,6 +258,28 @@ pub fn start_webview() -> Result<(), Error> {
             Event::NewEvents(StartCause::Init) => {
                 debug!("Started webview!");
             },
+            // macOS 26 stopped honoring the WKWebView autoresizing mask for
+            // window-attached webviews (wry's set_bounds is a no-op for them),
+            // leaving the page laid out for the old window size and clipped.
+            // Pin the webview's frame to its superview on every resize.
+            #[cfg(target_os = "macos")]
+            Event::WindowEvent { event: WindowEvent::Resized(_), window_id, .. } => {
+                use wry::WebViewExtMacOS;
+                let wv = if window_id == main_window_id {
+                    Some(webview.webview())
+                } else {
+                    mini.as_ref().map(|(_, v)| v.webview())
+                };
+                if let Some(wv) = wv {
+                    // SAFETY: plain AppKit view-geometry calls on the main thread
+                    // (tao delivers window events on the main thread)
+                    unsafe {
+                        if let Some(superview) = wv.superview() {
+                            wv.setFrame(superview.bounds());
+                        }
+                    }
+                }
+            },
             // Check for unsaved progress (mini just closes)
             Event::WindowEvent { event: WindowEvent::CloseRequested, window_id, .. } => {
                 if window_id != main_window_id {
