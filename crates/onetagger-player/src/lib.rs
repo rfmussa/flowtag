@@ -50,6 +50,10 @@ impl AudioPlayer {
             // Kept alive for the thread's lifetime; replaced on a Load when the default
             // output device changed (rodio never follows device changes on its own)
             let mut bound_device = default_output_name();
+            // Sleep detector: the monotonic clock stops during system sleep,
+            // the wall clock does not — the skew between loads is the sleep
+            let mut last_load_mono = Instant::now();
+            let mut last_load_wall = std::time::SystemTime::now();
             let (mut _stream, mut stream_handle) = rodio::OutputStream::try_default().unwrap();
             let mut sink = Sink::try_new(&stream_handle).unwrap();
             sink.set_volume(volume);
@@ -69,22 +73,31 @@ impl AudioPlayer {
                     // Play new source
                     PlayerAction::Load(audio_source) => {
                         sink.stop();
-                        // Rebind only when the default output changed (opening one costs ~220ms);
-                        // on any failure keep the current device
-                        match default_output_name() {
-                            None => debug!("player output: default device name unreadable, keeping current device"),
-                            Some(current) if should_rebind(bound_device.as_deref(), &current) => {
-                                match rodio::OutputStream::try_default() {
-                                    Ok((new_stream, new_handle)) => {
-                                        _stream = new_stream;
-                                        stream_handle = new_handle;
-                                        bound_device = Some(current);
-                                        info!("player output: rebound to default device");
-                                    },
-                                    Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
-                                }
+                        // Rebind when the default output changed (opening one costs ~220ms) or
+                        // the machine slept since the last load — sleep tears down the CoreAudio
+                        // stream without changing the device name, leaving silent playback.
+                        // On any failure keep the current device.
+                        let slept = slept_between(last_load_mono.elapsed(), last_load_wall.elapsed().unwrap_or_default());
+                        last_load_mono = Instant::now();
+                        last_load_wall = std::time::SystemTime::now();
+                        let current = default_output_name();
+                        let rebind = match &current {
+                            None => {
+                                debug!("player output: default device name unreadable{}", if slept { ", rebinding after sleep anyway" } else { ", keeping current device" });
+                                slept
                             },
-                            Some(_) => {},
+                            Some(c) => slept || should_rebind(bound_device.as_deref(), c),
+                        };
+                        if rebind {
+                            match rodio::OutputStream::try_default() {
+                                Ok((new_stream, new_handle)) => {
+                                    _stream = new_stream;
+                                    stream_handle = new_handle;
+                                    bound_device = current;
+                                    info!("player output: rebound to default device{}", if slept { " (system slept since last load)" } else { "" });
+                                },
+                                Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
+                            }
                         }
                         // Create new sink
                         sink = Sink::try_new(&stream_handle).unwrap();
@@ -184,6 +197,14 @@ fn default_output_name() -> Option<String> {
 /// or the bound one's name was never known. Same-named devices are not told apart.
 fn should_rebind(bound: Option<&str>, current: &str) -> bool {
     bound != Some(current)
+}
+
+/// System sleep stops the monotonic clock but not the wall clock, so a wall
+/// gap well beyond the monotonic gap means the machine slept in between —
+/// and sleep tears down CoreAudio streams without changing the device name
+const SLEEP_SKEW_THRESHOLD: std::time::Duration = std::time::Duration::from_secs(30);
+fn slept_between(monotonic_gap: std::time::Duration, wall_gap: std::time::Duration) -> bool {
+    wall_gap.saturating_sub(monotonic_gap) > SLEEP_SKEW_THRESHOLD
 }
 
 enum PlayerAction {
@@ -304,12 +325,23 @@ pub trait AudioSource {
 
 #[cfg(test)]
 mod tests {
-    use super::should_rebind;
+    use super::{should_rebind, slept_between};
+    use std::time::Duration;
 
     #[test]
     fn rebinds_only_when_default_device_changed() {
         assert!(!should_rebind(Some("MacBook Pro Speakers"), "MacBook Pro Speakers"));
         assert!(should_rebind(Some("MacBook Pro Speakers"), "Living Room AirPlay"));
         assert!(should_rebind(None, "MacBook Pro Speakers"), "unknown bound device rebinds");
+    }
+
+    #[test]
+    fn sleep_is_a_wall_clock_gap_the_monotonic_clock_missed() {
+        // Overnight: monotonic saw seconds, wall clock saw hours
+        assert!(slept_between(Duration::from_secs(5), Duration::from_secs(17 * 3600)));
+        // Normal session: the clocks agree (small scheduling skew is not sleep)
+        assert!(!slept_between(Duration::from_secs(600), Duration::from_secs(605)));
+        // Wall clock stepped backwards (NTP): not a sleep
+        assert!(!slept_between(Duration::from_secs(600), Duration::from_secs(500)));
     }
 }
