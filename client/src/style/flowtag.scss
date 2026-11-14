@@ -346,3 +346,117 @@ html.theme-switching * {
 @media (prefers-reduced-motion: reduce) {
     .flowtag-theme .ft-kbd { transition: none; }
 }
+
+// ---- The colorful shelf: hue lives in the interaction layer (focus,
+// washes, selection, waveform) while the row field stays quiet, so tag
+// dots and Camelot keys keep their meaning. Token-only, like the others.
+
+// Blue Hour: indigo night, electric-blue interaction layer
+html.th-bluehour,
+html.th-bluehour .flowtag-theme {
+    --ft-bg: #0c0e1a;
+    --ft-panel: #111527;
+    --ft-raised: #1a2140;
+    --ft-overlay: #212a52;
+    --ft-line: rgba(140, 160, 255, 0.1);
+    --ft-line-strong: rgba(140, 160, 255, 0.2);
+    --ft-line-faint: rgba(140, 160, 255, 0.055);
+    --ft-ring: rgba(140, 160, 255, 0.32);
+    --ft-stripe: rgba(140, 160, 255, 0.025);
+    --ft-selection: rgba(91, 140, 255, 0.32);
+    --ft-scroll-thumb: rgba(140, 160, 255, 0.16);
+    --ft-scroll-thumb-hover: rgba(140, 160, 255, 0.28);
+    --ft-text: #e8eaf6;
+    --ft-text-2: #9aa2c8;
+    --ft-text-3: #7880a8;
+    --ft-hover: rgba(140, 160, 255, 0.06);
+    --ft-active: rgba(91, 140, 255, 0.14);
+    --ft-focus: rgba(91, 140, 255, 0.6);
+    --ft-playing: #30a46c;
+    --wave-played: #8fb0ff;
+    --wave-hover: rgba(143, 176, 255, 0.44);
+    --wave-rest: #262c4d;
+}
+
+// UV: blacklight purple-black, magenta interaction layer (magenta sits
+// near the 8A/8B Camelot hues; known, accepted trade-off)
+html.th-uv,
+html.th-uv .flowtag-theme {
+    --ft-bg: #0d0a13;
+    --ft-panel: #130e1c;
+    --ft-raised: #1c1429;
+    --ft-overlay: #241a34;
+    --ft-line: rgba(210, 160, 255, 0.09);
+    --ft-line-strong: rgba(210, 160, 255, 0.18);
+    --ft-line-faint: rgba(210, 160, 255, 0.05);
+    --ft-ring: rgba(210, 160, 255, 0.3);
+    --ft-stripe: rgba(210, 160, 255, 0.022);
+    --ft-selection: rgba(196, 55, 224, 0.3);
+    --ft-scroll-thumb: rgba(210, 160, 255, 0.14);
+    --ft-scroll-thumb-hover: rgba(210, 160, 255, 0.25);
+    --ft-text: #ece6f4;
+    --ft-text-2: #a89cc0;
+    --ft-text-3: #837a9a;
+    --ft-hover: rgba(210, 160, 255, 0.05);
+    --ft-active: rgba(196, 55, 224, 0.13);
+    --ft-focus: rgba(196, 55, 224, 0.6);
+    --ft-playing: #30a46c;
+    --wave-played: #d86bef;
+    --wave-hover: rgba(216, 107, 239, 0.44);
+    --wave-rest: #322843;
+}
+
+// Signal: near-neutral charcoal, hot amber interaction layer
+html.th-signal,
+html.th-signal .flowtag-theme {
+    --ft-bg: #131110;
+    --ft-panel: #181514;
+    --ft-raised: #211c17;
+    --ft-overlay: #28211a;
+    --ft-line: rgba(255, 200, 150, 0.08);
+    --ft-line-strong: rgba(255, 200, 150, 0.17);
+    --ft-line-faint: rgba(255, 200, 150, 0.045);
+    --ft-ring: rgba(255, 200, 150, 0.28);
+    --ft-stripe: rgba(255, 200, 150, 0.02);
+    --ft-selection: rgba(255, 138, 61, 0.3);
+    --ft-scroll-thumb: rgba(255, 200, 150, 0.13);
+    --ft-scroll-thumb-hover: rgba(255, 200, 150, 0.24);
+    --ft-text: #f0ebe5;
+    --ft-text-2: #ac9f92;
+    --ft-text-3: #867c70;
+    --ft-hover: rgba(255, 170, 90, 0.05);
+    --ft-active: rgba(255, 138, 61, 0.12);
+    --ft-focus: rgba(255, 138, 61, 0.6);
+    --ft-playing: #4ba05f;
+    --wave-played: #ffa866;
+    --wave-hover: rgba(255, 168, 102, 0.44);
+    --wave-rest: #3d352d;
+}
+
+// Phosphor: green-black CRT; the accent and the playing marker unify
+// into one phosphor green, deliberately
+html.th-phosphor,
+html.th-phosphor .flowtag-theme {
+    --ft-bg: #0a0e0b;
+    --ft-panel: #0e130f;
+    --ft-raised: #141b15;
+    --ft-overlay: #1a241c;
+    --ft-line: rgba(140, 255, 170, 0.09);
+    --ft-line-strong: rgba(140, 255, 170, 0.17);
+    --ft-line-faint: rgba(140, 255, 170, 0.05);
+    --ft-ring: rgba(140, 255, 170, 0.3);
+    --ft-stripe: rgba(140, 255, 170, 0.02);
+    --ft-selection: rgba(61, 220, 132, 0.3);
+    --ft-scroll-thumb: rgba(140, 255, 170, 0.14);
+    --ft-scroll-thumb-hover: rgba(140, 255, 170, 0.25);
+    --ft-text: #dcefe0;
+    --ft-text-2: #93b49c;
+    --ft-text-3: #6f8d78;
+    --ft-hover: rgba(140, 255, 170, 0.05);
+    --ft-active: rgba(61, 220, 132, 0.12);
+    --ft-focus: rgba(61, 220, 132, 0.55);
+    --ft-playing: #3ddc84;
+    --wave-played: #52e695;
+    --wave-hover: rgba(82, 230, 149, 0.44);
+    --wave-rest: #24332a;
+}

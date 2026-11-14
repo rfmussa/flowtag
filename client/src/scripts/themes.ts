@@ -2,7 +2,9 @@
  *  class on <html> so portaled layers (menus, popovers) inherit it too.
  *  Graphite is the token defaults in flowtag.scss; the rest override them. */
 
-export type ThemeId = 'graphite' | 'carbon' | 'umber' | 'porcelain';
+export type ThemeId =
+    | 'graphite' | 'carbon' | 'umber' | 'porcelain'
+    | 'bluehour' | 'uv' | 'signal' | 'phosphor';
 
 export interface ThemeMeta {
     id: ThemeId;
@@ -17,6 +19,11 @@ export const THEMES: readonly ThemeMeta[] = [
     { id: 'carbon', name: 'Carbon', hint: 'True black, dark rooms', swatch: ['#000000', '#0b0b0c', '#161617', '#f2f2f4'] },
     { id: 'umber', name: 'Umber', hint: 'Warm dark, late nights', swatch: ['#141110', '#191512', '#211c16', '#f0e9df'] },
     { id: 'porcelain', name: 'Porcelain', hint: 'Light, for daylight', swatch: ['#f6f6f7', '#ffffff', '#eaeaed', '#1c1c21'] },
+    // The colorful shelf: hue in the interaction layer, rows stay quiet
+    { id: 'bluehour', name: 'Blue Hour', hint: 'Indigo, electric blue', swatch: ['#0c0e1a', '#111527', '#1a2140', '#5b8cff'] },
+    { id: 'uv', name: 'UV', hint: 'Blacklight magenta', swatch: ['#0d0a13', '#130e1c', '#1c1429', '#c437e0'] },
+    { id: 'signal', name: 'Signal', hint: 'Charcoal, hot amber', swatch: ['#131110', '#181514', '#211c17', '#ff8a3d'] },
+    { id: 'phosphor', name: 'Phosphor', hint: 'CRT terminal green', swatch: ['#0a0e0b', '#0e130f', '#141b15', '#3ddc84'] },
 ];
 
 export const DEFAULT_THEME: ThemeId = 'graphite';
