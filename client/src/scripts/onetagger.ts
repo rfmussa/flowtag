@@ -251,9 +251,12 @@ class OneTagger {
                 if (this.settings.value.playOnSeek && !json.playing)
                     this.player.value.play();
                 break;
-            // The server's sink ran out of audio: the exact end of the track
+            // The server's sink ran out of audio: the exact end of the track.
+            // The deck is shared, so every window receives this broadcast;
+            // only the main window advances (the mini mirrors, it never drives)
             case 'playerEnded':
-                this.player.value.onEnded();
+                if (!window.location.hash.startsWith('#/mini'))
+                    this.player.value.onEnded();
                 break;
             // Spotify
             case 'spotifyAuthorized':
