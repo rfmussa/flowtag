@@ -1,4 +1,5 @@
 import { AutotaggerConfig, AutotaggerProfile } from "./autotagger";
+import { DEFAULT_THEME, isThemeId, ThemeId } from "./themes";
 import { Keybind } from "./utils";
 import type { Scope, SortField } from "./tagstore";
 import type { QuickFilter } from "@/lib/status";
@@ -53,6 +54,8 @@ function viewStateFromJson(data: any): ViewState | undefined {
 
 /** FlowTag-specific settings */
 class FlowTagSettings {
+    /** Theme: a value set for the --ft-* tokens (see scripts/themes.ts) */
+    theme: ThemeId = DEFAULT_THEME;
     /** Custom keybind per action; a missing entry means the built-in default key */
     keybinds: Partial<Record<FlowTagAction, Keybind>> = {};
     columns: FlowTagColumns = { ...DEFAULT_COLUMNS };
@@ -76,6 +79,7 @@ class FlowTagSettings {
             if (kb && typeof kb.key === 'string' && kb.key) keybinds[action] = Keybind.fromJson(kb);
         }
         s.keybinds = keybinds;
+        if (isThemeId(safe.theme)) s.theme = safe.theme;
         if (typeof safe.analysisEnabled === 'boolean') s.analysisEnabled = safe.analysisEnabled;
         if (typeof safe.tangleSync === 'boolean') s.tangleSync = safe.tangleSync;
         s.viewState = viewStateFromJson(safe.viewState);

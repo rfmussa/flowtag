@@ -58,12 +58,14 @@
 </template>
 
 <script lang='ts' setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useDebounceFn, useEventListener } from '@vueuse/core';
 import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
 import { initDiag } from './scripts/diag';
+import { applyTheme, DEFAULT_THEME } from './scripts/themes';
+import { installKeycapEcho } from './scripts/keycapecho';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { LoaderCircleIcon } from '@lucide/vue';
@@ -117,7 +119,16 @@ onMounted(() => {
     initDiag();
     setWaveformWidth();
     if (!isMini.value) initMediaSync();
+    installKeycapEcho();
 });
+
+// The saved theme follows the settings (loaded over the websocket after
+// boot); the first application is instant, later changes crossfade
+let themeApplied = false;
+watch(() => $1t.settings.value.flowtag.theme, (theme) => {
+    applyTheme(theme ?? DEFAULT_THEME, themeApplied);
+    themeApplied = true;
+}, { immediate: true });
 
 useEventListener(window, 'resize', onResize);
 useEventListener(window, 'flowtag-open-settings', openSettings);
