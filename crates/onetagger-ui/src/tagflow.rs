@@ -197,6 +197,17 @@ pub(crate) fn tracks_remove_tag(context: &SocketContext, track_ids: &[i64], tag_
     crate::stage::broadcast_state(context)
 }
 
+/// Star rating for many tracks (validated 1–5 or None in the db layer). Every
+/// window learns the changed ids; the flusher writes the rating to the files.
+pub(crate) fn tracks_set_rating(context: &SocketContext, track_ids: &[i64], rating: Option<i64>) -> Result<(), Error> {
+    let changed = onetagger_db::ratings::set_rating(&context.db, track_ids, rating)?;
+    context.broadcast(json!({
+        "action": "tracksRatingChanged",
+        "trackIds": changed,
+        "rating": rating
+    }))
+}
+
 /// Track inspector: current metadata, read fresh from the file
 pub(crate) fn track_meta_get(context: &SocketContext, track_id: i64) -> Result<(), Error> {
     let path = tracks::get_track_path(&context.db, track_id)?;

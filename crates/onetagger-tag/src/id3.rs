@@ -296,6 +296,11 @@ impl TagImpl for ID3Tag {
     fn get_rating(&self) -> Option<u8> {
         let tag = self.tag.get("POPM")?;
         if let Content::Popularimeter(popm) = tag.content() {
+            // POPM rating 0 means "unknown" (ID3v2 spec): play-counter-only
+            // frames from other players must not read as one star
+            if popm.rating == 0 {
+                return None
+            }
             let rating = (popm.rating as f32 / 51.0).ceil() as u8;
             if rating == 0 {
                 return Some(1)

@@ -96,12 +96,21 @@ shell already has. **Electron** works end to end and was blocked only by the cli
 in #1, so it is viable again if ever wanted; that branch also carries a `--media` server mode
 (souvlaki Now Playing from the headless server process) that is cherry-pickable for any shell.
 
+## Star ratings (quality axis)
+
+`tracks.rating` (v12: 1–5, NULL = unrated, column CHECK) plus `rating_pending`. Set through
+`tracksSetRating` → `onetagger-db::ratings::set_rating` (validates, dirties via the usual
+`needs_flush`/`tag_version` bump, sets `rating_pending`) → `tracksRatingChanged` broadcast. The
+flusher calls `onetagger-tag`'s `set_rating` (POPM for MP3/AIFF — Rekordbox reads it natively)
+**only while `rating_pending`**, so a tag-only flush never rewrites or wipes a rating FlowTag
+didn't set; the flag clears with `needs_flush` under the same `tag_version` guard. Scans import
+the file's rating like bpm/key/year, except while one is pending. v12 resets stored stats once
+so the first scan after upgrading backfills every file's rating. Client: ⇧1–⇧5 (see the client
+doc's keyboard map), a toggleable stars column, sort by rating, a "≥ n ★" header filter and
+smart-playlist rule (`lib/rating.ts`).
+
 ## Agreed but unbuilt
 
-- **Star ratings** (quality axis): a real DB field flushed through the existing
-  `onetagger-tag` `set_rating` (POPM for MP3/AIFF — Rekordbox reads it natively). Keybind
-  ⇧1–⇧5, pressing the current rating again clears, sortable + "≥ n" filter. The Shift layer is
-  free (see client doc's keyboard map).
 - **Energy chips** (set-building axis): a tag group `E1 Chill · E2 Warm-up · E3 Groove ·
   E4 Driving · E5 Peak`, cool→hot dot ramp, exactly one per track. Stays chips on purpose —
   energy has no native field in DJ software and already exports via the comment hashtags.

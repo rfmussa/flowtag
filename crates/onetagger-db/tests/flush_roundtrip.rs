@@ -107,6 +107,56 @@ fn flush_roundtrip_all_formats() {
     assert!(tag_wrap.tag().get_raw(FILE_TAG_FIELD).is_none(), "TAGS field not removed from {}", t0.path);
 }
 
+/// Star ratings: FlowTag rating -> flusher -> file frames (POPM on MP3/AIFF)
+/// -> a fresh DB imports the same rating on scan. WAV has no rating frame
+/// support upstream, so it is only required not to error.
+#[test]
+fn rating_roundtrip_all_formats() {
+    if !ffmpeg_available() {
+        eprintln!("SKIP: ffmpeg not available");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let music = dir.path().join("music");
+    std::fs::create_dir(&music).unwrap();
+    let mut names: Vec<&str> = vec![];
+    for (name, extra) in [
+        ("r.mp3", vec!["-codec:a", "libmp3lame", "-b:a", "64k"]),
+        ("r.flac", vec![]),
+        ("r.m4a", vec!["-codec:a", "aac"]),
+        ("r.aiff", vec![]),
+    ] {
+        if gen_audio(&music, name, &extra) {
+            names.push(name);
+        }
+    }
+    assert!(names.len() >= 3, "expected ffmpeg to encode most formats, got {names:?}");
+
+    let db = Db::open(dir.path().join("test.db")).unwrap();
+    tracks::add_folder(&db, &music.to_string_lossy()).unwrap();
+    scan::scan(&db, false, |_, _| {}).unwrap();
+    let all = tracks::list_tracks(&db).unwrap();
+    assert!(all.iter().all(|t| t.rating.is_none()), "fresh files start unrated");
+    let ids: Vec<i64> = all.iter().map(|t| t.id).collect();
+    onetagger_db::ratings::set_rating(&db, &ids, Some(4)).unwrap();
+
+    let events = flush::flush_pass(&db, 0, &|_| false).unwrap();
+    assert!(events.iter().all(|e| e.ok), "flush errors: {events:?}");
+    for t in &all {
+        let tag_wrap = onetagger_tag::Tag::load_file(&t.path, false).unwrap();
+        assert_eq!(tag_wrap.tag().get_rating(), Some(4), "rating not written to {}", t.path);
+    }
+    // Our own write is not an external change
+    let res = scan::scan(&db, false, |_, _| {}).unwrap();
+    assert_eq!(res.updated, 0);
+
+    // A fresh DB imports the rating from the files
+    let db2 = Db::open(dir.path().join("fresh.db")).unwrap();
+    tracks::add_folder(&db2, &music.to_string_lossy()).unwrap();
+    scan::scan(&db2, false, |_, _| {}).unwrap();
+    assert!(tracks::list_tracks(&db2).unwrap().iter().all(|t| t.rating == Some(4)));
+}
+
 #[test]
 fn comment_export_preserves_text_and_is_idempotent() {
     if !ffmpeg_available() {

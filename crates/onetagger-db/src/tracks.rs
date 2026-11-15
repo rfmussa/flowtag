@@ -73,7 +73,8 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
     let mut stmt = conn.prepare(
         "SELECT id, path, format, title, artist, duration_ms, missing, needs_flush, bpm, key, year, added_at, folder_id, done_at, done_commit,
                 EXISTS (SELECT 1 FROM staged s WHERE s.track_id = tracks.id),
-                COALESCE((SELECT s.skip FROM staged s WHERE s.track_id = tracks.id), 0)
+                COALESCE((SELECT s.skip FROM staged s WHERE s.track_id = tracks.id), 0),
+                rating
          FROM tracks ORDER BY path",
     )?;
     let tracks = stmt
@@ -96,6 +97,7 @@ pub fn list_tracks(db: &Db) -> Result<Vec<DbTrack>, Error> {
                 done_commit: r.get(14)?,
                 staged: r.get::<_, i64>(15)? != 0,
                 skip: r.get::<_, i64>(16)? != 0,
+                rating: r.get(17)?,
                 tag_ids: vec![],
             })
         })?
@@ -139,7 +141,9 @@ fn link_tag_names(conn: &Connection, track_id: i64, tag_names: &[String]) -> Res
 /// Upsert scanned tracks for a folder in one transaction.
 /// New tracks get their file tags imported into the pool; changed tracks update
 /// metadata (tags in the DB stay authoritative, so file tag values are only
-/// imported when the track is new). Returns (added, updated).
+/// imported when the track is new). The file's rating is imported like bpm/key/year,
+/// except while a FlowTag rating is still owed to the file (`rating_pending`).
+/// Returns (added, updated).
 pub fn upsert_tracks(db: &Db, folder_id: i64, tracks: &[ScannedTrack]) -> Result<(usize, usize), Error> {
     let mut conn = db.conn();
     let tx = conn.transaction()?;
@@ -157,17 +161,18 @@ pub fn upsert_tracks(db: &Db, folder_id: i64, tracks: &[ScannedTrack]) -> Result
             Some(id) => {
                 tx.execute(
                     "UPDATE tracks SET format=?2, title=?3, artist=?4, duration_ms=?5, mtime=?6, size=?7, missing=0, folder_id=?8,
-                                       bpm=?9, key=?10, year=?11
+                                       bpm=?9, key=?10, year=?11,
+                                       rating = CASE WHEN rating_pending = 1 THEN rating ELSE ?12 END
                      WHERE id = ?1",
-                    params![id, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, folder_id, t.bpm, t.key, t.year],
+                    params![id, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, folder_id, t.bpm, t.key, t.year, t.rating],
                 )?;
                 updated += 1;
             }
             None => {
                 tx.execute(
-                    "INSERT INTO tracks (folder_id, path, format, title, artist, duration_ms, mtime, size, bpm, key, year, added_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, unixepoch())",
-                    params![folder_id, t.path, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, t.bpm, t.key, t.year],
+                    "INSERT INTO tracks (folder_id, path, format, title, artist, duration_ms, mtime, size, bpm, key, year, rating, added_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, unixepoch())",
+                    params![folder_id, t.path, t.format, t.title, t.artist, t.duration_ms, t.mtime, t.size, t.bpm, t.key, t.year, t.rating],
                 )?;
                 let id = tx.last_insert_rowid();
                 link_tag_names(&tx, id, &t.tag_names)?;
@@ -295,6 +300,7 @@ mod tests {
             bpm: Some(126),
             key: Some("8A".to_string()),
             year: Some(2020),
+            rating: Some(4),
             mtime: 100,
             size: 200,
             tag_names: tags.iter().map(|s| s.to_string()).collect(),
@@ -311,6 +317,28 @@ mod tests {
         assert_eq!(t.bpm, Some(126));
         assert_eq!(t.key.as_deref(), Some("8A"));
         assert_eq!(t.year, Some(2020));
+        assert_eq!(t.rating, Some(4));
+    }
+
+    /// A rescan imports the file's rating, unless a FlowTag rating is still owed
+    /// to the file (then the DB value wins until the flusher writes it)
+    #[test]
+    fn rescan_imports_rating_unless_pending() {
+        let (dir, db) = test_db();
+        let root = dir.path().to_string_lossy().to_string();
+        let f = add_folder(&db, &root).unwrap();
+        upsert_tracks(&db, f.id, &[scanned("/a.mp3", "A", &[])]).unwrap();
+        let rescan = |rating: Option<i64>| {
+            let t = ScannedTrack { rating, mtime: 101, ..scanned("/a.mp3", "A", &[]) };
+            upsert_tracks(&db, f.id, &[t]).unwrap();
+            list_tracks(&db).unwrap()[0].rating
+        };
+        assert_eq!(rescan(Some(2)), Some(2), "external edit imported");
+        assert_eq!(rescan(None), None, "rating removed in the file");
+
+        let id = list_tracks(&db).unwrap()[0].id;
+        crate::ratings::set_rating(&db, &[id], Some(5)).unwrap();
+        assert_eq!(rescan(Some(1)), Some(5), "pending FlowTag rating kept");
     }
 
     #[test]
