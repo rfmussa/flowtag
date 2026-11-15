@@ -14,7 +14,6 @@
     --ft-line: rgba(255, 255, 255, 0.07);
     --ft-line-strong: rgba(255, 255, 255, 0.14);
     --ft-line-faint: rgba(255, 255, 255, 0.04);
-    --ft-ring: rgba(255, 255, 255, 0.25);
     // Fills
     --ft-stripe: rgba(255, 255, 255, 0.02);
     // Browser surfaces (selection, scrollbars) carry the theme too
@@ -235,7 +234,6 @@ html.th-carbon .flowtag-theme {
     --ft-line: rgba(255, 255, 255, 0.09);
     --ft-line-strong: rgba(255, 255, 255, 0.18);
     --ft-line-faint: rgba(255, 255, 255, 0.055);
-    --ft-ring: rgba(255, 255, 255, 0.3);
     --ft-stripe: rgba(255, 255, 255, 0.025);
     --ft-selection: rgba(255, 255, 255, 0.24);
     --ft-scroll-thumb: rgba(255, 255, 255, 0.15);
@@ -263,7 +261,6 @@ html.th-umber .flowtag-theme {
     --ft-line: rgba(255, 235, 205, 0.08);
     --ft-line-strong: rgba(255, 235, 205, 0.16);
     --ft-line-faint: rgba(255, 235, 205, 0.045);
-    --ft-ring: rgba(255, 235, 205, 0.28);
     --ft-stripe: rgba(255, 235, 205, 0.02);
     --ft-selection: rgba(222, 186, 120, 0.28);
     --ft-scroll-thumb: rgba(255, 235, 205, 0.13);
@@ -291,14 +288,13 @@ html.th-porcelain .flowtag-theme {
     --ft-line: rgba(20, 20, 25, 0.09);
     --ft-line-strong: rgba(20, 20, 25, 0.18);
     --ft-line-faint: rgba(20, 20, 25, 0.05);
-    --ft-ring: rgba(20, 20, 25, 0.3);
     --ft-stripe: rgba(20, 20, 25, 0.025);
     --ft-selection: rgba(20, 20, 25, 0.16);
     --ft-scroll-thumb: rgba(20, 20, 25, 0.22);
     --ft-scroll-thumb-hover: rgba(20, 20, 25, 0.36);
     --ft-text: #1c1c21;
     --ft-text-2: #5b5b63;
-    --ft-text-3: #84848c;
+    --ft-text-3: #67676f;
     --ft-hover: rgba(20, 20, 25, 0.04);
     --ft-active: rgba(20, 20, 25, 0.07);
     --ft-focus: rgba(20, 20, 25, 0.4);
@@ -361,14 +357,13 @@ html.th-bluehour .flowtag-theme {
     --ft-line: rgba(140, 160, 255, 0.1);
     --ft-line-strong: rgba(140, 160, 255, 0.2);
     --ft-line-faint: rgba(140, 160, 255, 0.055);
-    --ft-ring: rgba(140, 160, 255, 0.32);
     --ft-stripe: rgba(140, 160, 255, 0.025);
     --ft-selection: rgba(91, 140, 255, 0.32);
     --ft-scroll-thumb: rgba(140, 160, 255, 0.16);
     --ft-scroll-thumb-hover: rgba(140, 160, 255, 0.28);
     --ft-text: #e8eaf6;
     --ft-text-2: #9aa2c8;
-    --ft-text-3: #7880a8;
+    --ft-text-3: #828ab0;
     --ft-hover: rgba(140, 160, 255, 0.06);
     --ft-active: rgba(91, 140, 255, 0.14);
     --ft-focus: rgba(91, 140, 255, 0.6);
@@ -389,14 +384,13 @@ html.th-uv .flowtag-theme {
     --ft-line: rgba(210, 160, 255, 0.09);
     --ft-line-strong: rgba(210, 160, 255, 0.18);
     --ft-line-faint: rgba(210, 160, 255, 0.05);
-    --ft-ring: rgba(210, 160, 255, 0.3);
     --ft-stripe: rgba(210, 160, 255, 0.022);
     --ft-selection: rgba(196, 55, 224, 0.3);
     --ft-scroll-thumb: rgba(210, 160, 255, 0.14);
     --ft-scroll-thumb-hover: rgba(210, 160, 255, 0.25);
     --ft-text: #ece6f4;
     --ft-text-2: #a89cc0;
-    --ft-text-3: #837a9a;
+    --ft-text-3: #877e9e;
     --ft-hover: rgba(210, 160, 255, 0.05);
     --ft-active: rgba(196, 55, 224, 0.13);
     --ft-focus: rgba(196, 55, 224, 0.6);
@@ -416,14 +410,13 @@ html.th-signal .flowtag-theme {
     --ft-line: rgba(255, 200, 150, 0.08);
     --ft-line-strong: rgba(255, 200, 150, 0.17);
     --ft-line-faint: rgba(255, 200, 150, 0.045);
-    --ft-ring: rgba(255, 200, 150, 0.28);
     --ft-stripe: rgba(255, 200, 150, 0.02);
     --ft-selection: rgba(255, 138, 61, 0.3);
     --ft-scroll-thumb: rgba(255, 200, 150, 0.13);
     --ft-scroll-thumb-hover: rgba(255, 200, 150, 0.24);
     --ft-text: #f0ebe5;
     --ft-text-2: #ac9f92;
-    --ft-text-3: #867c70;
+    --ft-text-3: #8f857a;
     --ft-hover: rgba(255, 170, 90, 0.05);
     --ft-active: rgba(255, 138, 61, 0.12);
     --ft-focus: rgba(255, 138, 61, 0.6);
@@ -444,7 +437,6 @@ html.th-phosphor .flowtag-theme {
     --ft-line: rgba(140, 255, 170, 0.09);
     --ft-line-strong: rgba(140, 255, 170, 0.17);
     --ft-line-faint: rgba(140, 255, 170, 0.05);
-    --ft-ring: rgba(140, 255, 170, 0.3);
     --ft-stripe: rgba(140, 255, 170, 0.02);
     --ft-selection: rgba(61, 220, 132, 0.3);
     --ft-scroll-thumb: rgba(140, 255, 170, 0.14);

@@ -15,6 +15,17 @@
     <span class='row-spacer'></span>
     <TagChips dense :tagIds='track.tagIds' :max='chipMax' class='row-chips'></TagChips>
     <span v-if='statusChip' class='row-status' :class='"row-status-" + statusChip.kind' :data-test='"row-status-" + statusChip.kind' :aria-label='statusChip.kind === "done" ? "done" : undefined' :role='statusChip.kind === "done" ? "img" : undefined'>{{ statusChip.label }}</span>
+    <span
+        v-else-if='track.staged'
+        class='row-staged'
+        :class='{ "row-staged-unready": stagedUnready }'
+        data-test='row-status-staged'
+        role='img'
+        :aria-label='stagedUnready ? "Staged, no tags yet" : "Staged"'
+        :title='stagedUnready ? "Staged — no tags yet" : "Staged"'
+    >
+        <LayersIcon class='size-3' />
+    </span>
     <span v-if='track.needsFlush' class='row-pending' role='img' aria-label='Not yet written to file' title='Not yet written to file'></span>
     <Hint v-if='track.missing' text='File missing'>
         <FileExclamationPointIcon class='row-missing size-[13px]' />
@@ -28,7 +39,7 @@
 </template>
 
 <script lang='ts' setup>
-import { FileExclamationPointIcon, Volume2Icon } from '@lucide/vue';
+import { FileExclamationPointIcon, LayersIcon, Volume2Icon } from '@lucide/vue';
 import Hint from './Hint.vue';
 import { computed } from 'vue';
 import TagChips from './TagChips.vue';
@@ -50,13 +61,19 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{ (e: 'click', ev: MouseEvent): void; (e: 'play'): void }>();
 
-/** done ✓ · skip · staged; plain in-progress/untagged rows show nothing (tag chips say enough) */
+/** done ✓ · skip pills; plain staged rows get the quiet layers mark below instead
+ *  (a batch of 50 identical "staged" pills said nothing — the mark recedes, and
+ *  the one state worth spotting in-list, staged-with-no-tags, steps forward) */
 const statusChip = computed(() => {
     if (statusOf(props.track) === 'done') return { kind: 'done', label: '✓' };
     if (props.track.staged && props.track.skip) return { kind: 'skip', label: 'skip' };
-    if (props.track.staged) return { kind: 'staged', label: 'staged' };
     return undefined;
 });
+
+/** Staged but not commit-ready: no tags and not skipped (mirrors lib/commit.ts) */
+const stagedUnready = computed(() => (
+    props.track.staged && !props.track.skip && props.track.tagIds.length === 0
+));
 
 const cols = computed(() => get1t().settings.value.flowtag.columns);
 
@@ -137,7 +154,14 @@ const addedDate = computed(() => {
     }
     .row-status-done { color: var(--ft-playing); border-color: transparent; background: transparent; font-size: 12px; padding: 0 2px; }
     .row-status-skip { color: var(--ft-warn); }
-    .row-status-staged { color: var(--ft-text-2); }
+    // Quiet staged mark: the icon recedes; only the not-ready state asks for attention
+    .row-staged {
+        display: inline-flex;
+        align-items: center;
+        color: var(--ft-text-3);
+        flex-shrink: 0;
+        &.row-staged-unready { color: var(--ft-warn); }
+    }
     .row-pending {
         width: 5px;
         height: 5px;

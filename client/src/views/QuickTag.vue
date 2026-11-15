@@ -43,6 +43,7 @@
             <HistoryIcon class='size-3.5' />{{ store.libraryDone.value.toLocaleString() }} done
         </button>
         <FlushIndicator class='ml-4' />
+        <span class='hdr-rule ml-4' aria-hidden='true'></span>
 
         <label class='ft-field search-field ml-4'>
             <SearchIcon class='search-icon size-3.5 shrink-0' />
@@ -75,6 +76,7 @@
                 <DropdownMenuItem @select='confirmExport'>Export…</DropdownMenuItem>
             </DropdownMenuContent>
         </DropdownMenu>
+        <span class='hdr-rule mx-1.5' aria-hidden='true'></span>
         <button type='button' class='ft-btn icon-only' :aria-label='paletteOpen ? "Hide tag palette" : "Show tag palette"' @click='togglePalette'>
             <PanelRightCloseIcon v-if='paletteOpen' class='size-[15px]' />
             <PanelRightOpenIcon v-else class='size-[15px]' />
@@ -490,6 +492,13 @@ onMounted(() => {
         &:hover { color: var(--ft-text-2); }
         &.on { background: var(--ft-raised); color: var(--ft-text); }
     }
+}
+
+.flowtag .hdr-rule {
+    width: 1px;
+    height: 16px;
+    background: var(--ft-line);
+    flex-shrink: 0;
 }
 
 .flowtag .dir-btn { padding: 0 5px; height: 26px; }
