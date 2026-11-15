@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use anyhow::Error;
 use axum::extract::ws::WebSocket;
 use std::sync::atomic::Ordering;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 use std::path::{Path, PathBuf};
 use onetagger_renamer::ac::Autocomplete;
 use onetagger_renamer::docs::FullDocs;
@@ -229,9 +229,21 @@ fn set_currently_playing(path: &Path) {
     }
 }
 
+/// The one deck: FlowTag is one app with one audio output, so every websocket
+/// connection drives the same player. A connection that dies mid-reconnect
+/// (the webview's socket can drop and re-open without a page load) therefore
+/// owns no audio of its own to leave playing — the bug this replaces was two
+/// per-connection players sounding two tracks at once.
+static DECK: OnceLock<Mutex<AudioPlayer>> = OnceLock::new();
+
+fn deck() -> MutexGuard<'static, AudioPlayer> {
+    DECK.get_or_init(|| Mutex::new(AudioPlayer::new()))
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 // Shared variables in socket
 pub(crate) struct SocketContext {
-    player: AudioPlayer,
     spotify: Option<Spotify>,
     start_context: StartContext,
     pub(crate) sender: MessageSender,
@@ -258,22 +270,20 @@ impl SocketContext {
         tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
         events: tokio::sync::broadcast::Sender<String>,
     ) -> SocketContext {
-        let mut player = AudioPlayer::new();
-        // Forward the player's push events (exact end-of-track) to this client;
-        // the thread ends when the player is dropped with the connection
-        if let Some(player_events) = player.take_events() {
-            let event_sender = sender.clone();
+        // Forward the deck's push events (exact end-of-track) to every window
+        // over the shared broadcast. take_events yields once, so whichever
+        // connection touches the deck first spawns the forwarder, and it
+        // outlives any single connection.
+        if let Some(player_events) = deck().take_events() {
+            let events_tx = events.clone();
             std::thread::spawn(move || {
                 for event in player_events {
                     let onetagger_player::PlayerEvent::Ended = event;
-                    if event_sender.send(serde_json::json!({ "action": "playerEnded" })).is_err() {
-                        break;
-                    }
+                    events_tx.send(serde_json::json!({ "action": "playerEnded" }).to_string()).ok();
                 }
             });
         }
         SocketContext {
-            player,
             spotify: None,
             start_context,
             sender,
@@ -654,11 +664,11 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 "duration": source.duration() as u64,
                 "gainDb": gain_db,
             })).ok();
-            context.player.load_file(source);
+            deck().load_file(source);
             info!("player source: {log_path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
-            context.player.volume(context.player_volume * context.player_gain);
+            deck().volume(context.player_volume * context.player_gain);
             if autoplay {
-                context.player.play();
+                deck().play();
             }
         },
         Action::AnalysisRun { limit } => crate::analysis::analysis_run(context.sender.clone(), context.db.clone(), limit),
@@ -689,7 +699,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                 "duration": source.duration() as u64
             })).ok();
             // Load
-            context.player.load_file(source);
+            deck().load_file(source);
             info!("player source: {path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
         },
         // Build the selected track ahead of play. Never touches the player or the
@@ -727,20 +737,20 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             });
         },
         //  Controls
-        Action::PlayerPlay => context.player.play(),
-        Action::PlayerPause => context.player.pause(),
+        Action::PlayerPlay => deck().play(),
+        Action::PlayerPause => deck().pause(),
         Action::PlayerSeek { pos } => {
             context.send(json!({
                 "action": "playerSync",
-                "playing": context.player.seek(pos)
+                "playing": deck().seek(pos)
             })).ok();
         },
         Action::PlayerVolume { volume } => {
             context.player_volume = volume;
-            context.player.volume(volume * context.player_gain);
+            deck().volume(volume * context.player_gain);
         },
         Action::PlayerStop => {
-            context.player.stop();
+            deck().stop();
             // Release the flush-worker guard: the file handle is dropped with the sink
             if let Ok(mut p) = CURRENT_PLAYER_PATH.lock() {
                 *p = None;

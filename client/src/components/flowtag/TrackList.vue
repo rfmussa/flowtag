@@ -1,14 +1,27 @@
 <template>
 <ContextMenuRoot>
 <ContextMenuTrigger as-child>
-<div ref='viewport' class='track-scroll' @contextmenu='onContextMenu'>
+<div
+    ref='viewport'
+    class='track-scroll'
+    role='listbox'
+    aria-label='Tracks'
+    aria-multiselectable='true'
+    tabindex='0'
+    :aria-activedescendant='activeRowId'
+    @contextmenu='onContextMenu'
+>
     <div class='track-spacer' :style='{ height: virtualizer.getTotalSize() + "px" }'>
         <TrackRow
             v-for='row in rows'
             v-show='!row.hidden'
             :key='row.slot'
+            :id='row.live ? "ftrow-" + row.track.id : undefined'
             class='track-pooled'
             :style='{ transform: "translateY(" + row.start + "px)" }'
+            :aria-hidden='!row.live || undefined'
+            :aria-setsize='visible.length'
+            :aria-posinset='row.index + 1'
             :track='row.track'
             :data-track-id='row.track.id'
             :selected='store.isSelected(row.track.id)'
@@ -22,6 +35,8 @@
     </div>
 </div>
 </ContextMenuTrigger>
+<!-- Screen-reader echo of the anchor row (the selection model never moves DOM focus) -->
+<div class='sr-only' role='status' aria-live='polite'>{{ announce }}</div>
 <ContextMenuPortal>
     <ContextMenuContent class='flowtag-theme ft-ctx' :side-offset='4'>
         <ContextMenuItem class='ft-ctx-item' :disabled='!menuHasTarget' data-test='ctx-stage-toggle' @select='store.toggleStageSelection()'>
@@ -113,6 +128,27 @@ const rows = computed<SlotRow[]>((previous) => {
     return bySlot.filter((r): r is SlotRow => r !== undefined);
 });
 
+/** Listbox active-descendant: the anchor row's DOM id, only while that row
+ *  is actually rendered (the virtualizer drops far-off rows from the DOM) */
+const activeRowId = computed(() => {
+    const id = store.selectedId.value;
+    if (id === undefined) return undefined;
+    return rows.value.some((r) => r.live && r.track.id === id) ? `ftrow-${id}` : undefined;
+});
+
+// Announce anchor changes politely; rapid J/K cruising coalesces in the SR queue
+const announce = ref('');
+watch(store.selectedId, (id) => {
+    if (id === undefined) { announce.value = ''; return; }
+    const track = store.tracks.value.find((t) => t.id === id);
+    if (!track) return;
+    const tags = track.tagIds
+        .map((tagId) => store.tagById(tagId)?.name)
+        .filter((n): n is string => !!n)
+        .join(', ');
+    announce.value = `${track.title}, ${track.artist}${tags ? `, tags: ${tags}` : ', no tags'}`;
+});
+
 function select(track: FlowTrack, ev: MouseEvent) {
     store.clickSelect(track, {
         toggle: ev.metaKey || ev.ctrlKey,
@@ -140,10 +176,37 @@ function onContextMenu(ev: MouseEvent) {
     if (track) store.clickSelect(track);
 }
 
-// Switching scope (playlist / source / collection) starts at the top
+// Switching scope (playlist / source / collection) starts at the top — unless
+// the preserved anchor lives in the new view: then keep the tag panel's target
+// visible instead (this is also what makes view restore land on its row, since
+// restore applies scope and anchor together and this reset ran last)
 watch([store.scope, store.activeSourceId], () => {
-    nextTick(() => virtualizer.value.scrollToOffset(0));
+    nextTick(() => {
+        const id = store.selectedId.value;
+        const idx = id === undefined ? -1 : visible.value.findIndex((t) => t.id === id);
+        if (idx === -1) virtualizer.value.scrollToOffset(0);
+        else virtualizer.value.scrollToIndex(idx, { align: 'center' });
+    });
 });
+
+// View restore can set the anchor before this component (and the change-watcher
+// below) exists, leaving the tag panel aimed at a row the list never shows:
+// center an already-set anchor at mount, or on the first population after it.
+function centerRestoredAnchor(): boolean {
+    const id = store.selectedId.value;
+    if (id === undefined) return true; // nothing restored; later sets hit the watcher below
+    const idx = visible.value.findIndex((t) => t.id === id);
+    if (idx === -1) return false; // list not populated yet
+    nextTick(() => virtualizer.value.scrollToIndex(idx, { align: 'center' }));
+    return true;
+}
+if (!centerRestoredAnchor()) {
+    const stopInitialScroll = watch(() => visible.value.length, (count) => {
+        if (count === 0) return;
+        stopInitialScroll();
+        centerRestoredAnchor();
+    });
+}
 
 // Keep the keyboard-selected row in view: 'auto' scrolls only when the row
 // is off screen and by the minimum (one row per J/K press while cruising);

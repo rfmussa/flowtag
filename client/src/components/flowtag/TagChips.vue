@@ -16,7 +16,7 @@
             @click.stop='store.removeTag(trackId!, tag.id)'
         >×</button>
     </span>
-    <span v-if='capped.more > 0' class='chips-more' :title='overflowNames'>+{{ capped.more }}</span>
+    <span v-if='capped.more > 0' class='chips-more' role='img' :title='overflowNames' :aria-label='`${capped.more} more tags: ${overflowNames}`'>+{{ capped.more }}</span>
 </span>
 </template>
 
@@ -108,14 +108,14 @@ const overflowNames = computed(() => resolved.value.slice(capped.value.shown.len
         border: none;
         background: none;
         padding: 0 0 0 1px;
-        margin-right: -3px;
+        margin-right: -5px;
         font-size: 13px;
         line-height: 1;
         color: var(--ft-text-3);
         cursor: pointer;
         border-radius: 50%;
-        width: 14px;
-        height: 14px;
+        width: 18px;
+        height: 18px;
         display: inline-flex;
         align-items: center;
         justify-content: center;

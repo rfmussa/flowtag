@@ -33,6 +33,7 @@
 <script lang='ts' setup>
 import { computed } from 'vue';
 import { FlowTag, getTagStore } from '../../scripts/tagstore';
+import { blurIfMouse } from '@/lib/focus';
 
 const UNGROUPED_COLOR = 'var(--ft-text-3)';
 
@@ -73,7 +74,7 @@ function keyLabel(tag: FlowTag): string {
 }
 
 function toggle(tag: FlowTag, e: MouseEvent) {
-    (e.currentTarget as HTMLElement | null)?.blur();
+    blurIfMouse(e);
     // Cmd/Ctrl+click filters the list by this tag instead of tagging
     if (e.metaKey || e.ctrlKey) {
         store.toggleTagFilter(tag.id);

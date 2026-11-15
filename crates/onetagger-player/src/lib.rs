@@ -140,7 +140,12 @@ impl AudioPlayer {
                     PlayerAction::Pause => sink.pause(),
                     // Play new source
                     PlayerAction::Load(audio_source) => {
-                        sink.stop();
+                        // One sink for the deck's lifetime: clear and reuse it
+                        // rather than replacing it. A replaced sink can outlive
+                        // its stop() by a beat and keep sounding under the new
+                        // track (heard as "plays the previous track until a
+                        // seek"); with a single sink there is no predecessor.
+                        sink.clear();
                         // Rebind when the default output changed (opening one costs ~220ms)
                         // or the machine slept since the last action; on any failure keep
                         // the current device
@@ -158,16 +163,17 @@ impl AudioPlayer {
                                     _stream = new_stream;
                                     stream_handle = new_handle;
                                     bound_device = current;
+                                    // A new stream needs a new sink; dropping the
+                                    // old stream silences it at the device level
+                                    sink = Sink::try_new(&stream_handle).unwrap();
+                                    sink.set_volume(volume);
+                                    sink.pause();
                                     info!("player output: rebound to default device{}", if slept { " (system slept since last load)" } else { "" });
                                 },
                                 Err(e) => warn!("player output: rebind failed, keeping current device: {e}"),
                             }
                         }
-                        // Create new sink
-                        sink = Sink::try_new(&stream_handle).unwrap();
-                        sink.set_volume(volume);
-                        sink.pause();
-                        // Append source
+                        // Append source (clear() left the sink paused)
                         let decode_start = Instant::now();
                         if let Ok(s) = audio_source.get_source() {
                             sink.append(s);
@@ -196,12 +202,8 @@ impl AudioPlayer {
                         // Safety fallback for any source without seek support:
                         // re-create the source and skip samples from the start
                         let paused = sink.is_paused();
-                        sink.stop();
-                        sink = Sink::try_new(&stream_handle).unwrap();
-                        sink.set_volume(volume);
-                        if paused {
-                            sink.pause();
-                        }
+                        // Same one-sink rule as Load: clear and reuse
+                        sink.clear();
                         let s = source.as_ref().unwrap();
                         if let Ok(mut s) = s.get_source() {
                             let n_skip = s.sample_rate() as f32 * s.channels() as f32 * pos as f32 / 1000.0;
@@ -211,6 +213,9 @@ impl AudioPlayer {
                                 }
                             }
                             sink.append(s);
+                        }
+                        if !paused {
+                            sink.play();
                         }
                         info!("player seek: {pos}ms in_place=false took {}ms", seek_start.elapsed().as_millis());
                         // Sync

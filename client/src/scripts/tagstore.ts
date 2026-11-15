@@ -118,6 +118,14 @@ export interface ScanState {
     result?: { added: number; updated: number; removed: number; failed: number };
 }
 
+export interface ExportState {
+    running: boolean;
+    done: number;
+    total: number;
+    /** Held after a finished export with failures, until dismissed */
+    result?: { written: number; unchanged: number; failed: number };
+}
+
 export interface FlushState {
     pending: number;
     errors: { trackId: number; error: string }[];
@@ -148,6 +156,8 @@ export class TagStore {
     folders: Ref<FlowFolder[]> = ref([]);
     scan: Ref<ScanState> = ref({ running: false, done: 0, total: 0 });
     flush: Ref<FlushState> = ref({ pending: 0, errors: [] });
+    /** Rekordbox comment export progress (header indicator, like scan) */
+    exportStatus: Ref<ExportState> = ref({ running: false, done: 0, total: 0 });
     loaded: Ref<boolean> = ref(false);
 
     /** Active track id (loaded in the player; the anchor of the selection) */
@@ -1046,6 +1056,7 @@ export class TagStore {
                 }
                 return true;
             case 'rekordboxExportProgress':
+                this.exportStatus.value = { running: true, done: json.done ?? 0, total: json.total ?? 0 };
                 return true;
             case 'error':
                 this.errorSeq.value++;
@@ -1058,7 +1069,16 @@ export class TagStore {
                 }
                 return false;
             case 'rekordboxExportDone': {
-                const r = json.result ?? {};
+                const done = json.result ?? {};
+                // A failed write into real files must outlive the toast: hold it
+                // in the header (like flush errors) until dismissed
+                this.exportStatus.value = (done.failed ?? 0) > 0
+                    ? {
+                        running: false, done: 0, total: 0,
+                        result: { written: done.written ?? 0, unchanged: done.unchanged ?? 0, failed: done.failed },
+                    }
+                    : { running: false, done: 0, total: 0 };
+                const r = done;
                 notify({
                     message: `Export done: ${r.written ?? 0} written, ${r.unchanged ?? 0} unchanged` +
                         (r.failed ? `, ${r.failed} FAILED` : ''),

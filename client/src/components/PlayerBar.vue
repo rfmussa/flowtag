@@ -38,7 +38,8 @@
 
         <div class='col-span-8'>
             <div class='flex justify-center'>
-                <div class='mt-2 mr-2'>
+                <!-- Wrapper stretches to the row; centering tracks the waveform, no magic margins -->
+                <div class='mr-2 flex items-center'>
                     <Button
                         ref='playButton'
                         size='icon-lg'
@@ -46,7 +47,7 @@
                         :aria-label='$1t.player.value.playing ? "Pause" : "Play"'
                         @click='$1t.player.value.playing ? $1t.player.value.pause() : $1t.player.value.play()'
                     >
-                        <PauseIcon v-if='$1t.player.value.playing' class='size-5' /><PlayIcon v-else class='size-5' />
+                        <PauseIcon v-if='$1t.player.value.playing' class='size-5' /><PlayIcon v-else class='size-5 translate-x-[0.5px]' />
                     </Button>
                 </div>
                 <!-- min-w-0 + clip: glyphs may briefly outsize the cell while a resize settles -->
