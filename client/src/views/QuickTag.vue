@@ -5,6 +5,7 @@
     <div class='header-bar flex items-center'>
         <FolderManager />
         <ScanStatus class='ml-2' />
+        <ExportStatus class='ml-2' />
 
         <div class='seg ml-4' role='group' aria-label='Scope'>
             <button type='button' class='seg-btn' :class='{on: store.quickFilter.value === "all"}' @click='setQuickFilter("all", $event)'>All</button>
@@ -179,6 +180,7 @@ import { diag } from '../scripts/diag';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
 import ScanStatus from '../components/flowtag/ScanStatus.vue';
+import ExportStatus from '../components/flowtag/ExportStatus.vue';
 import WelcomeCard from '../components/flowtag/WelcomeCard.vue';
 import TrackList from '../components/flowtag/TrackList.vue';
 import PlaylistSidebar from '../components/flowtag/PlaylistSidebar.vue';

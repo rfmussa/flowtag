@@ -118,6 +118,12 @@ export interface ScanState {
     result?: { added: number; updated: number; removed: number; failed: number };
 }
 
+export interface ExportState {
+    running: boolean;
+    done: number;
+    total: number;
+}
+
 export interface FlushState {
     pending: number;
     errors: { trackId: number; error: string }[];
@@ -148,6 +154,8 @@ export class TagStore {
     folders: Ref<FlowFolder[]> = ref([]);
     scan: Ref<ScanState> = ref({ running: false, done: 0, total: 0 });
     flush: Ref<FlushState> = ref({ pending: 0, errors: [] });
+    /** Rekordbox comment export progress (header indicator, like scan) */
+    exportStatus: Ref<ExportState> = ref({ running: false, done: 0, total: 0 });
     loaded: Ref<boolean> = ref(false);
 
     /** Active track id (loaded in the player; the anchor of the selection) */
@@ -1046,6 +1054,7 @@ export class TagStore {
                 }
                 return true;
             case 'rekordboxExportProgress':
+                this.exportStatus.value = { running: true, done: json.done ?? 0, total: json.total ?? 0 };
                 return true;
             case 'error':
                 this.errorSeq.value++;
@@ -1058,6 +1067,7 @@ export class TagStore {
                 }
                 return false;
             case 'rekordboxExportDone': {
+                this.exportStatus.value = { running: false, done: 0, total: 0 };
                 const r = json.result ?? {};
                 notify({
                     message: `Export done: ${r.written ?? 0} written, ${r.unchanged ?? 0} unchanged` +

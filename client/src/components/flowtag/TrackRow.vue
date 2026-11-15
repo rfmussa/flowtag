@@ -2,6 +2,8 @@
 <div
     class='flowtag-row'
     :class='{"flowtag-row-alt": alt, "flowtag-row-selected": selected, "flowtag-row-anchor": anchor}'
+    role='option'
+    :aria-selected='selected || !!anchor'
     @click='emit("click", $event)'
     @dblclick='emit("play")'
     draggable='true'
@@ -12,8 +14,8 @@
     <span class='row-artist' :title='track.artist'>{{ track.artist }}</span>
     <span class='row-spacer'></span>
     <TagChips dense :tagIds='track.tagIds' :max='chipMax' class='row-chips'></TagChips>
-    <span v-if='statusChip' class='row-status' :class='"row-status-" + statusChip.kind' :data-test='"row-status-" + statusChip.kind'>{{ statusChip.label }}</span>
-    <span v-if='track.needsFlush' class='row-pending' title='Not yet written to file'></span>
+    <span v-if='statusChip' class='row-status' :class='"row-status-" + statusChip.kind' :data-test='"row-status-" + statusChip.kind' :aria-label='statusChip.kind === "done" ? "done" : undefined' :role='statusChip.kind === "done" ? "img" : undefined'>{{ statusChip.label }}</span>
+    <span v-if='track.needsFlush' class='row-pending' role='img' aria-label='Not yet written to file' title='Not yet written to file'></span>
     <Hint v-if='track.missing' text='File missing'>
         <FileExclamationPointIcon class='row-missing size-[13px]' />
     </Hint>
