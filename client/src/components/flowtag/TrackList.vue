@@ -77,6 +77,7 @@ const visible = computed(() => {
     // Touch reactive deps explicitly so the computed tracks them
     store.filter.value;
     store.quickFilter.value;
+    store.minRating.value;
     store.scope.value;
     return store.visibleTracks();
 });

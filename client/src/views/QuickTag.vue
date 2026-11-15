@@ -13,6 +13,13 @@
             <button type='button' class='seg-btn' :class='{on: store.quickFilter.value === "untagged"}' @click='setQuickFilter("untagged", $event)'>Untagged</button>
         </div>
 
+        <!-- "≥ n stars": combines with the quick filter above (⇧1–⇧5 rate) -->
+        <OptionSelect
+            v-model='store.minRating.value'
+            :options='MIN_RATING_OPTIONS'
+            label='Minimum rating'
+            :trigger-class='["hide-narrow ml-2 border-transparent bg-transparent hover:bg-ft-hover hover:border-transparent font-medium h-[26px] pl-2.5 pr-1.5", store.minRating.value ? "text-ft-text" : "text-ft-text-2"]'
+        />
         <OptionSelect
             v-model='store.sortBy.value'
             :options='sortOptions'
@@ -71,6 +78,10 @@
                     <DropdownMenuItem @select='store.sortDesc.value = !store.sortDesc.value'>
                         {{ store.sortDesc.value ? '✓ ' : '' }}Descending
                     </DropdownMenuItem>
+                    <DropdownMenuItem
+                        v-for='opt in MIN_RATING_OPTIONS' :key='"rating-" + opt.value'
+                        @select='store.minRating.value = opt.value'
+                    >{{ store.minRating.value === opt.value ? '✓ ' : '' }}{{ opt.label }}</DropdownMenuItem>
                 </template>
                 <DropdownMenuItem @select='openManager'>Manage tags…</DropdownMenuItem>
                 <DropdownMenuItem @select='confirmExport'>Export…</DropdownMenuItem>
@@ -178,6 +189,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { get1t } from '../scripts/onetagger';
 import { getTagStore, FlowTrack, SortField } from '../scripts/tagstore';
 import type { QuickFilter } from '@/lib/status';
+import { MIN_RATING_OPTIONS } from '@/lib/rating';
 import { diag } from '../scripts/diag';
 import FolderManager from '../components/flowtag/FolderManager.vue';
 import FlushIndicator from '../components/flowtag/FlushIndicator.vue';
@@ -258,6 +270,7 @@ const sortOptions: { label: string; value: SortField }[] = [
     { label: 'BPM', value: 'bpm' },
     { label: 'Key', value: 'key' },
     { label: 'Year', value: 'year' },
+    { label: 'Rating', value: 'rating' },
     { label: 'Added', value: 'added' },
 ];
 

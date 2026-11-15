@@ -6,6 +6,7 @@ import { Keybind } from './utils';
 import { diag } from './diag';
 import { FlowTagAction } from './settings';
 import { isCommitChord, openCommitSheet } from './commitsheet';
+import { ratingForKey, shiftedDigit } from '@/lib/rating';
 
 /** The shadcn wrappers in components/ui tag every portaled overlay surface
  *  with data-slot; Reka sets data-state="open" on it while shown (and "closed"
@@ -106,14 +107,20 @@ export function actionFires(event: KeyboardEvent, action: FlowTagAction): boolea
     if (!actionMatches(event, action)) return false;
     if (action !== 'stage' && action !== 'skip') return true;
     if (customBind(action)) return true;
+    return !boundElsewhere(event, action);
+}
+
+/** Is the chord taken by a per-tag hotkey or another action's custom bind?
+ *  Keys added after users could bind them (stage/skip, ⇧1–⇧5) yield to those. */
+function boundElsewhere(event: KeyboardEvent, except?: FlowTagAction): boolean {
     const store = getTagStore();
-    if (store.tags.value.some((t) => t.keybind && Keybind.check(event, Keybind.fromJson(t.keybind)))) return false;
+    if (store.tags.value.some((t) => t.keybind && Keybind.check(event, Keybind.fromJson(t.keybind)))) return true;
     for (const other of Object.keys(FLOWTAG_ACTION_DEFAULTS) as FlowTagAction[]) {
-        if (other === action) continue;
+        if (other === except) continue;
         const kb = customBind(other);
-        if (kb && Keybind.check(event, kb)) return false;
+        if (kb && Keybind.check(event, kb)) return true;
     }
-    return true;
+    return false;
 }
 
 /** prev/next matching; shift on top of the bind extends the multi-selection */
@@ -141,7 +148,8 @@ function navMatches(event: KeyboardEvent, action: 'prev' | 'next'): { extend: bo
  *
  * Fixed:        Space play/pause · ↑/↓ select (shift extends) ·
  *               ←/→ seek -10s/+30s · 0–9 seek to that tenth of the track ·
- *               Esc clear multi-select · ⌘Z undo · ⌘Enter commit sheet
+ *               Esc clear multi-select · ⌘Z undo · ⌘Enter commit sheet ·
+ *               ⇧1–⇧5 star rating on the selection (same again clears; ⇧digits never seek)
  * Remappable:   prev J · next K · focus tag input T · focus filter F ·
  *               done D · edit metadata E · online lookup M ·
  *               stage S (toggle selection) · skip X (current track)
@@ -155,8 +163,19 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
     const store = getTagStore();
     const player = $1t.player.value;
 
-    // Digits jump to tenths of the track (YouTube-style: 0 = start … 9 = 90%)
-    const digit = SEEK_DIGITS[event.code];
+    // Star rating (⇧1–⇧5): checked before seek so a shifted digit never seeks.
+    // An older tag hotkey / action bind on the same chord keeps it.
+    const rating = ratingForKey(event);
+    if (rating !== undefined && !boundElsewhere(event)) {
+        if (store.allSelected().length === 0) return false;
+        // Holding the chord must not flip set/clear at key-repeat rate
+        if (!event.repeat) store.rateSelection(rating);
+        return true;
+    }
+
+    // Digits jump to tenths of the track (YouTube-style: 0 = start … 9 = 90%);
+    // the Shift layer is not seek (⇧6–⇧0 fall through to tag hotkeys)
+    const digit = shiftedDigit(event) ? undefined : SEEK_DIGITS[event.code];
     if (digit !== undefined) {
         player.seek(Math.round(player.duration * digit / 10));
         return true;

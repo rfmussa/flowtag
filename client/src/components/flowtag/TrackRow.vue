@@ -33,6 +33,7 @@
     <span v-if='cols.path' class='row-path' :title='track.path'>{{ track.path }}</span>
     <span v-if='cols.added' class='row-added ft-num'>{{ addedDate }}</span>
     <span v-if='cols.year' class='row-meta ft-num'>{{ track.year ?? '' }}</span>
+    <span v-if='cols.rating' class='row-rating' :aria-label='stars ? `${track.rating} stars` : undefined' :role='stars ? "img" : undefined'>{{ stars }}</span>
     <span v-if='cols.bpm' class='row-meta row-bpm ft-num'>{{ track.bpm ?? '' }}</span>
     <span v-if='cols.key' class='row-key ft-mono' :style='track.key ? { "--kc": keyColor(track.key), color: "var(--kc)" } : undefined'>{{ track.key ?? '' }}</span>
 </div>
@@ -45,6 +46,7 @@ import { computed } from 'vue';
 import TagChips from './TagChips.vue';
 import { FlowTrack, getTagStore } from '../../scripts/tagstore';
 import { statusOf } from '@/lib/status';
+import { ratingStars } from '@/lib/rating';
 import { keyColor } from '../../scripts/musickey';
 import { get1t } from '../../scripts/onetagger';
 
@@ -76,6 +78,9 @@ const stagedUnready = computed(() => (
 ));
 
 const cols = computed(() => get1t().settings.value.flowtag.columns);
+
+/** Filled stars only; unrated renders nothing */
+const stars = computed(() => ratingStars(props.track.rating));
 
 /** Drag carries the whole multi-selection when this row is part of it */
 function onDragStart(e: DragEvent) {
@@ -197,14 +202,24 @@ const addedDate = computed(() => {
         flex-shrink: 0;
     }
     .row-bpm { color: var(--ft-text-2); }
+    // Filled stars only, quiet text-3; fixed width (5 stars) keeps the columns aligned
+    .row-rating {
+        width: 52px;
+        text-align: right;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        color: var(--ft-text-3);
+        white-space: nowrap;
+        flex-shrink: 0;
+    }
 
     // Medium windows: the path and added columns give way first (tooltips keep them)
     @media (max-width: 1199px) {
         .row-path, .row-added { display: none; }
     }
-    // Narrow windows: year goes too; BPM and key are the DJ columns and stay
+    // Narrow windows: year and rating go too; BPM and key are the DJ columns and stay
     @media (max-width: 899px) {
-        .row-meta:not(.row-bpm) { display: none; }
+        .row-meta:not(.row-bpm), .row-rating { display: none; }
         .row-title { max-width: 48%; }
     }
 

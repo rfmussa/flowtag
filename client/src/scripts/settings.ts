@@ -3,6 +3,7 @@ import { DEFAULT_THEME, isThemeId, ThemeId } from "./themes";
 import { Keybind } from "./utils";
 import type { Scope, SortField } from "./tagstore";
 import type { QuickFilter } from "@/lib/status";
+import { isMinRating, MinRating } from "@/lib/rating";
 import { commitScopeId } from "@/lib/commit";
 
 /** Remappable FlowTag actions (letter keys; Space/arrows/digits/Esc/⌘Z stay fixed) */
@@ -12,24 +13,26 @@ type FlowTagAction = typeof FLOWTAG_ACTIONS[number];
 /** Optional track-list columns (title/artist/chips are always on) */
 interface FlowTagColumns {
     year: boolean;
+    rating: boolean;
     bpm: boolean;
     key: boolean;
     path: boolean;
     added: boolean;
 }
-const DEFAULT_COLUMNS: FlowTagColumns = { year: true, bpm: true, key: true, path: false, added: false };
+const DEFAULT_COLUMNS: FlowTagColumns = { year: true, rating: true, bpm: true, key: true, path: false, added: false };
 
 /** Where the user left the QuickTag view; restored on the next launch */
 interface ViewState {
     scope: Scope;
     filterText: string;
     quickFilter: QuickFilter;
+    minRating: MinRating;
     sort: { by: SortField; desc: boolean };
     selectedTrackId: number | null;
     firstVisibleIndex: number;
 }
 
-const SORT_FIELDS: SortField[] = ['path', 'title', 'artist', 'bpm', 'key', 'year', 'added'];
+const SORT_FIELDS: SortField[] = ['path', 'title', 'artist', 'bpm', 'key', 'year', 'rating', 'added'];
 const QUICK_FILTERS: QuickFilter[] = ['all', 'notdone', 'untagged'];
 
 /** Tolerant parse: anything malformed yields undefined, individual bad fields fall back to defaults */
@@ -42,6 +45,7 @@ function viewStateFromJson(data: any): ViewState | undefined {
         scope,
         filterText: typeof data.filterText === 'string' ? data.filterText : '',
         quickFilter: QUICK_FILTERS.includes(data.quickFilter) ? data.quickFilter : 'all',
+        minRating: isMinRating(data.minRating) ? data.minRating : 0,
         sort: {
             by: SORT_FIELDS.includes(sort.by) ? sort.by : 'path',
             desc: sort.desc === true,

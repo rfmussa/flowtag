@@ -159,3 +159,87 @@ describe('key repeat on stage / skip', () => {
         expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks', 'stageSkip']);
     });
 });
+
+describe('star rating keys', () => {
+    const t = (id: number, rating: number | null = null) => ({
+        id, path: `/m/${id}.mp3`, folderId: 1, format: 'mp3', title: 'T', artist: 'A',
+        addedAt: 0, missing: false, needsFlush: false, tagIds: [], rating,
+    });
+    let seek: ReturnType<typeof vi.fn>;
+    beforeEach(() => {
+        send.mockClear();
+        seek = vi.fn();
+        Object.assign(playerStub, { seek, duration: 100_000, position: 0 });
+        vi.stubGlobal('document', { querySelector: () => null });
+        vi.stubGlobal('window', { location: { hash: '' } }); // diag breadcrumbs
+        const store = getTagStore();
+        store.tracks.value = [t(1), t(2, 3)];
+        store.selectedIds.value = [];
+        store.selectedId.value = 1;
+    });
+    afterEach(() => vi.unstubAllGlobals());
+    /** Server sends other than diag breadcrumbs (clientLog) */
+    const sent = () => send.mock.calls.filter((c) => c[0] !== 'clientLog');
+    const lastRating = () => sent().filter((c) => c[0] === 'tracksSetRating').at(-1)?.[1];
+
+    it('shift_digit_rates_the_selection_and_never_seeks', () => {
+        expect(handleFlowKeys(key('Digit4', { shiftKey: true }))).toBe(true);
+        expect(lastRating()).toEqual({ trackIds: [1], rating: 4 });
+        expect(getTagStore().tracks.value[0]).toMatchObject({ rating: 4, needsFlush: true });
+        expect(seek).not.toHaveBeenCalled();
+    });
+
+    it('pressing_the_same_rating_again_clears', () => {
+        handleFlowKeys(key('Digit4', { shiftKey: true }));
+        handleFlowKeys(key('Digit4', { shiftKey: true }));
+        expect(lastRating()).toEqual({ trackIds: [1], rating: null });
+        expect(getTagStore().tracks.value[0].rating).toBeNull();
+    });
+
+    it('multi_selection_clears_only_when_all_share_the_rating', () => {
+        const store = getTagStore();
+        store.selectedIds.value = [1, 2];
+        handleFlowKeys(key('Digit3', { shiftKey: true }));
+        expect(lastRating()).toEqual({ trackIds: [1, 2], rating: 3 });
+        handleFlowKeys(key('Digit3', { shiftKey: true }));
+        expect(lastRating()).toEqual({ trackIds: [1, 2], rating: null });
+    });
+
+    it('shift_six_to_zero_neither_rate_nor_seek', () => {
+        for (const code of ['Digit6', 'Digit9', 'Digit0', 'Numpad5']) {
+            expect(handleFlowKeys(key(code, { shiftKey: true }))).toBe(false);
+        }
+        expect(seek).not.toHaveBeenCalled();
+        expect(sent()).toEqual([]);
+    });
+
+    it('plain_digits_still_seek', () => {
+        expect(handleFlowKeys(key('Digit4'))).toBe(true);
+        expect(seek).toHaveBeenLastCalledWith(40_000);
+        expect(sent()).toEqual([]);
+    });
+
+    it('held_chord_does_not_toggle_at_repeat_rate', () => {
+        expect(handleFlowKeys(key('Digit2', { shiftKey: true, repeat: true }))).toBe(true);
+        expect(sent()).toEqual([]);
+    });
+
+    it('an_open_overlay_blocks_rating', () => {
+        vi.stubGlobal('document', fakeDocument([{ 'data-slot': 'dialog-content', 'data-state': 'open' }]));
+        expect(handleFlowKeys(key('Digit2', { shiftKey: true }))).toBe(false);
+        expect(sent()).toEqual([]);
+    });
+
+    it('no_selection_is_unhandled_and_does_not_seek', () => {
+        getTagStore().selectedId.value = undefined;
+        expect(handleFlowKeys(key('Digit2', { shiftKey: true }))).toBe(false);
+        expect(seek).not.toHaveBeenCalled();
+    });
+
+    it('an_existing_tag_hotkey_on_the_chord_keeps_it', () => {
+        const store = getTagStore();
+        store.tags.value = [{ ...tag({ key: '2', shift: true }), id: 7, name: 'warm' }];
+        expect(handleFlowKeys(key('Digit2', { shiftKey: true }))).toBe(true);
+        expect(sent().map((c) => c[0])).toEqual(['trackAddTag']);
+    });
+});

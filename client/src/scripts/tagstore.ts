@@ -12,6 +12,7 @@ import type { ExportState } from '@/lib/exportstatus';
 import { IDLE_SCAN, scanDone, scanProgress } from '@/lib/scanstatus';
 import type { ScanState } from '@/lib/scanstatus';
 import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
+import { MinRating, Rating, applyRating, isMinRating, isRating, nextRating, passesMinRating } from '@/lib/rating';
 
 // Types mirroring onetagger-db models (serde camelCase)
 
@@ -26,6 +27,8 @@ export interface FlowTrack {
     bpm?: number;
     key?: string;
     year?: number;
+    /** Star rating 1–5; null/absent = unrated */
+    rating?: number | null;
     /** Unix seconds when the track entered the library */
     addedAt: number;
     missing: boolean;
@@ -51,7 +54,7 @@ export interface StageRow {
 /** View scope: whole library, the stage, a playlist id, or one commit's tracks */
 export type Scope = 'all' | 'stage' | number | CommitScope;
 
-export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year' | 'added';
+export type SortField = 'path' | 'title' | 'artist' | 'bpm' | 'key' | 'year' | 'rating' | 'added';
 
 /** A playlist: manual (explicit members) or smart (saved filter) */
 export interface FlowPlaylist {
@@ -79,6 +82,8 @@ export interface SavedFilter {
     keys?: string[];
     yearMin?: number;
     yearMax?: number;
+    /** At least this many stars (1–5) */
+    ratingMin?: number;
     /** Added to the library within the last N days */
     addedDays?: number;
 }
@@ -202,6 +207,8 @@ export class TagStore {
     filter: Ref<string> = ref('');
     /** Header quick filter: everything, hide done tracks, or untagged only */
     quickFilter: Ref<QuickFilter> = ref('all');
+    /** "≥ n stars" filter beside the quick filter (0 = off) */
+    minRating: Ref<MinRating> = ref(0);
     /** List ordering */
     sortBy: Ref<SortField> = ref('path');
     sortDesc: Ref<boolean> = ref(false);
@@ -335,6 +342,7 @@ export class TagStore {
     /** One filter predicate for live controls and saved (smart) filters alike */
     private passes(t: FlowTrack, text: string, tagFilters: number[], quick: QuickFilter): boolean {
         if (!passesQuickFilter(t, quick)) return false;
+        if (!passesMinRating(t, this.minRating.value)) return false;
         if (tagFilters.length > 0 && !tagFilters.every((id) => t.tagIds.includes(id))) return false;
         return !text || this.haystack(t).includes(text);
     }
@@ -357,6 +365,7 @@ export class TagStore {
             && !(t.key && f.keys.includes(t.key.trim().toUpperCase()))) return false;
         if (f.yearMin !== undefined && !(t.year !== undefined && t.year >= f.yearMin)) return false;
         if (f.yearMax !== undefined && !(t.year !== undefined && t.year <= f.yearMax)) return false;
+        if (isMinRating(f.ratingMin) && !passesMinRating(t, f.ratingMin)) return false;
         if (f.addedDays !== undefined
             && !(t.addedAt && t.addedAt * 1000 >= now - f.addedDays * 86_400_000)) return false;
         const text = (f.text ?? '').trim().toLowerCase();
@@ -467,6 +476,7 @@ export class TagStore {
                 case 'artist': return a.artist.localeCompare(b.artist) || a.title.localeCompare(b.title);
                 case 'bpm': return nums(a.bpm, b.bpm);
                 case 'year': return nums(a.year, b.year);
+                case 'rating': return nums(a.rating ?? undefined, b.rating ?? undefined);
                 case 'added': return a.addedAt - b.addedAt;
                 case 'key': {
                     if (!a.key && !b.key) return 0;
@@ -573,6 +583,19 @@ export class TagStore {
     private bulkTargets(trackId: number): number[] {
         const all = this.allSelected();
         return all.length > 1 && all.includes(trackId) ? all : [trackId];
+    }
+
+    /** Star-rating key (⇧1–⇧5) on the selection: sets that rating on every
+     *  selected track; clears only when all of them already have exactly it */
+    rateSelection(pressed: Rating) {
+        const ids = this.allSelected();
+        if (ids.length === 0) return;
+        const targets = new Set(ids);
+        const current = this.tracks.value.filter((t) => targets.has(t.id)).map((t) => t.rating);
+        const rating = nextRating(current, pressed);
+        diag('rate', { tracks: ids.length, rating });
+        this.tracks.value = applyRating(this.tracks.value, ids, rating);
+        get1t().send('tracksSetRating', { trackIds: ids, rating });
     }
 
     /** Toggle a tag (used by per-tag hotkeys and palette clicks). With a
@@ -913,6 +936,12 @@ export class TagStore {
                 this.refreshCounts();
                 return true;
             }
+            case 'tracksRatingChanged': {
+                // Authoritative echo: only the ids the server actually changed
+                const rating = isRating(json.rating) ? json.rating : null;
+                this.tracks.value = applyRating(this.tracks.value, json.trackIds ?? [], rating);
+                return true;
+            }
             case 'flushStatus':
                 this.flush.value = { pending: json.pending ?? 0, errors: json.errors ?? [] };
                 return true;
@@ -1131,6 +1160,7 @@ export class TagStore {
             scope: this.scope.value,
             filterText: this.filter.value,
             quickFilter: this.quickFilter.value,
+            minRating: this.minRating.value,
             sort: { by: this.sortBy.value, desc: this.sortDesc.value },
             selectedTrackId: this.selectedId.value ?? null,
             firstVisibleIndex: this.lastVisibleIndex,
@@ -1182,6 +1212,7 @@ export class TagStore {
         this.applyScope(view.scope);
         this.filter.value = view.filterText;
         this.quickFilter.value = view.quickFilter;
+        this.minRating.value = view.minRating;
         this.sortBy.value = view.sort.by;
         this.sortDesc.value = view.sort.desc;
         this.selectedIds.value = [];

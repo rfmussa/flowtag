@@ -135,6 +135,7 @@ import { getTagStore } from '../scripts/tagstore';
 import { FLOWTAG_ACTIONS, FlowTagAction } from '../scripts/settings';
 import { FLOWTAG_ACTION_DEFAULTS, FLOWTAG_ACTION_LABELS, FIXED_FLOWTAG_CODES } from '../scripts/flowkeys';
 import { Keybind as KeybindClass } from '../scripts/utils';
+import { isRatingBind } from '@/lib/rating';
 import { diag } from '../scripts/diag';
 import Keybind from './Keybind.vue';
 import TangleSettings from './flowtag/TangleSettings.vue';
@@ -158,6 +159,7 @@ const FIXED_KEYS = new Set(FIXED_FLOWTAG_CODES.map(normalizeCode));
 
 const COLUMN_OPTIONS = [
     { key: 'year', label: 'Year' },
+    { key: 'rating', label: 'Rating' },
     { key: 'bpm', label: 'BPM' },
     { key: 'key', label: 'Key' },
     { key: 'path', label: 'Path' },
@@ -197,6 +199,10 @@ function setBind(action: FlowTagAction, kb?: any) {
     const hasModifier = !!(kb.ctrl || kb.alt || kb.shift);
     if (!hasModifier && FIXED_KEYS.has(String(kb.key))) {
         reject('That key is a fixed transport key (space, arrows, digits).');
+        return;
+    }
+    if (isRatingBind(kb)) {
+        reject('⇧1–⇧5 set star ratings.');
         return;
     }
     for (const other of FLOWTAG_ACTIONS) {
