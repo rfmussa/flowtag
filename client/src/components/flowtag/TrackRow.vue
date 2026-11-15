@@ -21,7 +21,7 @@
     <span v-if='cols.added' class='row-added ft-num'>{{ addedDate }}</span>
     <span v-if='cols.year' class='row-meta ft-num'>{{ track.year ?? '' }}</span>
     <span v-if='cols.bpm' class='row-meta row-bpm ft-num'>{{ track.bpm ?? '' }}</span>
-    <span v-if='cols.key' class='row-key ft-mono' :style='{ color: track.key ? keyColor(track.key) : undefined }'>{{ track.key ?? '' }}</span>
+    <span v-if='cols.key' class='row-key ft-mono' :style='track.key ? { "--kc": keyColor(track.key), color: "var(--kc)" } : undefined'>{{ track.key ?? '' }}</span>
 </div>
 </template>
 

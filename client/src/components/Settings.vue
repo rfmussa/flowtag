@@ -18,6 +18,11 @@
         </div>
 
         <div class='settings-body'>
+            <!-- Appearance -->
+            <div class='ft-label section'>Appearance</div>
+            <div class='hint'>Hover or focus to audition a theme live; click or press Enter to keep it.</div>
+            <ThemePicker />
+
             <!-- Playback -->
             <div class='ft-label section'>Playback</div>
             <label class='row-item'>
@@ -133,6 +138,7 @@ import { Keybind as KeybindClass } from '../scripts/utils';
 import { diag } from '../scripts/diag';
 import Keybind from './Keybind.vue';
 import TangleSettings from './flowtag/TangleSettings.vue';
+import ThemePicker from './flowtag/ThemePicker.vue';
 
 const props = defineProps({
     modelValue: { type: Boolean, required: true }

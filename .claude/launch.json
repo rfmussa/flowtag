@@ -5,6 +5,12 @@
       "name": "onetagger-server",
       "url": "http://localhost:36913",
       "port": 36913
+    },
+    {
+      "name": "client-dev",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["-C", "client", "dev"],
+      "port": 8080
     }
   ]
 }

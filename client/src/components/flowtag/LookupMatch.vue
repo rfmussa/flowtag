@@ -23,7 +23,7 @@
             <span v-if='match.track.album' class='truncate max-w-[260px]'>{{ match.track.album }}</span>
             <span v-if='match.track.genres.length'>{{ match.track.genres.join(', ') }}</span>
             <span v-if='match.track.bpm' class='ft-num'>{{ match.track.bpm }} BPM</span>
-            <span v-if='match.track.key' class='ft-num font-medium' :style='keyColorStyle(match.track.key)'>{{ match.track.key }}</span>
+            <span v-if='match.track.key' class='ft-num font-medium key-tinted' :style='keyColorStyle(match.track.key)'>{{ match.track.key }}</span>
             <span v-if='match.track.release_date' class='ft-num'>{{ match.track.release_date }}</span>
         </div>
     </div>
