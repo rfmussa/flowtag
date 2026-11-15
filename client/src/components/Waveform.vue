@@ -161,6 +161,12 @@ const waveformBackground = computed(() => {
     letter-spacing: 0.08em;
     text-transform: uppercase;
     color: var(--ft-warn, #d29922);
+    /* Plate in the bar's panel colour keeps the label legible over both the
+       played and unplayed gradient */
+    background: color-mix(in srgb, var(--ft-panel) 88%, transparent);
+    padding: 0 3px;
+    border-radius: 3px;
+    line-height: 1.4;
 }
 
 .wavefont {
