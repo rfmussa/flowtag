@@ -13,6 +13,11 @@
         <span class='pl-count ft-num' data-test='stage-count'>{{ stageCountLabel(store.stageReady.value, store.stageTotal.value) }}</span>
         <Button size='sm' variant='ghost' class='stage-commit' tabindex='-1' data-test='stage-commit' @click.stop='openCommitSheet()'>Commit…</Button>
         <div class='stage-bar' aria-hidden='true'><div class='stage-bar-fill' :style='{ width: stagePct + "%" }'></div></div>
+        <div class='stage-keys'>
+            <span class='sk-pair'><span class='ft-kbd'>S</span> stage</span>
+            <span class='sk-pair'><span class='ft-kbd'>X</span> skip</span>
+            <span class='sk-pair'><span class='ft-kbd'>⌘↵</span> commit</span>
+        </div>
     </div>
 
     <!-- Collection (everything) -->
@@ -446,6 +451,17 @@ function onDrop(pl: FlowPlaylist, e: DragEvent) {
         height: 100%;
         background: var(--ft-playing);
         transition: width 300ms ease-out;
+    }
+    .stage-keys {
+        flex-basis: 100%;
+        min-width: 0;
+        display: flex;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 4px 9px;
+        font-size: 11px;
+        color: var(--ft-text-3);
+        .sk-pair { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
     }
 }
 .pl-empty {

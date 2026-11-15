@@ -5,7 +5,7 @@
         v-model='text'
         class='tag-input'
         type='text'
-        placeholder='Type to tag… (Enter adds, Esc back)'
+        placeholder='Type to tag… (Enter adds, ⌫ removes last, Esc back)'
         spellcheck='false'
         autocomplete='off'
         @keydown='onKey'

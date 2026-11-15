@@ -38,7 +38,9 @@
             <span class='when-full'>Stage next 50</span><span class='when-mid'>Stage 50</span>
         </button>
         <!-- Library progress; opens the Journal -->
-        <button type='button' class='ft-btn done-chip ft-num ml-2' data-test='done-chip' title='Tracks marked done: open the Journal' @click='openDoneJournal($event)'>{{ store.libraryDone.value.toLocaleString() }} done</button>
+        <button type='button' class='ft-btn done-chip ft-num ml-2' data-test='done-chip' title='Open the Journal — tracks marked done' @click='openDoneJournal($event)'>
+            <HistoryIcon class='size-3.5' />{{ store.libraryDone.value.toLocaleString() }} done
+        </button>
         <FlushIndicator class='ml-4' />
 
         <label class='ft-field search-field ml-4'>
@@ -146,6 +148,12 @@
             <span class='ft-kbd'>B</span> playlists
             <span class='hint-sep'></span>
             <span class='ft-kbd'>Space</span> play
+            <span class='hint-rule'></span>
+            <span class='ft-kbd'>S</span> stage
+            <span class='hint-sep'></span>
+            <span class='ft-kbd'>X</span> skip
+            <span class='hint-sep'></span>
+            <span class='ft-kbd'>⌘↵</span> commit
         </div>
     </div>
 
@@ -160,7 +168,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { useEventListener, useLocalStorage, useMediaQuery, watchDebounced } from '@vueuse/core';
 import {
-    ArrowDownIcon, ArrowUpIcon, EllipsisIcon, LibraryIcon, ListMinusIcon, LoaderCircleIcon,
+    ArrowDownIcon, ArrowUpIcon, EllipsisIcon, HistoryIcon, LibraryIcon, ListMinusIcon, LoaderCircleIcon,
     PanelRightCloseIcon, PanelRightOpenIcon, PictureInPicture2Icon, SearchIcon, SettingsIcon,
 } from '@lucide/vue';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -488,6 +496,9 @@ onMounted(() => {
 .flowtag .filter-chip { height: 24px; }
 
 .flowtag .done-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
     font-size: 12px;
     color: var(--ft-playing);
 }
@@ -604,14 +615,18 @@ onMounted(() => {
     .panel-hint {
         display: flex;
         align-items: center;
+        flex-wrap: wrap;
         gap: 6px;
+        row-gap: 5px;
         width: 100%;
         // Left-aligned like everything else on the surface (rows, header)
         justify-content: flex-start;
         padding-left: 6px;
+        padding-block: 8px;
         font-size: 12px;
         color: var(--ft-text-3);
         .hint-sep { width: 14px; }
+        .hint-rule { width: 1px; height: 14px; background: var(--ft-line-strong); margin: 0 10px; }
     }
 }
 </style>
