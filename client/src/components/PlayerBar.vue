@@ -24,8 +24,10 @@
         <!-- Meta -->
         <div class='col-span-2 flex min-w-0'>
             <!-- Album art, with the placeholder when the file has none -->
+            <div v-if='artFailed' class='ft-vinyl mt-2 size-[46px] shrink-0' aria-hidden='true'></div>
             <img
-                :src='artFailed ? PLACEHOLDER_IMG : art'
+                v-else
+                :src='art'
                 alt=''
                 class='mt-2 size-[46px] shrink-0 rounded object-cover'
                 @error='artFailed = true'
@@ -84,7 +86,7 @@ import Waveform from './Waveform.vue';
 import { ChevronDownIcon, ChevronUpIcon, PauseIcon, PlayIcon } from '@lucide/vue';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { PLACEHOLDER_IMG, httpUrl } from '../scripts/utils';
+import { httpUrl } from '../scripts/utils';
 import { computed, onDeactivated, onMounted, ref, watch } from 'vue';
 import { useLocalStorage, useMediaQuery } from '@vueuse/core';
 import { get1t } from '../scripts/onetagger';

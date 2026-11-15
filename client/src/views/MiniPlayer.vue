@@ -3,7 +3,7 @@
     <!-- Top: art + track info (drag region) + transport -->
     <div class='mini-top' @mousedown='onDrag'>
         <img v-if='np' :src='art' class='mini-art' alt='' draggable='false' />
-        <div v-else class='mini-art mini-art-empty'></div>
+        <div v-else class='mini-art ft-vinyl' aria-hidden='true'></div>
         <div class='mini-info'>
             <div class='mini-title'>{{ np?.title || 'Nothing playing' }}</div>
             <div class='mini-artist'>{{ np?.artist || 'Play a track in the main window' }}</div>
@@ -177,10 +177,7 @@ onMounted(() => {
     flex-shrink: 0;
     pointer-events: none;
 }
-.mini-art-empty {
-    background: var(--ft-panel);
-    border: 1px solid var(--ft-line);
-}
+.mini-art.ft-vinyl { border-radius: 50%; }
 .mini-info {
     flex: 1;
     min-width: 0;
