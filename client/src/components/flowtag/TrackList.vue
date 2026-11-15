@@ -5,6 +5,7 @@
     ref='viewport'
     class='track-scroll'
     role='listbox'
+    data-flowtag-list
     aria-label='Tracks'
     aria-multiselectable='true'
     tabindex='0'

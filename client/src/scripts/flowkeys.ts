@@ -11,8 +11,11 @@ import { isCommitChord, openCommitSheet } from './commitsheet';
  * Any open overlay that owns the keyboard. The shadcn / Reka overlays render
  * with ARIA roles (dialog, alert dialog, menu, select listbox); while one is
  * open, FlowTag's shortcuts must not act on the list behind it.
+ * The track list is itself an always-mounted listbox (marked data-flowtag-list):
+ * it is the surface the shortcuts drive, never an overlay over it.
  */
-const OPEN_OVERLAY_SELECTOR = '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]';
+export const OPEN_OVERLAY_SELECTOR =
+    '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]:not([data-flowtag-list])';
 
 /** Default key (KeyboardEvent.code) per remappable action */
 export const FLOWTAG_ACTION_DEFAULTS: Record<FlowTagAction, string> = {

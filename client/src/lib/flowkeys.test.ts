@@ -41,6 +41,38 @@ describe('digit seek', () => {
     });
 });
 
+/** Fake elements as attribute maps; a minimal matcher for the overlay selector's
+ *  grammar: comma lists of `[attr="v"]` with optional `:not([attr])` */
+type FakeEl = Record<string, string>;
+function matches(el: FakeEl, part: string): boolean {
+    const m = part.trim().match(/^\[(\w[\w-]*)="([^"]*)"\](?::not\(\[(\w[\w-]*)\]\))?$/);
+    if (!m) throw new Error(`matcher cannot parse: ${part}`);
+    const [, attr, value, without] = m;
+    return el[attr] === value && !(without && without in el);
+}
+function fakeDocument(els: FakeEl[]) {
+    return { querySelector: (sel: string) => els.find((el) => sel.split(',').some((p) => matches(el, p))) ?? null };
+}
+
+describe('overlay guard', () => {
+    afterEach(() => vi.unstubAllGlobals());
+    const trackList: FakeEl = { role: 'listbox', 'data-flowtag-list': '' };
+
+    it('the_always_mounted_track_list_listbox_does_not_block_shortcuts', () => {
+        vi.stubGlobal('document', fakeDocument([trackList]));
+        Object.assign(playerStub, { seek: vi.fn(), duration: 100_000, position: 0 });
+        expect(handleFlowKeys(key('Digit5'))).toBe(true);
+    });
+
+    it('an_open_select_listbox_or_dialog_still_blocks_shortcuts', () => {
+        Object.assign(playerStub, { seek: vi.fn(), duration: 100_000, position: 0 });
+        vi.stubGlobal('document', fakeDocument([trackList, { role: 'listbox' }]));
+        expect(handleFlowKeys(key('Digit5'))).toBe(false);
+        vi.stubGlobal('document', fakeDocument([trackList, { role: 'dialog' }]));
+        expect(handleFlowKeys(key('Digit5'))).toBe(false);
+    });
+});
+
 describe('default stage/skip bindings yield', () => {
     it('stage_fires_when_s_is_unclaimed', () => {
         expect(actionFires(key('KeyS'), 'stage')).toBe(true);
