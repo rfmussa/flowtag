@@ -973,9 +973,12 @@ export class TagStore {
                 return true;
             }
             case 'trackWaveform': {
-                // Ignore waveforms of tracks the user already moved away from
-                if (json.trackId !== this.selectedId.value) return true;
+                // The waveform belongs to the loaded (playing) track, not the
+                // selection: selection is pure browsing, and a double-click or
+                // Enter can start a row that was never selected. Ignore only
+                // waveforms of tracks the player already moved away from.
                 const player = get1t().player.value;
+                if (json.trackId !== player.trackId) return true;
                 if (Array.isArray(json.bars) && json.bars.length > 0) {
                     player.waveform = json.bars;
                 }
