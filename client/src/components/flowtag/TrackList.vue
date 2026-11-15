@@ -176,10 +176,37 @@ function onContextMenu(ev: MouseEvent) {
     if (track) store.clickSelect(track);
 }
 
-// Switching scope (playlist / source / collection) starts at the top
+// Switching scope (playlist / source / collection) starts at the top — unless
+// the preserved anchor lives in the new view: then keep the tag panel's target
+// visible instead (this is also what makes view restore land on its row, since
+// restore applies scope and anchor together and this reset ran last)
 watch([store.scope, store.activeSourceId], () => {
-    nextTick(() => virtualizer.value.scrollToOffset(0));
+    nextTick(() => {
+        const id = store.selectedId.value;
+        const idx = id === undefined ? -1 : visible.value.findIndex((t) => t.id === id);
+        if (idx === -1) virtualizer.value.scrollToOffset(0);
+        else virtualizer.value.scrollToIndex(idx, { align: 'center' });
+    });
 });
+
+// View restore can set the anchor before this component (and the change-watcher
+// below) exists, leaving the tag panel aimed at a row the list never shows:
+// center an already-set anchor at mount, or on the first population after it.
+function centerRestoredAnchor(): boolean {
+    const id = store.selectedId.value;
+    if (id === undefined) return true; // nothing restored; later sets hit the watcher below
+    const idx = visible.value.findIndex((t) => t.id === id);
+    if (idx === -1) return false; // list not populated yet
+    nextTick(() => virtualizer.value.scrollToIndex(idx, { align: 'center' }));
+    return true;
+}
+if (!centerRestoredAnchor()) {
+    const stopInitialScroll = watch(() => visible.value.length, (count) => {
+        if (count === 0) return;
+        stopInitialScroll();
+        centerRestoredAnchor();
+    });
+}
 
 // Keep the keyboard-selected row in view: 'auto' scrolls only when the row
 // is off screen and by the minimum (one row per J/K press while cruising);

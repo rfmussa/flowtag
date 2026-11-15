@@ -197,6 +197,7 @@ import TrackInspector from '../components/flowtag/TrackInspector.vue';
 import ManualTag from '../components/ManualTag.vue';
 import { createWelcomeGate, resolveViewState, WelcomeSnapshot } from '@/lib/welcome';
 import { openJournal } from '@/scripts/journalsheet';
+import { blurIfMouse } from '@/lib/focus';
 
 const PALETTE_KEY = 'flowtag.paletteOpen';
 
@@ -266,9 +267,8 @@ function openDoneJournal(e: Event) {
     openJournal();
 }
 
-function blurTarget(e: Event) {
-    (e.currentTarget as HTMLElement | null)?.blur();
-}
+// Mouse-only: keyboard activation keeps its visible focus trail
+const blurTarget = blurIfMouse;
 
 function setQuickFilter(v: QuickFilter, e: Event) {
     blurTarget(e);
@@ -501,12 +501,14 @@ onMounted(() => {
     flex-shrink: 0;
 }
 
-.flowtag .dir-btn { padding: 0 5px; height: 26px; }
-.flowtag .icon-only { padding: 0 6px; }
+.flowtag .ft-btn.dir-btn { padding: 0 5px; height: 26px; }
+.flowtag .ft-btn.icon-only { padding: 0 6px; }
 
 .flowtag .filter-chip { height: 24px; }
 
-.flowtag .done-chip {
+// .ft-btn in the class list, or this ties (0,2,0) with .flowtag-theme .ft-btn
+// and the winner falls to style-injection order
+.flowtag .ft-btn.done-chip {
     display: inline-flex;
     align-items: center;
     gap: 5px;

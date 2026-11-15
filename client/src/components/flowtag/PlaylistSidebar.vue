@@ -11,7 +11,7 @@
         <LayersIcon class='pl-icon' />
         <span class='pl-name'>Stage</span>
         <span class='pl-count ft-num' data-test='stage-count'>{{ stageCountLabel(store.stageReady.value, store.stageTotal.value) }}</span>
-        <Button size='sm' variant='ghost' class='stage-commit' tabindex='-1' data-test='stage-commit' @click.stop='openCommitSheet()'>Commit…</Button>
+        <Button size='sm' variant='ghost' class='stage-commit' data-test='stage-commit' @click.stop='openCommit($event)'>Commit…</Button>
         <div class='stage-bar' aria-hidden='true'><div class='stage-bar-fill' :style='{ width: stagePct + "%" }'></div></div>
         <div class='stage-keys'>
             <span class='sk-pair'><span class='ft-kbd'>S</span> stage</span>
@@ -176,8 +176,15 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { Button } from '@/components/ui/button';
 import { confirmDialog, promptDialog } from '@/lib/dialogs';
 import { commitLabel, commitScope, stageCountLabel } from '@/lib/commit';
+import { blurIfMouse } from '@/lib/focus';
 import type { CommitRow } from '@/lib/journal';
 import { openCommitSheet } from '../../scripts/commitsheet';
+
+/** Mouse clicks drop focus (Space keeps playing); keyboard keeps its trail */
+function openCommit(e: Event) {
+    blurIfMouse(e);
+    openCommitSheet();
+}
 import { get1t } from '../../scripts/onetagger';
 import { getTagStore, FlowPlaylist } from '../../scripts/tagstore';
 import SmartPlaylistEditor from './SmartPlaylistEditor.vue';

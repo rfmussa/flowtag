@@ -5,8 +5,8 @@
         <div class='welcome-title'>Welcome back</div>
         <div v-for='line in lines' :key='line' class='welcome-line'>{{ line }}</div>
     </div>
-    <Button size='sm' variant='ghost' tabindex='-1' @click='emit("dismiss")'>Dismiss</Button>
-    <Button size='sm' tabindex='-1' @click='emit("continue")'>Continue</Button>
+    <Button size='sm' variant='ghost' @click='emit("dismiss")'>Dismiss</Button>
+    <Button size='sm' @click='emit("continue")'>Continue</Button>
 </div>
 </template>
 

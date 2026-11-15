@@ -8,15 +8,24 @@
         placeholder='Type to tag… (Enter adds, ⌫ removes last, Esc back)'
         spellcheck='false'
         autocomplete='off'
+        role='combobox'
+        aria-label='Add tag'
+        aria-autocomplete='list'
+        :aria-expanded='listOpen'
+        :aria-controls='listOpen ? listId : undefined'
+        :aria-activedescendant='listOpen ? `${listId}-${highlighted}` : undefined'
         @keydown='onKey'
         @focus='open = true'
         @blur='onBlur'
     />
     <!-- Suggestions -->
-    <div v-if='open && trackId !== undefined && suggestions.length > 0' class='suggestions'>
+    <div v-if='listOpen' class='suggestions' :id='listId' role='listbox' aria-label='Tag suggestions'>
         <div
             v-for='(tag, i) in suggestions'
             :key='tag.id ?? "new"'
+            :id='`${listId}-${i}`'
+            role='option'
+            :aria-selected='i === highlighted'
             class='suggestion flex items-center px-2'
             :class='{highlighted: i === highlighted}'
             @mousedown.prevent='apply(i)'
@@ -36,7 +45,7 @@
 
 <script lang='ts' setup>
 import { tagInputOwnsKey } from '../../scripts/commitsheet';
-import { computed, ref, watch } from 'vue';
+import { computed, ref, useId, watch } from 'vue';
 import { getTagStore } from '../../scripts/tagstore';
 import { buildSuggestions, type TagSuggestion } from '../../lib/taginput';
 
@@ -46,6 +55,11 @@ const store = getTagStore();
 const inputEl = ref<HTMLInputElement>();
 const text = ref('');
 const highlighted = ref(0);
+
+// Combobox plumbing: unique list id (TagInput mounts in both the main view
+// and the miniplayer) and the one expression the template's v-if used to hold
+const listId = `tag-suggestions-${useId()}`;
+const listOpen = computed(() => open.value && props.trackId !== undefined && suggestions.value.length > 0);
 const open = ref(false);
 
 // Pool matches minus tags the track already carries, plus a "create" row when

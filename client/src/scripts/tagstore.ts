@@ -122,6 +122,8 @@ export interface ExportState {
     running: boolean;
     done: number;
     total: number;
+    /** Held after a finished export with failures, until dismissed */
+    result?: { written: number; unchanged: number; failed: number };
 }
 
 export interface FlushState {
@@ -1067,8 +1069,16 @@ export class TagStore {
                 }
                 return false;
             case 'rekordboxExportDone': {
-                this.exportStatus.value = { running: false, done: 0, total: 0 };
-                const r = json.result ?? {};
+                const done = json.result ?? {};
+                // A failed write into real files must outlive the toast: hold it
+                // in the header (like flush errors) until dismissed
+                this.exportStatus.value = (done.failed ?? 0) > 0
+                    ? {
+                        running: false, done: 0, total: 0,
+                        result: { written: done.written ?? 0, unchanged: done.unchanged ?? 0, failed: done.failed },
+                    }
+                    : { running: false, done: 0, total: 0 };
+                const r = done;
                 notify({
                     message: `Export done: ${r.written ?? 0} written, ${r.unchanged ?? 0} unchanged` +
                         (r.failed ? `, ${r.failed} FAILED` : ''),
