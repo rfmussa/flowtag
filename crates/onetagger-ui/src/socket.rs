@@ -242,6 +242,46 @@ fn deck() -> MutexGuard<'static, AudioPlayer> {
         .unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
+/// What the deck's output level is made of. Both parts describe the deck, not
+/// a connection: the user's volume survives websocket reconnects and applies to
+/// every window, and the gain belongs to whichever track was loaded last, so a
+/// volume change from a window that never loaded anything still scales the
+/// real track's gain.
+#[derive(Clone, Copy)]
+struct DeckLevel {
+    /// User volume, linear
+    volume: f32,
+    /// Auto-gain (experimental analysis): linear factor from the loaded
+    /// track's LUFS, 1.0 when off or unanalyzed
+    gain: f32,
+}
+
+impl DeckLevel {
+    fn effective(self) -> f32 {
+        self.volume * self.gain
+    }
+}
+
+static DECK_LEVEL: Mutex<DeckLevel> = Mutex::new(DeckLevel { volume: 1.0, gain: 1.0 });
+
+/// Update the shared level and push the effective volume to the deck. The
+/// level lock is held across the deck call so two windows cannot apply their
+/// updates to the sink out of order. Lock order is always level, then deck.
+fn update_deck_level(update: impl FnOnce(&mut DeckLevel)) {
+    let mut level = DECK_LEVEL.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+    update(&mut level);
+    deck().volume(level.effective());
+}
+
+/// Set at load, after the new source is on the deck
+fn set_deck_gain(gain: f32) {
+    update_deck_level(|level| level.gain = gain);
+}
+
+fn set_deck_volume(volume: f32) {
+    update_deck_level(|level| level.volume = volume);
+}
+
 // Shared variables in socket
 pub(crate) struct SocketContext {
     spotify: Option<Spotify>,
@@ -254,10 +294,6 @@ pub(crate) struct SocketContext {
     /// Tangle sync worker; `None` when it failed to start
     pub(crate) tangle: Option<std::sync::mpsc::Sender<onetagger_tangle::worker::Command>>,
     pub(crate) events: tokio::sync::broadcast::Sender<String>,
-    /// Auto-gain (experimental analysis): linear factor applied on top of the
-    /// user's volume, set per started track from its LUFS
-    player_gain: f32,
-    player_volume: f32,
 }
 
 impl SocketContext {
@@ -292,8 +328,6 @@ impl SocketContext {
             preload,
             tangle,
             events,
-            player_gain: 1.0,
-            player_volume: 1.0,
         }
     }
 
@@ -641,7 +675,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
                     .unwrap_or(0.0),
                 false => 0.0,
             };
-            context.player_gain = 10f32.powf(gain_db as f32 / 20.0);
+            let gain = 10f32.powf(gain_db as f32 / 20.0);
             // Decoder open touches the file: keep it off the async threads
             let source_start = std::time::Instant::now();
             let log_path = path.clone();
@@ -666,7 +700,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             })).ok();
             deck().load_file(source);
             info!("player source: {log_path:?} built in {}ms{}", source_start.elapsed().as_millis(), if preloaded { " (preloaded)" } else { "" });
-            deck().volume(context.player_volume * context.player_gain);
+            set_deck_gain(gain);
             if autoplay {
                 deck().play();
             }
@@ -746,8 +780,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
             })).ok();
         },
         Action::PlayerVolume { volume } => {
-            context.player_volume = volume;
-            deck().volume(volume * context.player_gain);
+            set_deck_volume(volume);
         },
         Action::PlayerStop => {
             deck().stop();
@@ -1095,5 +1128,21 @@ mod tests {
         assert!(matches!(parse(r#"{"action":"journalGet","beforeId":7}"#), Action::JournalGet { before_id: Some(7) }));
         assert!(matches!(parse(r#"{"action":"journalGet","beforeId":null}"#), Action::JournalGet { before_id: None }));
         assert!(matches!(parse(r#"{"action":"journalGet"}"#), Action::JournalGet { before_id: None }));
+    }
+}
+
+#[cfg(test)]
+mod deck_level_tests {
+    use super::DeckLevel;
+
+    #[test]
+    fn effective_is_volume_times_gain() {
+        let level = DeckLevel { volume: 0.25, gain: 2.0 };
+        assert_eq!(level.effective(), 0.5);
+    }
+
+    #[test]
+    fn unity_gain_passes_volume_through() {
+        assert_eq!(DeckLevel { volume: 0.3, gain: 1.0 }.effective(), 0.3);
     }
 }

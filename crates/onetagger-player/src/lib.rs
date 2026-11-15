@@ -93,7 +93,7 @@ impl AudioPlayer {
             // and sleep kills the CoreAudio stream without renaming the device
             let mut last_action_mono = Instant::now();
             let mut last_action_wall = std::time::SystemTime::now();
-            let (mut _stream, mut stream_handle) = rodio::OutputStream::try_default().unwrap();
+            let (mut _stream, stream_handle) = rodio::OutputStream::try_default().unwrap();
             let mut sink = Sink::try_new(&stream_handle).unwrap();
             sink.set_volume(volume);
             sink.pause();
@@ -158,14 +158,21 @@ impl AudioPlayer {
                             Some(c) => slept || should_rebind(bound_device.as_deref(), c),
                         };
                         if rebind {
-                            match rodio::OutputStream::try_default() {
-                                Ok((new_stream, new_handle)) => {
+                            match rodio::OutputStream::try_default().map_err(|e| e.to_string())
+                                .and_then(|(new_stream, new_handle)| {
+                                    // The sink comes first: the device can vanish between
+                                    // opening the stream and creating the sink, and nothing
+                                    // may be committed until both exist
+                                    let new_sink = Sink::try_new(&new_handle).map_err(|e| e.to_string())?;
+                                    Ok((new_stream, new_sink))
+                                })
+                            {
+                                Ok((new_stream, new_sink)) => {
                                     _stream = new_stream;
-                                    stream_handle = new_handle;
                                     bound_device = current;
                                     // A new stream needs a new sink; dropping the
                                     // old stream silences it at the device level
-                                    sink = Sink::try_new(&stream_handle).unwrap();
+                                    sink = new_sink;
                                     sink.set_volume(volume);
                                     sink.pause();
                                     info!("player output: rebound to default device{}", if slept { " (system slept since last load)" } else { "" });
@@ -225,13 +232,19 @@ impl AudioPlayer {
                         rebind_pending.store(false, std::sync::atomic::Ordering::Relaxed);
                         let pos = sink.get_pos();
                         let paused = sink.is_paused();
-                        match rodio::OutputStream::try_default() {
-                            Ok((new_stream, new_handle)) => {
+                        match rodio::OutputStream::try_default().map_err(|e| e.to_string())
+                            .and_then(|(new_stream, new_handle)| {
+                                // Sink before commit, as in Load: a failure here must
+                                // leave the current stream and sink playing
+                                let new_sink = Sink::try_new(&new_handle).map_err(|e| e.to_string())?;
+                                Ok((new_stream, new_sink))
+                            })
+                        {
+                            Ok((new_stream, new_sink)) => {
                                 _stream = new_stream;
-                                stream_handle = new_handle;
                                 bound_device = default_output_name();
                                 sink.stop();
-                                sink = Sink::try_new(&stream_handle).unwrap();
+                                sink = new_sink;
                                 sink.set_volume(volume);
                                 sink.pause();
                                 if let Some(src) = source.as_ref() {
