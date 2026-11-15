@@ -218,7 +218,8 @@ onMounted(() => {
 }
 .mini-progress {
     height: 2px;
-    background: var(--ft-line);
+    // Stronger than the neighbouring hairlines: the unplayed extent must read
+    background: var(--ft-line-strong);
     margin: 0 10px;
     border-radius: 1px;
 }
