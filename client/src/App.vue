@@ -64,7 +64,7 @@ import { useRoute } from 'vue-router';
 import { get1t } from "./scripts/onetagger.js";
 import { initMediaSync } from './scripts/mediasync';
 import { initDiag } from './scripts/diag';
-import { applyTheme, DEFAULT_THEME } from './scripts/themes';
+import { applyTheme, cacheTheme, DEFAULT_THEME, readCachedTheme } from './scripts/themes';
 import { installKeycapEcho } from './scripts/keycapecho';
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -122,11 +122,18 @@ onMounted(() => {
     installKeycapEcho();
 });
 
-// The saved theme follows the settings (loaded over the websocket after
-// boot); the first application is instant, later changes crossfade
+// Paint the cached theme before settings arrive (they come over the websocket
+// after boot), so a light-theme user never sees a dark flash. The first
+// settings-delivered theme is applied instantly (it normally equals the
+// cache); later changes crossfade. This watcher is the single choke point
+// for the cache write: the picker commits through settings.
+applyTheme(readCachedTheme() ?? DEFAULT_THEME);
 let themeApplied = false;
-watch(() => $1t.settings.value.flowtag.theme, (theme) => {
-    applyTheme(theme ?? DEFAULT_THEME, themeApplied);
+watch(() => [$1t.settingsLoaded.value, $1t.settings.value.flowtag.theme] as const, ([loaded, theme]) => {
+    if (!loaded) return; // pre-load `settings` are defaults, not the saved theme
+    const next = theme ?? DEFAULT_THEME;
+    applyTheme(next, themeApplied);
+    cacheTheme(next);
     themeApplied = true;
 }, { immediate: true });
 

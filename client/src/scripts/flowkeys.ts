@@ -7,15 +7,22 @@ import { diag } from './diag';
 import { FlowTagAction } from './settings';
 import { isCommitChord, openCommitSheet } from './commitsheet';
 
+/** The shadcn wrappers in components/ui tag every portaled overlay surface
+ *  with data-slot; Reka sets data-state="open" on it while shown (and "closed"
+ *  during the exit animation, when it no longer owns the keyboard). Tooltips
+ *  are deliberately absent: they never take the keyboard. */
+const OVERLAY_SLOTS = [
+    'dialog-content', 'alert-dialog-content', 'dropdown-menu-content',
+    'dropdown-menu-sub-content', 'context-menu-content', 'popover-content', 'select-content', 'combobox-list',
+] as const;
+
 /**
- * Any open overlay that owns the keyboard. The shadcn / Reka overlays render
- * with ARIA roles (dialog, alert dialog, menu, select listbox); while one is
- * open, FlowTag's shortcuts must not act on the list behind it.
- * The track list is itself an always-mounted listbox (marked data-flowtag-list):
- * it is the surface the shortcuts drive, never an overlay over it.
+ * An open overlay that owns the keyboard: while one is open, FlowTag's
+ * shortcuts must not act on the list behind it. Positive detection, so an
+ * always-mounted role=listbox/menu elsewhere (the track list) can't block.
  */
 export const OPEN_OVERLAY_SELECTOR =
-    '[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]:not([data-flowtag-list])';
+    OVERLAY_SLOTS.map((slot) => `[data-slot="${slot}"][data-state="open"]`).join(', ');
 
 /** Default key (KeyboardEvent.code) per remappable action */
 export const FLOWTAG_ACTION_DEFAULTS: Record<FlowTagAction, string> = {

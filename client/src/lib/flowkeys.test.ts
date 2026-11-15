@@ -42,13 +42,12 @@ describe('digit seek', () => {
 });
 
 /** Fake elements as attribute maps; a minimal matcher for the overlay selector's
- *  grammar: comma lists of `[attr="v"]` with optional `:not([attr])` */
+ *  grammar: comma lists of one or more `[attr="v"]` conjuncts */
 type FakeEl = Record<string, string>;
 function matches(el: FakeEl, part: string): boolean {
-    const m = part.trim().match(/^\[(\w[\w-]*)="([^"]*)"\](?::not\(\[(\w[\w-]*)\]\))?$/);
-    if (!m) throw new Error(`matcher cannot parse: ${part}`);
-    const [, attr, value, without] = m;
-    return el[attr] === value && !(without && without in el);
+    const conjuncts = part.trim().match(/^(\[[\w-]+="[^"]*"\])+$/);
+    if (!conjuncts) throw new Error(`matcher cannot parse: ${part}`);
+    return [...part.matchAll(/\[([\w-]+)="([^"]*)"\]/g)].every(([, attr, value]) => el[attr] === value);
 }
 function fakeDocument(els: FakeEl[]) {
     return { querySelector: (sel: string) => els.find((el) => sel.split(',').some((p) => matches(el, p))) ?? null };
@@ -56,20 +55,40 @@ function fakeDocument(els: FakeEl[]) {
 
 describe('overlay guard', () => {
     afterEach(() => vi.unstubAllGlobals());
-    const trackList: FakeEl = { role: 'listbox', 'data-flowtag-list': '' };
+    const trackList: FakeEl = { role: 'listbox' };
+    const open = (slot: string): FakeEl => ({ 'data-slot': slot, 'data-state': 'open' });
+
+    function pressDigit(els: FakeEl[]) {
+        Object.assign(playerStub, { seek: vi.fn(), duration: 100_000, position: 0 });
+        vi.stubGlobal('document', fakeDocument(els));
+        return handleFlowKeys(key('Digit5'));
+    }
 
     it('the_always_mounted_track_list_listbox_does_not_block_shortcuts', () => {
-        vi.stubGlobal('document', fakeDocument([trackList]));
-        Object.assign(playerStub, { seek: vi.fn(), duration: 100_000, position: 0 });
-        expect(handleFlowKeys(key('Digit5'))).toBe(true);
+        expect(pressDigit([trackList])).toBe(true);
     });
 
-    it('an_open_select_listbox_or_dialog_still_blocks_shortcuts', () => {
-        Object.assign(playerStub, { seek: vi.fn(), duration: 100_000, position: 0 });
-        vi.stubGlobal('document', fakeDocument([trackList, { role: 'listbox' }]));
-        expect(handleFlowKeys(key('Digit5'))).toBe(false);
-        vi.stubGlobal('document', fakeDocument([trackList, { role: 'dialog' }]));
-        expect(handleFlowKeys(key('Digit5'))).toBe(false);
+    it('any_unmarked_always_mounted_listbox_or_menu_does_not_block_shortcuts', () => {
+        expect(pressDigit([{ role: 'listbox' }, { role: 'menu' }])).toBe(true);
+    });
+
+    it('an_open_select_blocks_shortcuts', () => {
+        expect(pressDigit([trackList, open('select-content')])).toBe(false);
+    });
+
+    it('an_open_dialog_or_alert_dialog_blocks_shortcuts', () => {
+        expect(pressDigit([trackList, open('dialog-content')])).toBe(false);
+        expect(pressDigit([trackList, open('alert-dialog-content')])).toBe(false);
+    });
+
+    it('an_open_menu_or_popover_blocks_shortcuts', () => {
+        expect(pressDigit([open('dropdown-menu-content')])).toBe(false);
+        expect(pressDigit([open('popover-content')])).toBe(false);
+        expect(pressDigit([open('context-menu-content')])).toBe(false);
+    });
+
+    it('an_overlay_in_its_closing_animation_no_longer_blocks', () => {
+        expect(pressDigit([{ 'data-slot': 'select-content', 'data-state': 'closed' }])).toBe(true);
     });
 });
 

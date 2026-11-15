@@ -19,6 +19,22 @@ function isTextTarget(target: EventTarget | null): boolean {
     return el.tagName === 'INPUT' || el.tagName === 'TEXTAREA' || el.isContentEditable;
 }
 
+const ECHO_MS = 110;
+
+/** One pending removal per keycap: a repeat must extend the dip, not let an
+ *  earlier press's timer cut a later one short (holding a key would strobe) */
+const pendingRemoval = new WeakMap<Element, number>();
+
+function echo(cap: Element) {
+    const pending = pendingRemoval.get(cap);
+    if (pending !== undefined) window.clearTimeout(pending);
+    cap.classList.add('kbd-echo');
+    pendingRemoval.set(cap, window.setTimeout(() => {
+        cap.classList.remove('kbd-echo');
+        pendingRemoval.delete(cap);
+    }, ECHO_MS));
+}
+
 export function installKeycapEcho() {
     document.addEventListener('keydown', (event) => {
         if (event.metaKey || event.ctrlKey || event.altKey) return;
@@ -28,8 +44,7 @@ export function installKeycapEcho() {
         if (label.length > 5) return;
         document.querySelectorAll('.ft-kbd').forEach((cap) => {
             if (cap.textContent?.trim().toUpperCase() !== label) return;
-            cap.classList.add('kbd-echo');
-            window.setTimeout(() => cap.classList.remove('kbd-echo'), 110);
+            echo(cap);
         });
     }, { capture: true, passive: true });
 }

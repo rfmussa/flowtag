@@ -5,7 +5,7 @@ server binary (see [crates/onetagger-ui/ARCHITECTURE.md](../crates/onetagger-ui/
 for the embed gotcha). Views live in `client/src/views` (`QuickTag.vue` is FlowTag proper,
 `MiniPlayer.vue` the mini window), FlowTag components in `client/src/components/flowtag`, app
 logic in `client/src/scripts`. Pure, extracted logic lives in `client/src/lib` with vitest suites
-beside it (`pnpm test`, 14 files / ~127 tests) — the pattern throughout: `lib/` holds pure
+beside it (`pnpm test`, 16 files / ~142 tests) — the pattern throughout: `lib/` holds pure
 testable functions (end-of-track decisions, commit flow, quit flow, keybind reservations),
 `scripts/` holds the stateful wiring that calls them. New decision logic goes in `lib/` with a
 test.

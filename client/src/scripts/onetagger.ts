@@ -30,6 +30,8 @@ class OneTagger {
     lock: Ref<{ locked: boolean }> = ref({ locked: false });
     player: Ref<Player> = ref(new Player(this));
     settings: Ref<Settings> = ref(new Settings());
+    /** False until the saved settings arrive; before that `settings` holds defaults */
+    settingsLoaded: Ref<boolean> = ref(false);
     spotify: Ref<Spotify> = ref(new Spotify());
     helpDialog: Ref<{ open: boolean, route?: string }> = ref({ open: false });
     folderBrowser: Ref<FolderBrowser> = ref(new FolderBrowser());
@@ -434,6 +436,7 @@ class OneTagger {
     // Load settings from JSON
     loadSettings(data: any) {
         this.settings.value = Settings.fromJson(data);
+        this.settingsLoaded.value = true;
         
         // AT config (nested)
         this.config.value.loadSettings(this.settings.value.autoTaggerConfig);

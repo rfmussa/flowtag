@@ -7,6 +7,10 @@ import { diag, diagError } from './diag';
 import { JournalState } from '@/lib/journal';
 import { CommitScope, commitScope, commitScopeId } from '@/lib/commit';
 import type { ViewState } from './settings';
+import { exportDone, exportProgress, IDLE_EXPORT } from '@/lib/exportstatus';
+import type { ExportState } from '@/lib/exportstatus';
+import { IDLE_SCAN, scanDone, scanProgress } from '@/lib/scanstatus';
+import type { ScanState } from '@/lib/scanstatus';
 import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
 
 // Types mirroring onetagger-db models (serde camelCase)
@@ -111,20 +115,7 @@ export interface FlowFolder {
     name: string;
 }
 
-export interface ScanState {
-    running: boolean;
-    done: number;
-    total: number;
-    result?: { added: number; updated: number; removed: number; failed: number };
-}
-
-export interface ExportState {
-    running: boolean;
-    done: number;
-    total: number;
-    /** Held after a finished export with failures, until dismissed */
-    result?: { written: number; unchanged: number; failed: number };
-}
+export type { ScanState, ExportState };
 
 export interface FlushState {
     pending: number;
@@ -154,10 +145,10 @@ export class TagStore {
     tags: Ref<FlowTag[]> = ref([]);
     groups: Ref<FlowGroup[]> = ref([]);
     folders: Ref<FlowFolder[]> = ref([]);
-    scan: Ref<ScanState> = ref({ running: false, done: 0, total: 0 });
+    scan: Ref<ScanState> = ref({ ...IDLE_SCAN });
     flush: Ref<FlushState> = ref({ pending: 0, errors: [] });
     /** Rekordbox comment export progress (header indicator, like scan) */
-    exportStatus: Ref<ExportState> = ref({ running: false, done: 0, total: 0 });
+    exportStatus: Ref<ExportState> = ref({ ...IDLE_EXPORT });
     loaded: Ref<boolean> = ref(false);
 
     /** Active track id (loaded in the player; the anchor of the selection) */
@@ -885,10 +876,10 @@ export class TagStore {
                 this.groups.value = json.groups ?? [];
                 return true;
             case 'tagScanProgress':
-                this.scan.value = { ...this.scan.value, running: true, done: json.done, total: json.total };
+                this.scan.value = scanProgress(this.scan.value, json);
                 return true;
             case 'tagScanDone':
-                this.scan.value = { running: false, done: 0, total: 0, result: json.result };
+                this.scan.value = scanDone(this.scan.value, json.result);
                 diag('scanDone', json.result ?? {});
                 return true;
             case 'tagCreated':
@@ -1056,7 +1047,7 @@ export class TagStore {
                 }
                 return true;
             case 'rekordboxExportProgress':
-                this.exportStatus.value = { running: true, done: json.done ?? 0, total: json.total ?? 0 };
+                this.exportStatus.value = exportProgress(this.exportStatus.value, json);
                 return true;
             case 'error':
                 this.errorSeq.value++;
@@ -1069,16 +1060,8 @@ export class TagStore {
                 }
                 return false;
             case 'rekordboxExportDone': {
-                const done = json.result ?? {};
-                // A failed write into real files must outlive the toast: hold it
-                // in the header (like flush errors) until dismissed
-                this.exportStatus.value = (done.failed ?? 0) > 0
-                    ? {
-                        running: false, done: 0, total: 0,
-                        result: { written: done.written ?? 0, unchanged: done.unchanged ?? 0, failed: done.failed },
-                    }
-                    : { running: false, done: 0, total: 0 };
-                const r = done;
+                this.exportStatus.value = exportDone(this.exportStatus.value, json);
+                const r = json.result ?? {};
                 notify({
                     message: `Export done: ${r.written ?? 0} written, ${r.unchanged ?? 0} unchanged` +
                         (r.failed ? `, ${r.failed} FAILED` : ''),

@@ -38,6 +38,27 @@ export function currentTheme(): ThemeId {
     return THEMES.find((t) => root.classList.contains(`th-${t.id}`))?.id ?? DEFAULT_THEME;
 }
 
+const THEME_CACHE_KEY = 'flowtag-theme';
+
+/** Last committed theme, cached so the next launch paints it before the
+ *  saved settings arrive over the websocket. Null if absent or invalid. */
+export function readCachedTheme(): ThemeId | null {
+    try {
+        const raw = window.localStorage.getItem(THEME_CACHE_KEY);
+        return isThemeId(raw) ? raw : null;
+    } catch {
+        return null;
+    }
+}
+
+export function cacheTheme(theme: ThemeId) {
+    try {
+        window.localStorage.setItem(THEME_CACHE_KEY, theme);
+    } catch {
+        // Storage unavailable: the cache is only a launch-time optimization
+    }
+}
+
 let crossfadeTimer: number | undefined;
 
 /** Apply a theme to this window. `animated` runs the one authored moment:

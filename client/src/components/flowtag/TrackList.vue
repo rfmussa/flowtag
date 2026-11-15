@@ -5,7 +5,6 @@
     ref='viewport'
     class='track-scroll'
     role='listbox'
-    data-flowtag-list
     aria-label='Tracks'
     aria-multiselectable='true'
     tabindex='0'
@@ -39,7 +38,7 @@
 <!-- Screen-reader echo of the anchor row (the selection model never moves DOM focus) -->
 <div class='sr-only' role='status' aria-live='polite'>{{ announce }}</div>
 <ContextMenuPortal>
-    <ContextMenuContent class='flowtag-theme ft-ctx' :side-offset='4'>
+    <ContextMenuContent data-slot='context-menu-content' class='flowtag-theme ft-ctx' :side-offset='4'>
         <ContextMenuItem class='ft-ctx-item' :disabled='!menuHasTarget' data-test='ctx-stage-toggle' @select='store.toggleStageSelection()'>
             {{ menuAllStaged ? 'Unstage' : 'Stage' }}{{ menuCount > 1 ? ` ${menuCount} tracks` : '' }}
         </ContextMenuItem>
