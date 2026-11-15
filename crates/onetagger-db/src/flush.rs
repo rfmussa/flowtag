@@ -23,6 +23,9 @@ pub struct FlushJob {
     pub format: String,
     /// Tag names in display order
     pub tag_names: Vec<String>,
+    /// Rating owed to the file: None = leave the file's rating alone,
+    /// Some(None) = clear it, Some(Some(n)) = write n stars
+    pub rating: Option<Option<u8>>,
     /// Version snapshot: the dirty flag is only cleared if it still matches
     pub tag_version: i64,
     /// Stats as known to the DB (detects external edits before we write)
@@ -35,7 +38,7 @@ pub struct FlushJob {
 pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Result<Vec<FlushJob>, Error> {
     let conn = db.conn();
     let mut stmt = conn.prepare(
-        "SELECT id, path, format, tag_version, mtime, size FROM tracks
+        "SELECT id, path, format, tag_version, mtime, size, rating_pending, rating FROM tracks
          WHERE needs_flush = 1 AND missing = 0
            AND tag_updated_at <= ?1 AND flush_attempts < ?2
            AND next_flush_attempt_at <= ?4
@@ -50,6 +53,8 @@ pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Res
                 r.get::<_, i64>(3)?,
                 r.get::<_, i64>(4)?,
                 r.get::<_, i64>(5)?,
+                r.get::<_, i64>(6)? != 0,
+                r.get::<_, Option<i64>>(7)?,
             ))
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -59,11 +64,13 @@ pub fn due_for_flush(db: &Db, now: i64, debounce_secs: i64, limit: usize) -> Res
         "SELECT t.name FROM track_tags tt JOIN tags t ON t.id = tt.tag_id
          WHERE tt.track_id = ?1 ORDER BY tt.position, t.id",
     )?;
-    for (track_id, path, format, tag_version, mtime, size) in rows {
+    for (track_id, path, format, tag_version, mtime, size, rating_pending, rating) in rows {
         let tag_names = tag_stmt
             .query_map([track_id], |r| r.get::<_, String>(0))?
             .collect::<Result<Vec<_>, _>>()?;
-        jobs.push(FlushJob { track_id, path, format, tag_names, tag_version, mtime, size });
+        // The column CHECK keeps rating in 1..=5, so the narrowing is lossless
+        let rating = rating_pending.then(|| rating.and_then(|r| u8::try_from(r).ok()));
+        jobs.push(FlushJob { track_id, path, format, tag_names, rating, tag_version, mtime, size });
     }
     Ok(jobs)
 }
@@ -86,7 +93,7 @@ pub fn mark_flushed(db: &Db, track_id: i64, tag_version: i64, stats: Option<(i64
         )?;
     }
     conn.execute(
-        "UPDATE tracks SET needs_flush = 0 WHERE id = ?1 AND tag_version = ?2",
+        "UPDATE tracks SET needs_flush = 0, rating_pending = 0 WHERE id = ?1 AND tag_version = ?2",
         params![track_id, tag_version],
     )?;
     Ok(())
@@ -138,6 +145,10 @@ fn write_tags_to_file(job: &FlushJob) -> Result<(i64, i64), Error> {
         tag.remove_raw(FILE_TAG_FIELD);
     } else {
         tag.set_raw(FILE_TAG_FIELD, job.tag_names.clone(), true);
+    }
+    // Only a rating set in FlowTag is written; 0 removes the rating frames
+    if let Some(rating) = job.rating {
+        tag.set_rating(rating.unwrap_or(0), true);
     }
     tag.save_file(path)?;
 
@@ -364,5 +375,46 @@ mod tests {
         assert_eq!(pending, 1);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].1, "io error");
+    }
+
+    /// Read the rating straight from the file
+    fn file_rating(path: &std::path::Path) -> Option<u8> {
+        Tag::load_file(path, false).unwrap().tag().get_rating()
+    }
+
+    /// A FlowTag rating reaches the file through the flusher, a cleared one is
+    /// removed, and a tag-only flush never touches a rating it does not own
+    #[test]
+    fn rating_flushes_to_file_only_when_pending() {
+        let (dir, db) = test_db();
+        let path = dir.path().join("a.mp3");
+        std::fs::write(&path, b"not really audio").unwrap();
+        let t = insert_track(&db, &path.to_string_lossy());
+        let flush_now = |db: &Db| {
+            db.conn().execute("UPDATE tracks SET tag_updated_at = 0", []).unwrap();
+            let events = flush_pass(db, 0, &|_| false).unwrap();
+            assert!(events.iter().all(|e| e.ok), "{events:?}");
+        };
+
+        crate::ratings::set_rating(&db, &[t], Some(4)).unwrap();
+        let job = &due_for_flush(&db, crate::now() + 100, 0, 16).unwrap()[0];
+        assert_eq!(job.rating, Some(Some(4)));
+        flush_now(&db);
+        assert_eq!(file_rating(&path), Some(4));
+        let pending: i64 = db.conn().query_row("SELECT rating_pending FROM tracks", [], |r| r.get(0)).unwrap();
+        assert_eq!(pending, 0, "a written rating is no longer owed");
+
+        // Tag-only edit on a track whose rating is not pending: file rating kept
+        db.conn().execute("UPDATE tracks SET rating = NULL", []).unwrap();
+        add_tag_to_track(&db, t, "x").unwrap();
+        assert_eq!(due_for_flush(&db, crate::now() + 100, 0, 16).unwrap()[0].rating, None);
+        flush_now(&db);
+        assert_eq!(file_rating(&path), Some(4), "tag flush must not wipe a rating it never set");
+
+        // Clearing in FlowTag removes the frames
+        crate::ratings::set_rating(&db, &[t], Some(2)).unwrap();
+        crate::ratings::set_rating(&db, &[t], None).unwrap();
+        flush_now(&db);
+        assert_eq!(file_rating(&path), None);
     }
 }

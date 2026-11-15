@@ -76,6 +76,28 @@ fn rekey_deleted_tangle_tags(tx: &Transaction) -> HookResult {
 /// v11: staging, commits and the local edit log, plus tracks.done_at / done_commit.
 /// SQLite has no `ADD COLUMN IF NOT EXISTS`, so the columns are guarded like v5/v8
 /// (the re-run tests replay later migrations on an already-migrated database).
+/// v12: star ratings. `rating` is 1–5 or NULL (unrated); `rating_pending` marks
+/// a rating set in FlowTag that the flusher still owes the file — only then does
+/// the flusher touch the file's rating frames, and only then does a rescan keep
+/// the DB value over the file's. The first time the column appears, stored stats
+/// reset so the next scan re-parses every file once and imports its rating.
+/// Idempotent: safe to re-run on a database that already has the columns.
+fn add_rating(tx: &Transaction) -> HookResult {
+    let has_column = |name: &str| -> rusqlite::Result<bool> {
+        tx.prepare("SELECT 1 FROM pragma_table_info('tracks') WHERE name = ?1")?.exists([name])
+    };
+    if !has_column("rating")? {
+        tx.execute_batch("
+            ALTER TABLE tracks ADD COLUMN rating INTEGER CHECK (rating BETWEEN 1 AND 5);
+            UPDATE tracks SET mtime = 0, size = -1;
+        ")?;
+    }
+    if !has_column("rating_pending")? {
+        tx.execute_batch("ALTER TABLE tracks ADD COLUMN rating_pending INTEGER NOT NULL DEFAULT 0;")?;
+    }
+    Ok(())
+}
+
 fn add_staging(tx: &Transaction) -> HookResult {
     tx.execute_batch("
         CREATE TABLE IF NOT EXISTS staged (
@@ -242,6 +264,8 @@ pub fn migrations() -> Migrations<'static> {
         M::up_with_hook("", rekey_deleted_tangle_tags),
         // v11: staging + commits (done status) + local edit log
         M::up_with_hook("", add_staging),
+        // v12: star ratings (1–5, NULL = unrated) + the pending-write marker
+        M::up_with_hook("", add_rating),
     ])
 }
 
@@ -435,6 +459,48 @@ mod tests {
         }
     }
 
+    /// v12 adds a nullable, range-checked rating; the first run resets stats so
+    /// the next scan imports file ratings, and a replay is a no-op
+    #[test]
+    fn v12_adds_rating_and_backfills_via_rescan() {
+        let (_dir, db) = crate::testutil::test_db();
+        let mut conn = db.conn();
+        conn.execute("INSERT INTO folders (path) VALUES ('/x')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (folder_id, path, format, title, mtime, size) VALUES (1, '/x/a.mp3', 'mp3', 'A', 1700000000, 10)",
+            [],
+        ).unwrap();
+        // Simulate a pre-v12 library: drop the columns, roll back, migrate
+        conn.execute_batch("
+            ALTER TABLE tracks DROP COLUMN rating;
+            ALTER TABLE tracks DROP COLUMN rating_pending;
+        ").unwrap();
+        conn.pragma_update(None, "user_version", 11).unwrap();
+        super::migrate(&mut conn).unwrap();
+
+        let (rating, pending, mtime, size): (Option<i64>, i64, i64, i64) = conn
+            .query_row("SELECT rating, rating_pending, mtime, size FROM tracks", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?))
+            })
+            .unwrap();
+        assert_eq!((rating, pending), (None, 0), "existing rows start unrated");
+        assert_eq!((mtime, size), (0, -1), "stats reset so the next scan imports ratings");
+
+        // The column refuses out-of-range values even if validation is bypassed
+        for bad in [0, 6, -1] {
+            assert!(conn.execute("UPDATE tracks SET rating = ?1", [bad]).is_err(), "{bad} accepted");
+        }
+        conn.execute("UPDATE tracks SET rating = 5, mtime = 42", []).unwrap();
+
+        // Replay: columns kept, no second stats reset
+        conn.pragma_update(None, "user_version", 11).unwrap();
+        super::migrate(&mut conn).unwrap();
+        let (rating, mtime): (Option<i64>, i64) = conn
+            .query_row("SELECT rating, mtime FROM tracks", [], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap();
+        assert_eq!((rating, mtime), (Some(5), 42));
+    }
+
     #[test]
     fn migrations_are_idempotent() {
         let dir = tempfile::tempdir().unwrap();
@@ -489,6 +555,7 @@ mod tests {
             bpm: None,
             key: None,
             year: None,
+            rating: None,
             mtime: 1_600_000_000,
             size: 10,
             tag_names: vec![],

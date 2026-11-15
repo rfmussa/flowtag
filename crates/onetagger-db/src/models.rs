@@ -25,6 +25,9 @@ pub struct DbTrack {
     pub bpm: Option<i64>,
     pub key: Option<String>,
     pub year: Option<i64>,
+    /// Star rating 1–5, None = unrated
+    #[serde(default)]
+    pub rating: Option<i64>,
     /// Unix seconds when the track entered the library (mtime for pre-v5 rows)
     pub added_at: i64,
     pub missing: bool,
@@ -90,6 +93,8 @@ pub struct ScannedTrack {
     pub bpm: Option<i64>,
     pub key: Option<String>,
     pub year: Option<i64>,
+    /// Star rating 1–5 read from the file (POPM / RATING), None = unrated
+    pub rating: Option<i64>,
     pub mtime: i64,
     pub size: i64,
     /// Tag names read from the file's TAGS field

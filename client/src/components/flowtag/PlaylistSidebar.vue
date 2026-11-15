@@ -260,7 +260,8 @@ function sourceCount(id: number): number {
 const filtersActive = computed(() =>
     store.filter.value.trim().length > 0
     || store.filterTagIds.value.length > 0
-    || store.quickFilter.value !== 'all');
+    || store.quickFilter.value !== 'all'
+    || store.minRating.value !== 0);
 
 const stagePct = computed(() => {
     const total = store.stageTotal.value;
@@ -321,6 +322,7 @@ function saveFilterAsPlaylist() {
         tagIds: store.filterTagIds.value.length ? [...store.filterTagIds.value] : undefined,
         untaggedOnly: store.quickFilter.value === 'untagged' || undefined,
         status: store.quickFilter.value === 'notdone' ? { is: 'notDone' } : undefined,
+        ratingMin: store.minRating.value || undefined,
     };
     namePrompt('Save filter as playlist', '', (name) => {
         $1t.send('playlistCreate', { name, filter: JSON.stringify(saved) });

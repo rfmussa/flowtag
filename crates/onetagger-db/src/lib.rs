@@ -17,6 +17,7 @@ pub mod playlists;
 pub mod scan;
 pub mod export;
 pub mod staging;
+pub mod ratings;
 
 pub use models::{DbFolder, DbGroup, DbPlaylist, DbTag, DbTrack, ScannedTrack};
 pub use validate::FILE_TAG_SEPARATOR;

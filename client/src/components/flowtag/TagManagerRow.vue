@@ -53,6 +53,7 @@ import OptionSelect from './OptionSelect.vue';
 import { get1t } from '../../scripts/onetagger';
 import { FlowTag, FlowGroup, getTagStore } from '../../scripts/tagstore';
 import { reservedFlowtagCodes } from '../../scripts/flowkeys';
+import { isRatingBind } from '@/lib/rating';
 import KeybindVue from '../Keybind.vue';
 
 const props = defineProps<{ tag: FlowTag, groups: FlowGroup[] }>();
@@ -105,6 +106,10 @@ function setKeybind(keybind?: any) {
     const reserved = new Set(reservedFlowtagCodes().map(normalizeCode));
     if (!hasModifier && reserved.has(String(keybind.key))) {
         reject('That key is used by a FlowTag shortcut or transport key. Add a modifier or pick another.');
+        return;
+    }
+    if (isRatingBind(keybind)) {
+        reject('⇧1–⇧5 set star ratings. Pick another key.');
         return;
     }
     const clash = store.tags.value.find((t) => t.id !== props.tag.id && t.keybind

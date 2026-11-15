@@ -65,6 +65,7 @@ fn parse_file(path: &Path, mtime: i64, size: i64) -> ScannedTrack {
         bpm: None,
         key: None,
         year: None,
+        rating: None,
         mtime,
         size,
         tag_names: vec![],
@@ -92,6 +93,7 @@ fn parse_file(path: &Path, mtime: i64, size: i64) -> ScannedTrack {
                 .map(|k| k.trim().to_string())
                 .filter(|k| !k.is_empty());
             track.year = tag.get_date().map(|d| d.year as i64);
+            track.rating = crate::ratings::rating_from_file(tag.get_rating());
             if let Some(raw) = tag.get_raw(FILE_TAG_FIELD) {
                 track.tag_names = split_file_tags(&raw);
             }

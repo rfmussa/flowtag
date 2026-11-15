@@ -6,7 +6,7 @@ const secs = (y: number, mo: number, d: number, h: number, mi: number) => new Da
 const now = new Date(2026, 10, 12, 9, 0).getTime();
 
 const view = (over: Partial<ViewState> = {}): ViewState => ({
-    scope: 'all', filterText: '', quickFilter: 'all', sort: { by: 'path', desc: false },
+    scope: 'all', filterText: '', quickFilter: 'all', minRating: 0, sort: { by: 'path', desc: false },
     selectedTrackId: null, firstVisibleIndex: 0, ...over,
 });
 

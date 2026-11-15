@@ -46,6 +46,11 @@
             </div>
 
             <div class='spe-row'>
+                <span class='spe-label'>Rating</span>
+                <OptionSelect v-model='draft.ratingMin' :options='MIN_RATING_OPTIONS' label='Minimum rating' trigger-class='flex-1 min-w-0' />
+            </div>
+
+            <div class='spe-row'>
                 <span class='spe-label'>Added in last</span>
                 <div class='ft-field spe-num'><input v-model='draft.addedDays' type='number' placeholder='∞' /></div>
                 <span class='spe-unit'>days</span>
@@ -86,6 +91,7 @@ import { get1t } from '../../scripts/onetagger';
 import MultiOptionSelect from './MultiOptionSelect.vue';
 import OptionSelect from './OptionSelect.vue';
 import { isStatusValue } from '@/lib/status';
+import { MIN_RATING_OPTIONS, MinRating, isMinRating } from '@/lib/rating';
 import { getTagStore, FlowPlaylist, SavedFilter, parseSavedFilter } from '../../scripts/tagstore';
 import { diag } from '../../scripts/diag';
 
@@ -104,6 +110,7 @@ const draft = reactive({
     bpmMin: '', bpmMax: '',
     keys: [] as string[],
     yearMin: '', yearMax: '',
+    ratingMin: 0 as MinRating,
     addedDays: '',
     untaggedOnly: false,
     /** 'any' = no status rule */
@@ -122,6 +129,7 @@ watch(() => props.playlist, (pl) => {
     draft.keys = [...(f.keys ?? [])];
     draft.yearMin = f.yearMin?.toString() ?? '';
     draft.yearMax = f.yearMax?.toString() ?? '';
+    draft.ratingMin = isMinRating(f.ratingMin) ? f.ratingMin : 0;
     draft.addedDays = f.addedDays?.toString() ?? '';
     draft.untaggedOnly = !!f.untaggedOnly;
     const isRule = isStatusValue(f.status?.is) ? f.status?.is : undefined;
@@ -166,6 +174,7 @@ const asFilter = computed<SavedFilter>(() => ({
     keys: draft.keys.length ? [...draft.keys] : undefined,
     yearMin: num(draft.yearMin),
     yearMax: num(draft.yearMax),
+    ratingMin: draft.ratingMin || undefined,
     addedDays: num(draft.addedDays),
     untaggedOnly: draft.untaggedOnly || undefined,
     status: draft.statusValue !== 'any'

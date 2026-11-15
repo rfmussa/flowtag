@@ -77,8 +77,10 @@ outside a text field dips every visible matching `.ft-kbd` keycap for a beat).
   F filter, D done, E edit, M lookup, B sidebar, S stage, X skip) plus per-tag hotkeys from the
   pool; `reservedFlowtagCodes()` keeps the two sets from colliding.
 - **The Shift layer** is mostly free. ⇧Space plays from the drop marker (analysis on);
-  ⇧1–⇧5 are earmarked for the planned star-rating feature (today a shifted digit still falls
-  through to seek — the rating feature claims them when it lands).
+  ⇧1–⇧5 set the star rating on the selection (pressing the rating every selected track already
+  has clears it; held keys don't repeat). A shifted digit never seeks: ⇧6–⇧0 fall through to
+  per-tag hotkeys. A tag hotkey or action bind saved on ⇧1–⇧5 before ratings existed keeps its
+  chord; new binds there are refused in Settings and Manage tags.
 
 ## Windows and the shell
 

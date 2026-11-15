@@ -113,6 +113,10 @@ enum Action {
     TracksAddTag { track_ids: Vec<i64>, name: String },
     #[serde(rename_all = "camelCase")]
     TracksRemoveTag { track_ids: Vec<i64>, tag_id: i64 },
+    /// Star rating 1–5 for many tracks; null clears. i64 so an out-of-range
+    /// value reaches validation (and a clear error) instead of a serde overflow
+    #[serde(rename_all = "camelCase")]
+    TracksSetRating { track_ids: Vec<i64>, #[serde(default)] rating: Option<i64> },
     #[serde(rename_all = "camelCase")]
     FlushHint { track_id: Option<i64> },
     FlushStatusGet,
@@ -1013,6 +1017,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::TrackRemoveTag { track_id, tag_id } => tagflow::track_remove_tag(context, track_id, tag_id)?,
         Action::TracksAddTag { track_ids, name } => tagflow::tracks_add_tag(context, &track_ids, &name)?,
         Action::TracksRemoveTag { track_ids, tag_id } => tagflow::tracks_remove_tag(context, &track_ids, tag_id)?,
+        Action::TracksSetRating { track_ids, rating } => tagflow::tracks_set_rating(context, &track_ids, rating)?,
         Action::FlushHint { track_id } => tagflow::flush_hint(context, track_id)?,
         Action::TrackMetaGet { track_id } => tagflow::track_meta_get(context, track_id)?,
         Action::TrackMetaSet { track_id, meta } => tagflow::track_meta_set(context, track_id, &meta)?,
@@ -1115,6 +1120,19 @@ mod tests {
     fn player_preload_deserializes() {
         let parse = |s: &str| serde_json::from_str::<Action>(s).unwrap();
         assert!(matches!(parse(r#"{"action":"playerPreload","path":"/a.mp3"}"#), Action::PlayerPreload { path } if path == PathBuf::from("/a.mp3")));
+    }
+
+    #[test]
+    fn rating_action_deserializes() {
+        let parse = |s: &str| serde_json::from_str::<Action>(s).unwrap();
+        assert!(matches!(parse(r#"{"action":"tracksSetRating","trackIds":[1,2],"rating":4}"#),
+            Action::TracksSetRating { track_ids, rating: Some(4) } if track_ids == vec![1, 2]));
+        assert!(matches!(parse(r#"{"action":"tracksSetRating","trackIds":[1],"rating":null}"#),
+            Action::TracksSetRating { rating: None, .. }));
+        // Out of range still parses; tagflow/db validation rejects it
+        assert!(matches!(parse(r#"{"action":"tracksSetRating","trackIds":[1],"rating":300}"#),
+            Action::TracksSetRating { rating: Some(300), .. }));
+        assert!(serde_json::from_str::<Action>(r#"{"action":"tracksSetRating","trackIds":[1],"rating":"5"}"#).is_err());
     }
 
     #[test]
