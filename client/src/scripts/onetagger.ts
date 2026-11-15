@@ -17,6 +17,14 @@ class OneTagger {
     // Singleton
     private static instance: OneTagger;
 
+    /** The singleton. `new OneTagger()` runs every class field initializer
+     *  (Player with its interval, Settings, websocket promise, …) before the
+     *  constructor body can return the existing instance, so calling it per
+     *  access leaks a full app object each time — construct exactly once. */
+    static get(): OneTagger {
+        return OneTagger.instance ?? new OneTagger();
+    }
+
     info: Ref<AppInfo> = ref({}) as Ref<AppInfo>;
     config: Ref<AutotaggerConfig> = ref(new AutotaggerConfig());
     lock: Ref<{ locked: boolean }> = ref({ locked: false });
@@ -558,7 +566,7 @@ interface BrowseEvent {
 
 /// Get OneTagger instance
 function get1t(): OneTagger {
-    return new OneTagger();
+    return OneTagger.get();
 }
 
 export { OneTagger, get1t };
