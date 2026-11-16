@@ -61,6 +61,12 @@ pub(crate) fn stage_skip(context: &SocketContext, track_id: i64) -> Result<(), E
     broadcast_state(context)
 }
 
+/// Set (not toggle) skip on many tracks; the client decides the direction
+pub(crate) fn stage_skip_tracks(context: &SocketContext, ids: &[i64], skip: bool) -> Result<(), Error> {
+    staging::set_skip(&context.db, ids, skip)?;
+    broadcast_state(context)
+}
+
 /// Commit the given staged tracks as done; errors (e.g. nothing to commit) reach
 /// the client through the socket's standard `error` reply
 pub(crate) fn stage_commit(context: &SocketContext, ids: &[i64], message: &str) -> Result<(), Error> {

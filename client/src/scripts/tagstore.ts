@@ -12,6 +12,7 @@ import type { ExportState } from '@/lib/exportstatus';
 import { IDLE_SCAN, scanDone, scanProgress } from '@/lib/scanstatus';
 import type { ScanState } from '@/lib/scanstatus';
 import { QuickFilter, StatusValue, isStatusValue, matchesStatus, passesQuickFilter } from '@/lib/status';
+import { nextSkip } from '@/lib/skip';
 import { MinRating, Rating, applyRating, isMinRating, isRating, nextRating, passesMinRating } from '@/lib/rating';
 
 // Types mirroring onetagger-db models (serde camelCase)
@@ -803,11 +804,20 @@ export class TagStore {
         }
     }
 
-    /** X: toggle skip on the current track (server-side toggle) */
-    stageSkipCurrent() {
-        const id = this.selectedId.value;
-        if (id === undefined) return;
-        get1t().send('stageSkip', { trackId: id });
+    /** X: skip on the selection (the current track when nothing else is selected).
+     *  Direction follows S: every selected track already skipped -> clear skip,
+     *  otherwise set it on all. X on an unstaged track stages + skips it (server-side). */
+    skipSelection() {
+        const ids = this.allSelected();
+        if (ids.length === 0) return;
+        const targets = new Set(ids);
+        this.setSkip(ids, nextSkip(this.tracks.value.filter((t) => targets.has(t.id))));
+    }
+
+    /** Set (not toggle) skip on tracks; the stageState broadcast carries the rows back */
+    setSkip(trackIds: number[], skip: boolean) {
+        if (trackIds.length === 0) return;
+        get1t().send('stageSkipTracks', { trackIds, skip });
     }
 
     /** Stage scope D: jump to the next staged row that is not ready (wraps) */

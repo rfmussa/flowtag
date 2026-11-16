@@ -74,7 +74,7 @@ outside a text field dips every visible matching `.ft-kbd` keycap for a beat).
   −10s/+30s, Esc clears the multi-select, ⌘Z undo, ⌘Enter the commit sheet. Tab is deliberately
   unbound so focus navigation survives.
 - **Letters** are the remappable layer: ten named actions (defaults J/K prev/next, T tag input,
-  F filter, D done, E edit, M lookup, B sidebar, S stage, X skip) plus per-tag hotkeys from the
+  F filter, D done, E edit, M lookup, B sidebar, S stage, X skip; both act on the whole selection) plus per-tag hotkeys from the
   pool; `reservedFlowtagCodes()` keeps the two sets from colliding.
 - **The Shift layer** is mostly free. ⇧Space plays from the drop marker (analysis on);
   ⇧1–⇧5 set the star rating on the selection (pressing the rating every selected track already

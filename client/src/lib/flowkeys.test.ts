@@ -156,7 +156,7 @@ describe('key repeat on stage / skip', () => {
     it('a_fresh_press_still_toggles', () => {
         expect(handleFlowKeys(key('KeyS'))).toBe(true);
         expect(handleFlowKeys(key('KeyX'))).toBe(true);
-        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks', 'stageSkip']);
+        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks', 'stageSkipTracks']);
     });
 });
 

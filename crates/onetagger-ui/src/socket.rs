@@ -146,6 +146,9 @@ enum Action {
     UnstageTracks { track_ids: Vec<i64> },
     #[serde(rename_all = "camelCase")]
     StageSkip { track_id: i64 },
+    /// Set skip on many tracks (stages them first); `skip` false clears it
+    #[serde(rename_all = "camelCase")]
+    StageSkipTracks { track_ids: Vec<i64>, skip: bool },
     #[serde(rename_all = "camelCase")]
     StageCommit { track_ids: Vec<i64>, message: String },
     #[serde(rename_all = "camelCase")]
@@ -1071,6 +1074,7 @@ async fn handle_message(text: &str, context: &mut SocketContext) -> Result<(), E
         Action::StageTracks { track_ids } => stage::stage_tracks(context, &track_ids)?,
         Action::UnstageTracks { track_ids } => stage::unstage_tracks(context, &track_ids)?,
         Action::StageSkip { track_id } => stage::stage_skip(context, track_id)?,
+        Action::StageSkipTracks { track_ids, skip } => stage::stage_skip_tracks(context, &track_ids, skip)?,
         Action::StageCommit { track_ids, message } => stage::stage_commit(context, &track_ids, &message)?,
         Action::StageRevert { commit_id } => stage::stage_revert(context, commit_id)?,
         Action::JournalGet { before_id } => stage::journal_get(context, before_id)?,
@@ -1141,6 +1145,7 @@ mod tests {
         assert!(matches!(parse(r#"{"action":"stageTracks","trackIds":[1,2]}"#), Action::StageTracks { track_ids } if track_ids == vec![1, 2]));
         assert!(matches!(parse(r#"{"action":"unstageTracks","trackIds":[3]}"#), Action::UnstageTracks { track_ids } if track_ids == vec![3]));
         assert!(matches!(parse(r#"{"action":"stageSkip","trackId":4}"#), Action::StageSkip { track_id: 4 }));
+        assert!(matches!(parse(r#"{"action":"stageSkipTracks","trackIds":[4,5],"skip":true}"#), Action::StageSkipTracks { track_ids, skip: true } if track_ids == vec![4, 5]));
         assert!(matches!(parse(r#"{"action":"stageCommit","trackIds":[5],"message":"m"}"#), Action::StageCommit { track_ids, message } if track_ids == vec![5] && message == "m"));
         assert!(matches!(parse(r#"{"action":"stageRevert","commitId":6}"#), Action::StageRevert { commit_id: 6 }));
         assert!(matches!(parse(r#"{"action":"journalGet","beforeId":7}"#), Action::JournalGet { before_id: Some(7) }));

@@ -20,6 +20,9 @@
         <Input v-model='message' class='mt-3' placeholder='What were you doing?' spellcheck='false' />
 
         <DialogFooter class='mt-4'>
+            <Button v-if='unready.length > 0' size='sm' class='mr-auto' data-test='skip-rest' @click='skipRest'>
+                Skip the rest ({{ unready.length }})
+            </Button>
             <Button @click='close'>Cancel</Button>
             <Button variant='default' :disabled='payload.trackIds.length === 0' @click='confirm'>
                 Commit {{ payload.trackIds.length }} of {{ rows.length }}
@@ -36,6 +39,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { commitPayload, initialTicks, toggleTick, Ticks, withLoadedReady } from '@/lib/commit';
+import { tickIds, unreadyIds } from '@/lib/skip';
 import { notify } from '@/lib/notify';
 import { commitSheetOpen } from '@/scripts/commitsheet';
 import { getTagStore, StageRow } from '@/scripts/tagstore';
@@ -74,6 +78,16 @@ function label(trackId: number) {
 function markerOf(row: StageRow): 'skip' | 'ready' | 'unfinished' {
     if (row.skip) return 'skip';
     return row.ready ? 'ready' : 'unfinished';
+}
+
+const unready = computed(() => unreadyIds(rows.value));
+
+/** Flag every not-finished row skip on the server and tick it, so the batch commits as one */
+function skipRest() {
+    const ids = unready.value;
+    if (ids.length === 0) return;
+    store.setSkip(ids, true);
+    ticks.value = tickIds(ticks.value, ids);
 }
 
 function close() { commitSheetOpen.value = false; }

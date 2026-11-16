@@ -102,6 +102,45 @@ pub fn toggle_skip(db: &Db, track_id: i64) -> Result<bool, Error> {
     Ok(skip != 0)
 }
 
+/// Most tracks one bulk skip may touch (same ceiling as a rating batch)
+pub const MAX_SKIP_BATCH: usize = 100_000;
+
+/// Set (not toggle) the skip flag of many tracks, staging the unstaged ones first
+/// exactly like `toggle_skip`. Idempotent: a track already at `skip` is untouched
+/// and unlogged; unknown ids are ignored. Returns the ids whose flag changed.
+pub fn set_skip(db: &Db, track_ids: &[i64], skip: bool) -> Result<Vec<i64>, Error> {
+    if track_ids.is_empty() {
+        anyhow::bail!("No tracks to skip");
+    }
+    if track_ids.len() > MAX_SKIP_BATCH {
+        anyhow::bail!("Too many tracks to skip at once ({})", track_ids.len());
+    }
+    let mut conn = db.conn();
+    let tx = conn.transaction()?;
+    let at = now();
+    let target = i64::from(skip);
+    let mut changed = Vec::new();
+    {
+        let mut stage = tx.prepare(
+            "INSERT OR IGNORE INTO staged (track_id, staged_at)
+             SELECT id, ?2 FROM tracks WHERE id = ?1",
+        )?;
+        let mut update = tx.prepare("UPDATE staged SET skip = ?2 WHERE track_id = ?1 AND skip != ?2")?;
+        let kind = if skip { "skip_set" } else { "skip_cleared" };
+        for &id in track_ids {
+            if stage.execute(params![id, at])? > 0 {
+                log_or_warn(&tx, Some(id), "staged", &json!({}));
+            }
+            if update.execute(params![id, target])? > 0 {
+                log_or_warn(&tx, Some(id), kind, &json!({}));
+                changed.push(id);
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(changed)
+}
+
 /// Staged tracks in stage order (staged_at, then path)
 pub fn stage_list(db: &Db) -> Result<Vec<StageRow>, Error> {
     let conn = db.conn();
@@ -351,6 +390,35 @@ mod tests {
         let rows = stage_list(&db).unwrap();
         assert_eq!(rows.len(), 1);
         assert!(!rows[0].skip && !rows[0].ready);
+    }
+
+    #[test]
+    fn set_skip_bulk_autostages_and_is_idempotent() {
+        let (_dir, db) = test_db();
+        let a = insert_track(&db, "/test-root/a.mp3");
+        let b = insert_track(&db, "/test-root/b.mp3");
+        stage_tracks(&db, &[a]).unwrap();
+        assert_eq!(set_skip(&db, &[a, b, 9_999], true).unwrap(), vec![a, b]);
+        let rows = stage_list(&db).unwrap();
+        assert_eq!(rows.len(), 2, "unknown id is ignored, unstaged b is staged");
+        assert!(rows.iter().all(|r| r.skip && r.ready));
+        assert!(set_skip(&db, &[a, b], true).unwrap().is_empty());
+        assert_eq!(set_skip(&db, &[b], false).unwrap(), vec![b]);
+        let rows = stage_list(&db).unwrap();
+        assert!(rows.iter().find(|r| r.track_id == a).unwrap().skip);
+        assert!(!rows.iter().find(|r| r.track_id == b).unwrap().skip);
+        assert_eq!(
+            log_kinds(&db),
+            vec!["staged", "skip_set", "staged", "skip_set", "skip_cleared"]
+        );
+    }
+
+    #[test]
+    fn set_skip_validates_the_batch() {
+        let (_dir, db) = test_db();
+        assert!(set_skip(&db, &[], true).is_err());
+        let too_many = vec![1i64; MAX_SKIP_BATCH + 1];
+        assert!(set_skip(&db, &too_many, true).is_err());
     }
 
     #[test]
