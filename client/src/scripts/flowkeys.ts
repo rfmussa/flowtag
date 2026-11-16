@@ -152,7 +152,7 @@ function navMatches(event: KeyboardEvent, action: 'prev' | 'next'): { extend: bo
  *               ⇧1–⇧5 star rating on the selection (same again clears; ⇧digits never seek)
  * Remappable:   prev J · next K · focus tag input T · focus filter F ·
  *               done D · edit metadata E · online lookup M ·
- *               stage S (toggle selection) · skip X (current track)
+ *               stage S (toggle selection) · skip X (toggle selection: all skipped clears, else skips all)
  *               (Settings → Keyboard; per-tag hotkeys live in Manage tags)
  */
 export function handleFlowKeys(event: KeyboardEvent): boolean {
@@ -288,7 +288,7 @@ export function handleFlowKeys(event: KeyboardEvent): boolean {
         return true;
     }
     if (actionFires(event, 'skip')) {
-        if (!event.repeat) store.stageSkipCurrent();
+        if (!event.repeat) store.skipSelection();
         return true;
     }
 

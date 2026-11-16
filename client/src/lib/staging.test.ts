@@ -70,17 +70,55 @@ describe('toggleStageSelection', () => {
         s.toggleStageSelection();
         expect(send.mock.calls.map((c) => c[0])).toEqual(['stageTracks']);
         send.mockClear();
-        s.stageSkipCurrent();
-        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageSkip']);
+        s.skipSelection();
+        expect(send.mock.calls.map((c) => c[0])).toEqual(['stageSkipTracks']);
     });
 });
 
 describe('stage scope helpers', () => {
-    it('stageSkipCurrent_toggles_the_current_track', () => {
+    it('skipSelection_sets_skip_on_the_current_track', () => {
+        const s = storeWith([track(7, { staged: true })]);
+        s.selectedId.value = 7;
+        s.skipSelection();
+        expect(send.mock.calls[0]).toEqual(['stageSkipTracks', { trackIds: [7], skip: true }]);
+    });
+
+    it('skipSelection_clears_a_skipped_current_track', () => {
+        const s = storeWith([track(7, { staged: true, skip: true })]);
+        s.selectedId.value = 7;
+        s.skipSelection();
+        expect(send.mock.calls[0]).toEqual(['stageSkipTracks', { trackIds: [7], skip: false }]);
+    });
+
+    it('skipSelection_on_unstaged_track_sets_skip', () => {
         const s = storeWith([track(7)]);
         s.selectedId.value = 7;
-        s.stageSkipCurrent();
-        expect(send.mock.calls[0]).toEqual(['stageSkip', { trackId: 7 }]);
+        s.skipSelection();
+        expect(send.mock.calls[0][1]).toEqual({ trackIds: [7], skip: true });
+    });
+
+    it('skipSelection_applies_to_the_whole_selection_and_mixed_sets', () => {
+        const s = storeWith([track(1, { staged: true, skip: true }), track(2, { staged: true }), track(3)]);
+        s.selectedId.value = 1;
+        s.selectedIds.value = [2, 3];
+        s.skipSelection();
+        const sent = send.mock.calls[0][1];
+        expect([...sent.trackIds].sort()).toEqual([1, 2, 3]);
+        expect(sent.skip).toBe(true);
+    });
+
+    it('skipSelection_clears_when_every_selected_track_is_skipped', () => {
+        const on = { staged: true, skip: true };
+        const s = storeWith([track(1, on), track(2, on)]);
+        s.selectedId.value = 1;
+        s.selectedIds.value = [2];
+        s.skipSelection();
+        expect(send.mock.calls[0][1].skip).toBe(false);
+    });
+
+    it('skipSelection_without_a_selection_sends_nothing', () => {
+        storeWith([track(1)]).skipSelection();
+        expect(send).not.toHaveBeenCalled();
     });
 
     it('selectNextStagedNotReady_walks_stage_rows_with_wrap', () => {
